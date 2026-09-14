@@ -112,6 +112,33 @@ test('disconnect during connection cancels results and restored preferences reco
   await Promise.all([reconnect,disconnect]); assert.equal(connection.state.status, 'disconnected')
 })
 
+test('account event during pending initial read invalidates that identity and serially reconnects', async () => {
+  const clients: FakeClient[] = []
+  let release!: () => void
+  const connection = new Connection(new MemoryStore(), () => {
+    const client = new FakeClient(); clients.push(client)
+    if (clients.length === 1) client.request = async () => {
+      await new Promise<void>(r => { release = r })
+      return { account: { type: 'chatgpt', email: 'stale@example.test' } }
+    }
+    return client
+  }, fakeResolve)
+  const identities: (string | null | undefined)[] = []
+  connection.on('change', state => identities.push(state.account?.email))
+  const first = connection.connect()
+  await new Promise(r => setImmediate(r))
+  const generation = connection.generation
+  clients[0].emit('notification', 'account/updated')
+  assert.ok(connection.generation > generation)
+  assert.equal(connection.state.account, null)
+  assert.equal(clients[0].stopped, true)
+  release(); await first; await new Promise(r => setImmediate(r))
+  assert.equal(clients.length, 2)
+  assert.equal(connection.state.account?.email, 'synthetic@example.test')
+  assert.equal(identities.includes('stale@example.test'), false)
+  await connection.shutdown()
+})
+
 test('preferences whitelist, corrupt file and executable discovery', async () => {
   const folder = mkdtempSync(join(tmpdir(), 'localino-unit-'))
   const file = join(folder,'connection.json'); const store = new FilePreferences(file)

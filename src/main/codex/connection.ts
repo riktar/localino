@@ -51,7 +51,7 @@ export class Connection extends EventEmitter {
         })
         client.on('notification', method => {
           if (generation !== this.generation) return
-          if (method === 'account/updated' && this.state.status === 'connected') void this.connect()
+          if (method === 'account/updated' && (this.state.status === 'connected' || this.state.status === 'connecting')) void this.connect()
           else if (method === 'account/rateLimits/updated') this.emit('ratesChanged')
         })
         await client.start()
