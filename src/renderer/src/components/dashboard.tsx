@@ -56,7 +56,7 @@ export function Dashboard(): React.JSX.Element {
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="timestamp" type="number" domain={[Date.parse(`${view.start}T00:00:00Z`),Date.parse(`${view.end}T00:00:00Z`)]} ticks={view.rows.filter((_,index)=>index%Math.max(1,Math.ceil(view.rows.length/6))===0).map(row=>row.timestamp)} tickFormatter={value => new Date(Number(value)).toISOString().slice(5,10)} tickMargin={8} minTickGap={35} />
                 <YAxis tickFormatter={value => Number(value).toLocaleString('it-IT',{notation:'compact'})} width={60} />
-                <ChartTooltip content={<ChartTooltipContent labelFormatter={value => new Date(Number(value)).toISOString().slice(0,10)} formatter={value => <span className="font-mono">{numberLabel(Number(value))} token</span>} />} />
+                <ChartTooltip content={<ChartTooltipContent labelFormatter={(_label,payload) => { const date: unknown = payload?.[0]?.payload?.date; return typeof date === 'string' ? date : 'Data non disponibile' }} formatter={value => <span className="font-mono">{numberLabel(Number(value))} token</span>} />} />
                 <Line type="linear" dataKey="tokens" stroke="var(--color-tokens)" strokeWidth={2} dot={{r:3}} connectNulls={false} isAnimationActive={false} />
               </LineChart>
             </ChartContainer> : <p className="rounded-lg bg-muted/60 p-8 text-center text-sm text-muted-foreground">Nessun dato giornaliero disponibile per questo periodo.</p>}
