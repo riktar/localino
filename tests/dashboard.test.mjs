@@ -35,6 +35,9 @@ test('Dashboard: one secure window, sparse data, filters, keyboard, credits and 
     const tooltip=page.locator('.recharts-tooltip-wrapper')
     await tooltip.getByText('2026-01-01',{exact:true}).waitFor({state:'visible'})
     assert.match(await tooltip.innerText(),/10 token/)
+    // End mouse interaction before testing keyboard navigation: its active tooltip takes precedence.
+    await page.mouse.move(0,0)
+    await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle().includes('Statistiche')).focus())
     await page.locator('.recharts-surface').first().focus()
     await page.keyboard.press('ArrowRight');await page.keyboard.press('ArrowRight')
     await tooltip.getByText('2026-01-03',{exact:true}).waitFor({state:'visible'})
