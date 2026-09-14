@@ -4,10 +4,13 @@ import { ArrowDownRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AccountCard } from '@/components/account-card'
 import { useConnection } from '@/hooks/use-connection'
+import { useQuotas } from '@/hooks/use-quotas'
+import { QuotaCard } from '@/components/quota-card'
 import './styles.css'
 
 function App(): React.JSX.Element {
   const state = useConnection()
+  const quotas = useQuotas()
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col gap-6 p-6">
       <header className="flex items-center gap-3">
@@ -24,6 +27,7 @@ function App(): React.JSX.Element {
         </div>
         <AccountCard state={state} />
       </section>
+      {state.status === 'connected' && <QuotaCard state={quotas} />}
       <footer className="mt-auto space-y-3 pt-4">
         <Button variant="outline" className="w-full" onClick={() => window.localino.hide()}>
           <ArrowDownRight aria-hidden="true" /> Riduci nella barra

@@ -7,6 +7,22 @@ export interface ConnectionState {
   error: ConnectionError | null
 }
 
+export interface QuotaWindow {
+  kind: 'primary' | 'secondary'
+  usedPercent: number | null
+  durationMins: number | null
+  resetsAt: number | null
+}
+export interface QuotaBucket { id: string; name: string; windows: QuotaWindow[] }
+export interface Quotas { buckets: QuotaBucket[] }
+export interface ResourceState<T> {
+  data: T | null
+  lastSuccessAt: number | null
+  refreshing: boolean
+  stale: boolean
+  error: 'timeout' | 'unavailable' | 'unsupported' | 'invalid' | null
+}
+
 export interface LocalinoApi {
   hide: () => void
   getConnection: () => Promise<ConnectionState>
@@ -15,4 +31,7 @@ export interface LocalinoApi {
   rereadAccount: () => Promise<void>
   chooseCodex: () => Promise<void>
   onConnection: (listener: (state: ConnectionState) => void) => () => void
+  getQuotas: () => Promise<ResourceState<Quotas>>
+  refreshQuotas: () => Promise<void>
+  onQuotas: (listener: (state: ResourceState<Quotas>) => void) => () => void
 }

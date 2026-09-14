@@ -2,7 +2,7 @@
 
 Toolkit desktop Electron per lavorare con i coding agent. Frontend React e TypeScript con shadcn/ui e Tailwind CSS.
 
-Localino può collegare l'account ChatGPT già autenticato nella CLI Codex sul PC. Quote e dashboard sono le parti successive dello sprint in corso; la cattura dei prompt rimane un incremento futuro.
+Localino collega l'account ChatGPT già autenticato nella CLI Codex sul PC e mostra le quote dalla barra di sistema. La dashboard è la parte successiva dello sprint in corso; la cattura dei prompt rimane un incremento futuro.
 
 ## Collegare Codex
 
@@ -13,6 +13,14 @@ Localino cerca `codex.exe` nel PATH e nell'installazione desktop OpenAI del PC. 
 **Rileggi account** ricrea la connessione e scarta i dati precedenti; usalo dopo un cambio account esterno non ancora rilevato. **Scollega da Localino** ferma il client e dimentica il collegamento, mantenendo l'accesso nella CLI. Chiudere soltanto la finestra mantiene l'app nella barra.
 
 Persistenza: `connection.json` nella cartella dati dell'app contiene esclusivamente preferenza di collegamento e percorso CLI. Token, email, statistiche e conversazioni non vengono scritti nel file. Le credenziali restano gestite da Codex. Il client utilizza soltanto inizializzazione e letture del protocollo App Server.
+
+## Quote dalla barra
+
+Il pannello mostra tutti i limiti restituiti dal servizio, ciascuno con le proprie finestre: utilizzato, rimanente, durata e reset nel fuso locale. Il nome proviene da Codex; gli ID senza nome restano etichette neutre. Le percentuali non vengono sommate. Dati mancanti sono “Non disponibile”, distinti da zero; un superamento riguarda la singola finestra.
+
+Le quote vengono rilette ogni 60 secondi, all'apertura e con **Aggiorna**. Il servizio può pubblicare i consumi in ritardo: la cadenza non garantisce quando il lavoro di altre sessioni diventa visibile. Ogni lettura riuscita aggiorna il timestamp. Errori, reset scaduti o tre minuti senza successo indicano dati non aggiornati; il retry automatico arriva fino a cinque minuti, mentre Aggiorna permette di riprovare subito. Il reset richiede nuovi dati e non azzera localmente le percentuali.
+
+Il click sull'icona apre/chiude il pannello; il menu della barra mostra stato, ultima lettura e riepilogo etichettato del limite `codex` (o primo disponibile). Il monitor continua col pannello chiuso, si sospende col PC e riprende al risveglio; Scollega ed Esci lo fermano.
 
 ## Sviluppo
 
@@ -33,7 +41,7 @@ npm run build:win
 npm run test:packaged
 ```
 
-`check` esegue lint, test del client/processi/IPC, typecheck, build e smoke Electron in produzione e sviluppo. `test:account` esegue una prova reale non distruttiva dell'account Codex del PC (collegamento, rilettura, riavvio, scollegamento), da lanciare esplicitamente. Gli smoke usano profili separati tramite `--user-data-dir`, senza interferire con l'app dell'utente. Aprono brevemente vere finestre e salvano artefatti in `test-results/`.
+`check` esegue lint, test del client/processi/IPC e dello scheduler, typecheck, build e smoke Electron in produzione e sviluppo, inclusi dati quota sintetici. `test:account` esegue una prova reale non distruttiva dell'account Codex del PC (collegamento, rilettura, riavvio, scollegamento); `test:rates` confronta quote reali, latenza risposta→renderer e polling a pannello nascosto (circa un minuto). I test reali si lanciano esplicitamente. Gli smoke usano profili separati tramite `--user-data-dir`, senza interferire con l'app dell'utente. Aprono brevemente vere finestre e salvano artefatti in `test-results/`.
 
 `build:win` crea un archivio ZIP in `dist/` e l'app in `dist/win-unpacked/Localino.exe`. `test:packaged` verifica quell'eseguibile. Serializzare i test desktop per mantenere riproducibili le osservazioni.
 
