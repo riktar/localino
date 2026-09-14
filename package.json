@@ -15,10 +15,12 @@
     "lint": "eslint .",
     "build": "npm run typecheck && electron-vite build",
     "build:win": "npm run build && electron-builder --win --x64 --publish never",
-    "test": "npm run test:unit && npm run build && node --test --test-concurrency=1 tests/desktop.test.mjs tests/development.test.mjs tests/quotas-ui.test.mjs",
+    "test": "npm run test:unit && npm run build && node --test --test-concurrency=1 tests/desktop.test.mjs tests/development.test.mjs tests/quotas-ui.test.mjs tests/dashboard.test.mjs",
     "test:packaged": "node --test tests/packaged.test.mjs",
     "check": "npm run lint && npm test",
     "test:unit": "node --import tsx --test --test-concurrency=1 tests/unit/*.test.ts",
+    "test:dashboard": "npm run build && node --import tsx --test tests/dashboard-live.test.ts",
+    "test:dashboard:packaged": "node --import tsx --test tests/dashboard-packaged.test.ts",
     "test:rates": "npm run build && node --import tsx --test tests/rates-live.test.ts",
     "test:account": "npm run build && node --import tsx --test tests/account-live.test.ts"
   },
@@ -45,10 +47,12 @@
   "dependencies": {
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cn": "^0.3.0",
     "lucide-react": "^1.46.0",
     "radix-ui": "^1.6.7",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "recharts": "^3.8.0",
     "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {

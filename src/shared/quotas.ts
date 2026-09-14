@@ -23,9 +23,15 @@ export function normalizeQuotas(value: unknown): Quotas {
       windows.push({ kind, usedPercent: nonnegative(window?.usedPercent), durationMins: duration && Number.isSafeInteger(duration) ? duration : null,
         resetsAt: seconds !== null && Number.isSafeInteger(seconds) && seconds <= 8_640_000_000_000 ? seconds * 1000 : null })
     }
-    return { id, name: label(bucket?.limitName) ?? id, windows }
+    const credits = record(bucket?.credits)
+    return { id, name: label(bucket?.limitName) ?? id, windows, credits: credits ? {
+      hasCredits: typeof credits.hasCredits === 'boolean' ? credits.hasCredits : null,
+      unlimited: typeof credits.unlimited === 'boolean' ? credits.unlimited : null,
+      balance: label(credits.balance),
+    } : null }
   }).sort((a,b) => a.id.localeCompare(b.id))
-  return { buckets }
+  const count = nonnegative(record(root.rateLimitResetCredits)?.availableCount)
+  return { buckets, availableResets: count !== null && Number.isSafeInteger(count) ? count : null }
 }
 
 export function durationLabel(minutes: number | null): string {

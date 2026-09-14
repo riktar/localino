@@ -6,6 +6,7 @@ import { AccountCard } from '@/components/account-card'
 import { useConnection } from '@/hooks/use-connection'
 import { useQuotas } from '@/hooks/use-quotas'
 import { QuotaCard } from '@/components/quota-card'
+import { Dashboard } from '@/components/dashboard'
 import './styles.css'
 
 function App(): React.JSX.Element {
@@ -29,6 +30,7 @@ function App(): React.JSX.Element {
       </section>
       {state.status === 'connected' && <QuotaCard state={quotas} />}
       <footer className="mt-auto space-y-3 pt-4">
+        <Button className="w-full" onClick={() => void window.localino.openDashboard()}>Apri dashboard</Button>
         <Button variant="outline" className="w-full" onClick={() => window.localino.hide()}>
           <ArrowDownRight aria-hidden="true" /> Riduci nella barra
         </Button>
@@ -39,5 +41,5 @@ function App(): React.JSX.Element {
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode><App /></React.StrictMode>,
+  <React.StrictMode>{new URLSearchParams(location.search).get('view') === 'dashboard' ? <Dashboard /> : <App />}</React.StrictMode>,
 )
