@@ -17,11 +17,24 @@ test('Real quotas agree with contemporary Codex reading, render promptly and pol
     const page=await app.firstWindow()
     await page.getByRole('button',{name:'Collega Codex',exact:true}).click()
     await page.getByRole('progressbar').first().waitFor()
+    await app.evaluate(({Tray})=>{
+      const context=globalThis as typeof globalThis & {localinoTrayUpdates:number[]}
+      context.localinoTrayUpdates=[]
+      const original=Tray.prototype.setToolTip
+      Tray.prototype.setToolTip=function(text:string){original.call(this,text); context.localinoTrayUpdates.push(Date.now())}
+    })
     const before=normalizeQuotas(await probe.request('account/rateLimits/read'))
     await page.evaluate(()=>window.localino.refreshQuotas())
     const snapshot=await page.evaluate(()=>window.localino.getQuotas())
-    await page.waitForFunction(count=>document.querySelectorAll('[data-bucket]').length===count,snapshot.data!.buckets.length)
+    await page.waitForFunction(timestamp=>document.querySelector('[data-updated-at]')?.getAttribute('data-updated-at')===String(timestamp),snapshot.lastSuccessAt)
     const renderedAt=Date.now(); assert.ok(renderedAt-snapshot.lastSuccessAt!<=2000)
+    const trayTimes=await app.evaluate(()=> (globalThis as typeof globalThis & {localinoTrayUpdates:number[]}).localinoTrayUpdates)
+    const trayAt=trayTimes.find(t=>t>=snapshot.lastSuccessAt!)
+    assert.ok(trayAt!==undefined&&trayAt-snapshot.lastSuccessAt!<=2000)
+    for(const b of snapshot.data!.buckets) for(const w of b.windows) {
+      const view=page.locator('[data-bucket]').filter({has:page.getByRole('heading',{name:b.name,exact:true})}).locator(`[data-window="${w.kind}"]`)
+      assert.ok((await view.innerText()).includes(w.usedPercent===null?'Non disponibile':`${w.usedPercent}% utilizzato`))
+    }
     const after=normalizeQuotas(await probe.request('account/rateLimits/read'))
     assert.deepEqual(snapshot.data!.buckets.map(b=>b.id),after.buckets.map(b=>b.id))
     const comparisons=snapshot.data!.buckets.flatMap(b=>b.windows.map(w=>{
@@ -34,16 +47,18 @@ test('Real quotas agree with contemporary Codex reading, render promptly and pol
       return {id:b.id,kind:w.kind,usedPercent:w.usedPercent,durationMins:w.durationMins,resetDeltaMs}
     }))
     await page.getByRole('button',{name:'Riduci nella barra'}).click()
-    const deadline=Date.now()+70000
+    const deadline=snapshot.lastSuccessAt!+62500
+    const observedReadTimes:number[]=[]
     let hidden=await page.evaluate(()=>window.localino.getQuotas())
-    while(hidden.lastSuccessAt===snapshot.lastSuccessAt&&Date.now()<deadline){
+    while(Date.now()<deadline){
       await new Promise(r=>setTimeout(r,250))
       hidden=await page.evaluate(()=>window.localino.getQuotas())
+      if(hidden.lastSuccessAt!==null&&!observedReadTimes.includes(hidden.lastSuccessAt)) observedReadTimes.push(hidden.lastSuccessAt)
     }
     assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible()),false)
     const gap=hidden.lastSuccessAt!-snapshot.lastSuccessAt!
     assert.ok(gap>=59000&&gap<70000,`hidden polling gap: ${gap} ms`)
-    await writeFile('test-results/rates-live.json',JSON.stringify({observedAt:new Date().toISOString(),receivedAt:snapshot.lastSuccessAt,renderedAt,responseToRenderMs:renderedAt-snapshot.lastSuccessAt!,hiddenPollGapMs:gap,comparisons},null,2))
+    await writeFile('test-results/rates-live.json',JSON.stringify({observedAt:new Date().toISOString(),receivedAt:snapshot.lastSuccessAt,renderedAt,responseToRenderMs:renderedAt-snapshot.lastSuccessAt!,responseToTrayCallMs:trayAt!-snapshot.lastSuccessAt!,trayMeasurement:'actual native setToolTip call; OS paint not timed',hiddenPollGapMs:gap,observedReadTimes,comparisons},null,2))
     await page.evaluate(()=>window.localino.disconnect())
     assert.equal((await page.evaluate(()=>window.localino.getQuotas())).data,null)
   } finally {await app.close(); await probe.stop()}

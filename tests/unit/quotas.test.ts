@@ -65,6 +65,20 @@ test('60s polling, coalesced refresh, suspend/resume, disconnect and stale respo
   await clock.advance(600000); assert.equal(source.calls,4)
   resource.dispose()
 })
+
+test('malformed containers never create a false success or discard the last valid snapshot', async () => {
+  for (const bad of [{rateLimitsByLimitId:'malformed'},{rateLimits:3},{rateLimitsByLimitId:{codex:null}},{rateLimitsByLimitId:null}]) {
+    const {source,resource}=setup()
+    source.result=bad; source.connect(); await settle()
+    assert.equal(resource.state.error,'invalid'); assert.equal(resource.state.lastSuccessAt,null); assert.equal(resource.state.data,null)
+    source.result={rateLimits:{primary:{usedPercent:20}}}; await resource.refresh()
+    const snapshot=resource.state.data; const timestamp=resource.state.lastSuccessAt
+    source.result=bad; await resource.refresh()
+    assert.equal(resource.state.error,'invalid'); assert.equal(resource.state.stale,true)
+    assert.equal(resource.state.data,snapshot); assert.equal(resource.state.lastSuccessAt,timestamp)
+    resource.dispose()
+  }
+})
 test('failure preserves timestamp and data, backoff caps at 5min, manual retry resets schedule', async () => {
   const {source,clock,resource}=setup()
   source.connect(); await settle(); const timestamp=resource.state.lastSuccessAt

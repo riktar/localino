@@ -8,7 +8,10 @@ export function normalizeQuotas(value: unknown): Quotas {
   const root = record(value)
   if (!root || !('rateLimits' in root || 'rateLimitsByLimitId' in root)) throw Error('invalid')
   const map = record(root.rateLimitsByLimitId)
-  const entries = map ? Object.entries(map) : root.rateLimits == null ? [] : [[label(record(root.rateLimits)?.limitId) ?? 'codex', root.rateLimits] as const]
+  const legacy = record(root.rateLimits)
+  if ((root.rateLimitsByLimitId != null && !map) || (root.rateLimits != null && !legacy) || (!map && !legacy)) throw Error('invalid')
+  if (map && Object.values(map).some(value => !record(value))) throw Error('invalid')
+  const entries = map ? Object.entries(map) : [[label(legacy?.limitId) ?? 'codex', legacy] as const]
   const buckets: QuotaBucket[] = entries.map(([id, value]) => {
     const bucket = record(value)
     const windows: QuotaWindow[] = []

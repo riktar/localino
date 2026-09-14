@@ -8,7 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 export function QuotaCard({ state }: { state: ResourceState<Quotas> }): React.JSX.Element {
   const [now, setNow] = useState(Date.now())
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()),1000); return () => clearInterval(timer) }, [])
-  return <section className="space-y-3" aria-labelledby="quotas-title">
+  return <section className="space-y-3" aria-labelledby="quotas-title" data-updated-at={state.lastSuccessAt ?? ''}>
     <div className="flex items-center justify-between gap-2">
       <h2 id="quotas-title" className="text-sm font-medium">Quote disponibili</h2>
       <Button size="sm" variant="ghost" disabled={state.refreshing} onClick={() => void window.localino.refreshQuotas()}><RefreshCw className={state.refreshing ? 'animate-spin' : ''} aria-hidden="true" />Aggiorna</Button>
