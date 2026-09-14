@@ -1,0 +1,9 @@
+.theoneloop
+node_modules/
+out/
+dist/
+test-results/
+*.log
+.env
+.env.*
+!.env.example
