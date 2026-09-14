@@ -1,9 +1,18 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from 'electron'
-import { join } from 'node:path'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from 'electron'
+import { join, resolve } from 'node:path'
+import { mkdirSync } from 'node:fs'
+import { Connection } from './codex/connection'
+import { FilePreferences } from './codex/preferences'
+import { isTrustedSender } from './security'
+
+const customData = app.commandLine.getSwitchValue('user-data-dir')
+if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPath('userData', resolve(customData)) }
+const connection = new Connection(new FilePreferences(join(app.getPath('userData'), 'connection.json')))
 
 let panel: BrowserWindow | null = null
 let tray: Tray | null = null
 let quitting = false
+let quitReady = false
 
 function showPanel(): void {
   if (!panel) return
@@ -30,7 +39,13 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on('second-instance', showPanel)
   app.on('activate', showPanel)
-  app.on('before-quit', () => { quitting = true })
+  app.on('before-quit', (event) => {
+    if (quitReady) return
+    event.preventDefault()
+    if (quitting) return
+    quitting = true
+    void connection.shutdown().finally(() => { quitReady = true; app.quit() })
+  })
   app.on('window-all-closed', () => { if (quitting) app.quit() })
 
   app.whenReady().then(async () => {
@@ -38,7 +53,7 @@ if (!app.requestSingleInstanceLock()) {
     Menu.setApplicationMenu(null)
     panel = new BrowserWindow({
       width: 420,
-      height: 520,
+      height: 640,
       minWidth: 360,
       minHeight: 460,
       title: 'Localino',
@@ -63,9 +78,24 @@ if (!app.requestSingleInstanceLock()) {
       }
     })
     ipcMain.on('localino:hide', (event) => {
-      if (panel && event.sender === panel.webContents && event.senderFrame === panel.webContents.mainFrame) {
+      if (panel && isTrustedSender(event.sender, event.senderFrame, [panel.webContents])) {
         panel.hide()
       }
+    })
+    const handle = (channel: string, action: () => unknown) => ipcMain.handle(channel, event => {
+      if (!panel || !isTrustedSender(event.sender, event.senderFrame, [panel.webContents])) throw new Error('Access denied')
+      return action()
+    })
+    handle('localino:connection', () => connection.state)
+    handle('localino:connect', () => connection.connect())
+    handle('localino:reread', () => connection.connect())
+    handle('localino:disconnect', () => connection.disconnect())
+    handle('localino:choose-codex', async () => {
+      const choice = await dialog.showOpenDialog(panel!, { title: 'Seleziona Codex', properties: ['openFile'], filters: [{ name: 'Codex', extensions: ['exe'] }] })
+      if (!choice.canceled && choice.filePaths[0]) await connection.connect(choice.filePaths[0])
+    })
+    connection.on('change', state => {
+      if (panel && !panel.isDestroyed()) panel.webContents.send('localino:connection-changed', state)
     })
     tray = new Tray(createTrayIcon())
     tray.setToolTip('Localino')
@@ -81,6 +111,7 @@ if (!app.requestSingleInstanceLock()) {
     } else {
       await panel.loadFile(join(__dirname, '../renderer/index.html'))
     }
+    void connection.autoConnect()
   }).catch((error: unknown) => {
     console.error('Impossibile avviare Localino', error)
     app.exit(1)

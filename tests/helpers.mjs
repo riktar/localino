@@ -1,5 +1,5 @@
 import { _electron as electron } from 'playwright'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, mkdtemp } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import assert from 'node:assert/strict'
 
@@ -8,10 +8,12 @@ export async function desktopSmoke(packaged = false, rendererUrl = null) {
   delete env.ELECTRON_RUN_AS_NODE
   delete env.ELECTRON_RENDERER_URL
   if (rendererUrl) env.ELECTRON_RENDERER_URL = rendererUrl
+  await mkdir('test-results/profiles', { recursive: true })
+  const profile = await mkdtemp(resolve('test-results/profiles/smoke-'))
   const instance = await electron.launch({
     ...(packaged
-      ? { executablePath: resolve('dist/win-unpacked/Localino.exe') }
-      : { args: ['.'] }),
+      ? { executablePath: resolve('dist/win-unpacked/Localino.exe'), args: [`--user-data-dir=${profile}`] }
+      : { args: ['.', `--user-data-dir=${profile}`] }),
     env,
     timeout: 30_000,
   })
