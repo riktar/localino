@@ -2,6 +2,20 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { ConnectionState, LocalinoApi, Quotas, ResourceState, Usage } from '../shared/contracts'
 
 const api: LocalinoApi = {
+  getShortcuts:()=>ipcRenderer.invoke('localino:shortcuts'),
+  updateShortcuts:value=>ipcRenderer.invoke('localino:update-shortcuts',value),
+  openPanel:()=>ipcRenderer.invoke('localino:panel'),
+  requestCommand:id=>ipcRenderer.invoke('localino:request-command',id),
+  onCommand:listener=>{
+    const callback=(_event:Electron.IpcRendererEvent,id:'new'|'palette')=>listener(id)
+    ipcRenderer.on('localino:command',callback)
+    return ()=>{ipcRenderer.removeListener('localino:command',callback)}
+  },
+  onShortcuts:listener=>{
+    const callback=(_event:Electron.IpcRendererEvent,state:import('../shared/commands').ShortcutState)=>listener(state)
+    ipcRenderer.on('localino:shortcuts-changed',callback)
+    return ()=>{ipcRenderer.removeListener('localino:shortcuts-changed',callback)}
+  },
   getNotes: () => ipcRenderer.invoke('localino:notes'),
   reloadNotes: () => ipcRenderer.invoke('localino:reload-notes'),
   mutateNote: action => ipcRenderer.invoke('localino:mutate-note',action),

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, powerMonitor, Tray } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, Tray } from 'electron'
 import { join, resolve } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { Connection } from './codex/connection'
@@ -10,6 +10,7 @@ import { normalizeUsage } from '../shared/usage'
 import { destinationLabels, isDestination, type Destination } from '../shared/navigation'
 import { NotesStore } from './notes'
 import type { ActionRequest, WindowAction } from '../shared/actions'
+import { Shortcuts } from './shortcuts'
 
 const customData = app.commandLine.getSwitchValue('user-data-dir')
 if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPath('userData', resolve(customData)) }
@@ -29,6 +30,9 @@ let quitReady = false
 let unsaved = false
 let actionSequence = 0
 let pendingAction: ActionRequest | null = null
+const shortcuts = new Shortcuts(join(app.getPath('userData'),'shortcuts.json'),globalShortcut,id=>{
+  if(id==='home'||id==='consumi'||id==='clipboard')void showMain(id)
+})
 
 function requestGuard(action: WindowAction): void {
   if (!dashboard || dashboard.isDestroyed()) return
@@ -137,6 +141,7 @@ if (!app.requestSingleInstanceLock()) {
     if (unsaved && !quitting) { requestGuard({kind:'quit'}); return }
     if (quitting) return
     quitting = true
+    shortcuts.dispose()
     quotas.dispose()
     usage.dispose()
     void connection.shutdown().finally(() => { quitReady = true; app.quit() })
@@ -194,6 +199,16 @@ if (!app.requestSingleInstanceLock()) {
       else app.quit()
     })
     handle('localino:quit',() => app.quit())
+    handle('localino:shortcuts',()=>shortcuts.state)
+    handle('localino:update-shortcuts',(_owner,value)=>shortcuts.update(value))
+    handle('localino:panel',()=>showPanel())
+    handle('localino:request-command',async (_owner,id)=>{
+      if(id!=='new'&&id!=='palette')throw Error('Comando non valido')
+      await showMain(id==='new'?'clipboard':destination)
+      dashboard?.webContents.send('localino:command',id)
+    })
+    shortcuts.on('change',state=>broadcast('localino:shortcuts-changed',state))
+    await shortcuts.init()
     handle('localino:notes',() => notes.get())
     handle('localino:reload-notes',() => notes.reload())
     handle('localino:mutate-note',(_owner,value) => notes.mutate(value))
@@ -248,5 +263,5 @@ if (!app.requestSingleInstanceLock()) {
     console.error('Impossibile avviare Localino', error)
     app.exit(1)
   })
-  app.on('will-quit', () => { tray?.destroy() })
+  app.on('will-quit', () => { shortcuts.dispose();tray?.destroy() })
 }

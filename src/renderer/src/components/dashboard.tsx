@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { ArrowDownRight, RefreshCw } from 'lucide-react'
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts'
 import { Button } from '@/components/ui/button'
@@ -11,6 +11,7 @@ import { useQuotas } from '@/hooks/use-quotas'
 import { useUsage } from '@/hooks/use-usage'
 import { durationSeconds, localDate, numberLabel, usagePeriod, type Period } from '../../../shared/usage'
 import { freshness } from '../../../shared/quotas'
+import { useCommands } from './commands'
 
 export function Dashboard(): React.JSX.Element {
   const account = useConnection(); const quotas = useQuotas(); const usage = useUsage()
@@ -18,6 +19,19 @@ export function Dashboard(): React.JSX.Element {
   const [today,setToday] = useState(localDate())
   useEffect(() => { const timer = setInterval(() => setToday(localDate()),1000); return () => clearInterval(timer) },[])
   const connected = account.status === 'connected'
+  const dailyTable=useRef<HTMLDetailsElement>(null)
+  const unavailable=!connected?'Collega prima Codex.':undefined
+  const periodDisabled=unavailable??(!usage.data?'Statistiche non disponibili.':undefined)
+  useCommands({
+    connect:{run:()=>window.localino.connect(),disabled:connected||account.status==='connecting'?'Account già collegato o collegamento in corso.':undefined},
+    reread:{run:()=>window.localino.rereadAccount(),disabled:unavailable},
+    choose:{run:()=>window.localino.chooseCodex(),disabled:account.status==='connecting'?'Collegamento in corso.':undefined},
+    disconnect:{run:()=>window.localino.disconnect(),disabled:account.status==='disconnected'?'Account già scollegato.':undefined},
+    quotas:{run:()=>window.localino.refreshQuotas(),disabled:unavailable??(quotas.refreshing?'Lettura in corso.':undefined)},
+    usage:{run:()=>window.localino.refreshUsage(),disabled:unavailable??(usage.refreshing?'Lettura in corso.':undefined)},
+    period7:{run:()=>setPeriod('7'),disabled:periodDisabled},period30:{run:()=>setPeriod('30'),disabled:periodDisabled},periodAll:{run:()=>setPeriod('all'),disabled:periodDisabled},
+    table:{run:()=>{if(dailyTable.current)dailyTable.current.open=!dailyTable.current.open},disabled:periodDisabled},
+  })
   const data = connected ? usage.data : null
   const view = data ? usagePeriod(data,period,today) : null
   const metrics = data ? [
@@ -60,7 +74,7 @@ export function Dashboard(): React.JSX.Element {
                 <Line type="linear" dataKey="tokens" stroke="var(--color-tokens)" strokeWidth={2} dot={{r:3}} connectNulls={false} isAnimationActive={false} />
               </LineChart>
             </ChartContainer> : <p className="rounded-lg bg-muted/60 p-8 text-center text-sm text-muted-foreground">Nessun dato giornaliero disponibile per questo periodo.</p>}
-            <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">Tabella dei dati giornalieri</summary><table className="mt-3 w-full text-left text-sm" data-usage-table><caption className="mb-3 text-left text-xs text-muted-foreground">Date del servizio, senza conversione di fuso. Le righe senza dato mostrano l'intervallo mancante.</caption><thead><tr className="border-b"><th scope="col" className="py-2">Data</th><th scope="col" className="py-2 text-right">Token</th></tr></thead><tbody>{view.rows.map(row => <tr className="border-b last:border-0" key={row.date}><th scope="row" className="py-2 font-normal">{row.date}{row.endDate && row.endDate!==row.date ? ` → ${row.endDate}` : ''}</th><td className="py-2 text-right tabular-nums">{numberLabel(row.tokens)}</td></tr>)}</tbody></table></details>
+            <details ref={dailyTable} className="rounded-lg border p-3"><summary className="cursor-pointer text-sm font-medium">Tabella dei dati giornalieri</summary><table className="mt-3 w-full text-left text-sm" data-usage-table><caption className="mb-3 text-left text-xs text-muted-foreground">Date del servizio, senza conversione di fuso. Le righe senza dato mostrano l'intervallo mancante.</caption><thead><tr className="border-b"><th scope="col" className="py-2">Data</th><th scope="col" className="py-2 text-right">Token</th></tr></thead><tbody>{view.rows.map(row => <tr className="border-b last:border-0" key={row.date}><th scope="row" className="py-2 font-normal">{row.date}{row.endDate && row.endDate!==row.date ? ` → ${row.endDate}` : ''}</th><td className="py-2 text-right tabular-nums">{numberLabel(row.tokens)}</td></tr>)}</tbody></table></details>
           </CardContent></Card>}
           <p className="text-xs leading-relaxed text-muted-foreground">Statistiche aggiornate ogni 5 minuti mentre Consumi è visibile. I token riguardano l'account: non misurano costi, produttività o il solo lavoro svolto in Localino. Nessuna cronologia statistica salvata sul PC.</p>
         </>}

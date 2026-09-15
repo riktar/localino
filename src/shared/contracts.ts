@@ -33,6 +33,12 @@ export interface ResourceState<T> {
 }
 
 export interface LocalinoApi {
+  getShortcuts: () => Promise<import('./commands').ShortcutState>
+  updateShortcuts: (value: unknown) => Promise<import('./commands').ShortcutResult>
+  onShortcuts: (listener:(state:import('./commands').ShortcutState)=>void)=>()=>void
+  openPanel: () => Promise<void>
+  requestCommand: (id:'new'|'palette')=>Promise<void>
+  onCommand: (listener:(id:'new'|'palette')=>void)=>()=>void
   getNotes: () => Promise<import('./notes').NotesState>
   reloadNotes: () => Promise<import('./notes').NotesState>
   mutateNote: (action: import('./notes').NoteMutation) => Promise<import('./notes').NoteResult>

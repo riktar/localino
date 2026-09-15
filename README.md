@@ -40,6 +40,27 @@ Cerca senza distinguere maiuscole/minuscole e filtra Aperti, Completati o Tutti.
 
 I contenuti sono in `notes.json` nella cartella dati Localino, con formato versionato e scritture atomiche gestite da un solo store. Non sono inviati a Codex, rete, log o telemetria. Il file contiene testo in chiaro sul PC. File corrotto/formato non supportato: viene mostrato il percorso, il file resta intatto e Consumi rimane disponibile. Dopo aver recuperato il file usa **Riprova lettura**. Un errore di scrittura conserva la bozza nell'editor e non indica un salvataggio riuscito.
 
+## Catalogo e scorciatoie
+
+Apri **Comandi** o premi **Ctrl+K**. Cerca un'azione, usa le frecce e Invio; ogni comando indica il contesto e il motivo se non disponibile. Esc chiude il catalogo e restituisce il focus. Il pannello tray può aprire lo stesso catalogo nella finestra principale.
+
+| Azione | Scorciatoia predefinita |
+|---|---|
+| Home / Consumi / Clipboard, anche da un'altra app | Ctrl+Alt+L / Ctrl+Alt+U / Ctrl+Alt+C |
+| Home / Consumi / Clipboard nella finestra | Ctrl+1 / Ctrl+2 / Ctrl+3 |
+| Nuovo prompt / cerca prompt | Ctrl+N / Ctrl+F |
+| Modifica / copia / elimina nella lista | F2 / Ctrl+C / Delete |
+| Salva nell'editor; completa o riapri nella lista | Ctrl+Invio |
+| Aggiorna quote / statistiche | Ctrl+R / Ctrl+Shift+R |
+| Impostazioni scorciatoie | Ctrl+, |
+| Chiudi dialogo o riduci nella barra | Esc |
+
+Nei campi testo, le operazioni native di selezione, copia, incolla, cancellazione e annullamento sono preservate; Invio mantiene le nuove righe. Le bozze modificate richiedono Salva, Scarta o Resta anche quando si naviga o esce da tastiera.
+
+In **Scorciatoie** puoi modificare ciascun binding locale, modificare i tre globali, disabilitarli lasciando il campo vuoto e ripristinare i default. Le preferenze sono locali e persistono al riavvio. Un conflitto interno, un formato errato o una combinazione globale occupata sono segnalati distintamente; un aggiornamento non riuscito conserva i binding precedenti. Una combinazione occupata all'avvio non blocca le altre funzioni. **Chiudi impostazioni** torna alla sezione e al controllo di origine quando ancora disponibili.
+
+La cattura esterna è indicata come non disponibile finché la funzione nativa non è completata; non è attivata da questo catalogo.
+
 ## Sviluppo
 
 Richiede Node.js 22.12 o superiore e npm. Prima piattaforma verificata: Windows x64.
