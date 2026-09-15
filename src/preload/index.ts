@@ -2,6 +2,23 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { ConnectionState, LocalinoApi, Quotas, ResourceState, Usage } from '../shared/contracts'
 
 const api: LocalinoApi = {
+  getNotes: () => ipcRenderer.invoke('localino:notes'),
+  reloadNotes: () => ipcRenderer.invoke('localino:reload-notes'),
+  mutateNote: action => ipcRenderer.invoke('localino:mutate-note',action),
+  copyNote: id => ipcRenderer.invoke('localino:copy-note',id),
+  onNotes: listener => {
+    const callback = (_event: Electron.IpcRendererEvent, state: import('../shared/notes').NotesState) => listener(state)
+    ipcRenderer.on('localino:notes-changed',callback)
+    return () => { ipcRenderer.removeListener('localino:notes-changed',callback) }
+  },
+  setUnsaved: value => ipcRenderer.send('localino:unsaved',value),
+  onActionRequest: listener => {
+    const callback = (_event: Electron.IpcRendererEvent, request: import('../shared/actions').ActionRequest) => listener(request)
+    ipcRenderer.on('localino:action-request',callback)
+    return () => { ipcRenderer.removeListener('localino:action-request',callback) }
+  },
+  resolveAction: (id,proceed) => ipcRenderer.invoke('localino:resolve-action',{id,proceed}),
+  quit: () => ipcRenderer.invoke('localino:quit'),
   navigate: destination => ipcRenderer.invoke('localino:navigate', destination),
   getDestination: () => ipcRenderer.invoke('localino:destination'),
   onNavigate: listener => {

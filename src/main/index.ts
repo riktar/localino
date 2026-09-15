@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerMonitor, Tray } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, powerMonitor, Tray } from 'electron'
 import { join, resolve } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { Connection } from './codex/connection'
@@ -8,10 +8,13 @@ import { Resource } from './codex/resource'
 import { freshness, normalizeQuotas, quotaResets, quotaSummary } from '../shared/quotas'
 import { normalizeUsage } from '../shared/usage'
 import { destinationLabels, isDestination, type Destination } from '../shared/navigation'
+import { NotesStore } from './notes'
+import type { ActionRequest, WindowAction } from '../shared/actions'
 
 const customData = app.commandLine.getSwitchValue('user-data-dir')
 if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPath('userData', resolve(customData)) }
 const connection = new Connection(new FilePreferences(join(app.getPath('userData'), 'connection.json')))
+const notes = new NotesStore(join(app.getPath('userData'),'notes.json'))
 const quotas = new Resource(connection, { method: 'account/rateLimits/read', normalize: normalizeQuotas, interval: 60_000, staleAfter: 180_000, resets: quotaResets })
 connection.on('ratesChanged', () => void quotas.refresh())
 const usage = new Resource(connection, { method: 'account/usage/read', normalize: normalizeUsage, interval: 300_000, staleAfter: 300_000 })
@@ -23,6 +26,23 @@ let destination: Destination = 'home'
 let tray: Tray | null = null
 let quitting = false
 let quitReady = false
+let unsaved = false
+let actionSequence = 0
+let pendingAction: ActionRequest | null = null
+
+function requestGuard(action: WindowAction): void {
+  if (!dashboard || dashboard.isDestroyed()) return
+  if (!pendingAction) {
+    pendingAction = {id:++actionSequence,action}
+    dashboard.webContents.send('localino:action-request',pendingAction)
+  }
+  if (dashboard.isMinimized()) dashboard.restore()
+  dashboard.show(); dashboard.focus()
+}
+function hideWindow(window: BrowserWindow): void {
+  if (window === dashboard && unsaved) requestGuard({kind:'hide'})
+  else window.hide()
+}
 
 const ownedWindows = (): BrowserWindow[] => [panel,dashboard].filter((w): w is BrowserWindow => w !== null && !w.isDestroyed())
 function broadcast(channel: string, value: unknown): void { for (const window of ownedWindows()) window.webContents.send(channel,value) }
@@ -41,6 +61,7 @@ async function loadWindow(window: BrowserWindow, dashboardView = false): Promise
 }
 function updateUsageActivity(): void { usage.setActive(destination === 'consumi' && !!dashboard?.isVisible() && !dashboard.isMinimized()) }
 async function showMain(next: Destination = 'home'): Promise<void> {
+  if (unsaved && next !== destination) { requestGuard({kind:'navigate',destination:next}); return }
   destination = next
   if (dashboard && !dashboard.isDestroyed()) {
     if (dashboard.isMinimized()) dashboard.restore()
@@ -57,7 +78,7 @@ async function showMain(next: Destination = 'home'): Promise<void> {
   window.on('minimize', updateUsageActivity)
   window.on('restore', updateUsageActivity)
   window.on('hide', () => usage.setActive(false))
-  window.on('close', event => { if (!quitting) { event.preventDefault(); window.hide() } })
+  window.on('close', event => { if (!quitting) { event.preventDefault(); hideWindow(window) } })
   window.on('closed', () => { dashboard = null; usage.setActive(false) })
   window.once('ready-to-show', () => { window.show(); window.focus() })
   await loadWindow(window,true)
@@ -113,6 +134,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', (event) => {
     if (quitReady) return
     event.preventDefault()
+    if (unsaved && !quitting) { requestGuard({kind:'quit'}); return }
     if (quitting) return
     quitting = true
     quotas.dispose()
@@ -149,13 +171,44 @@ if (!app.requestSingleInstanceLock()) {
     })
     ipcMain.on('localino:hide', (event) => {
       if (isTrustedSender(event.sender, event.senderFrame, ownedWindows().map(w => w.webContents))) {
-        BrowserWindow.fromWebContents(event.sender)?.hide()
+        const owner = BrowserWindow.fromWebContents(event.sender)
+        if (owner) hideWindow(owner)
       }
     })
     const handle = (channel: string, action: (owner: BrowserWindow, value: unknown) => unknown) => ipcMain.handle(channel, (event, value: unknown) => {
       if (!isTrustedSender(event.sender, event.senderFrame, ownedWindows().map(w => w.webContents))) throw new Error('Access denied')
       return action(BrowserWindow.fromWebContents(event.sender)!, value)
     })
+    ipcMain.on('localino:unsaved',(event,value:unknown) => {
+      if (typeof value === 'boolean' && dashboard && isTrustedSender(event.sender,event.senderFrame,[dashboard.webContents])) unsaved = value
+    })
+    handle('localino:resolve-action',(owner,value) => {
+      if (owner !== dashboard || !value || typeof value !== 'object') throw Error('Access denied')
+      const response = value as {id:unknown;proceed:unknown}
+      if (!pendingAction || response.id !== pendingAction.id || typeof response.proceed !== 'boolean') throw Error('Richiesta scaduta')
+      const {action} = pendingAction; pendingAction = null
+      if (!response.proceed) return
+      unsaved = false
+      if (action.kind === 'navigate') return showMain(action.destination)
+      if (action.kind === 'hide') owner.hide()
+      else app.quit()
+    })
+    handle('localino:quit',() => app.quit())
+    handle('localino:notes',() => notes.get())
+    handle('localino:reload-notes',() => notes.reload())
+    handle('localino:mutate-note',(_owner,value) => notes.mutate(value))
+    handle('localino:copy-note',async (_owner,value) => {
+      if (typeof value !== 'string') return {ok:false,error:'Prompt non valido.'}
+      const state = await notes.get()
+      const note = state.notes.find(n => n.id === value)
+      if (state.error || !note) return {ok:false,error:state.error ?? 'Prompt non disponibile.'}
+      try {
+        await clipboard.writeText(note.text)
+        if (await clipboard.readText() !== note.text) return {ok:false,error:'Copia non riuscita: riprova.'}
+        return {ok:true}
+      } catch { return {ok:false,error:'Appunti non disponibili: riprova.'} }
+    })
+    notes.on('change',state => broadcast('localino:notes-changed',state))
     handle('localino:connection', () => connection.state)
     handle('localino:quotas', () => quotas.state)
     handle('localino:refresh-quotas', () => quotas.refresh())

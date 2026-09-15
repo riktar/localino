@@ -2,7 +2,7 @@
 
 Toolkit desktop Electron per lavorare con i coding agent. Frontend React e TypeScript con shadcn/ui e Tailwind CSS.
 
-Localino collega l'account ChatGPT già autenticato nella CLI Codex sul PC, mostra le quote dalla barra di sistema e offre una dashboard delle statistiche disponibili. All'avvio si apre Home: dalla navigazione puoi aprire Consumi, Clipboard e Scorciatoie. Libreria e shortcut sono in corso di completamento nello sprint corrente.
+Localino collega l'account ChatGPT già autenticato nella CLI Codex sul PC, mostra le quote dalla barra di sistema e offre una dashboard delle statistiche disponibili. All'avvio si apre Home: dalla navigazione puoi aprire Consumi, Clipboard e Scorciatoie. La Clipboard conserva prompt e appunti solo sul PC. Le shortcut configurabili sono in corso di completamento.
 
 ## Collegare Codex
 
@@ -30,7 +30,15 @@ Il grafico shadcn/ui e la tabella mostrano i token giornalieri con filtri 7/30 g
 
 Quote e crediti sono separati dai token: saldi e reset disponibili si mostrano solo se forniti, senza conversioni monetarie o acquisti. Crediti illimitati non significano quote illimitate.
 
-Le statistiche si aggiornano ogni 5 minuti solo con Consumi visibile (anche la riduzione a icona sospende questo polling) e con **Aggiorna statistiche**; all'apertura vengono rilette se assenti o vecchie di almeno 5 minuti. Errori e timestamp sono indipendenti dalle quote. Chiudere la dashboard mantiene il monitor nella barra. Rileggi account/Scollega svuotano entrambe le viste; nessuno storico statistico o prompt è salvato. La dashboard funziona da 800×600 con scroll verticale e tabella accessibile da tastiera.
+Le statistiche si aggiornano ogni 5 minuti solo con Consumi visibile (anche la riduzione a icona sospende questo polling) e con **Aggiorna statistiche**; all'apertura vengono rilette se assenti o vecchie di almeno 5 minuti. Errori e timestamp sono indipendenti dalle quote. Chiudere la dashboard mantiene il monitor nella barra. Rileggi account/Scollega svuotano entrambe le viste; nessuno storico statistico è salvato; la libreria prompt locale rimane indipendente. La dashboard funziona da 800×600 con scroll verticale e tabella accessibile da tastiera.
+
+## Clipboard locale
+
+Apri **Clipboard** dalla Home, navigazione o tray, anche senza Codex. **Nuovo prompt** apre un editor Unicode multilinea. Salva con il pulsante o Ctrl+Invio; Invio da solo crea una riga. Il testo viene conservato esattamente, fino a100000 caratteri, senza troncamento; testo vuoto o soli spazi non viene salvato.
+
+Cerca senza distinguere maiuscole/minuscole e filtra Aperti, Completati o Tutti. La lista mostra prima i prompt creati più recentemente. **Copia** copia solo il testo: incollalo nell'app destinataria; non completa il prompt. **Completa/Riapri** è reversibile. **Elimina** chiede conferma. Uscendo da una bozza modificata, anche tramite tray/chiusura finestra, puoi salvare, scartare o restare.
+
+I contenuti sono in `notes.json` nella cartella dati Localino, con formato versionato e scritture atomiche gestite da un solo store. Non sono inviati a Codex, rete, log o telemetria. Il file contiene testo in chiaro sul PC. File corrotto/formato non supportato: viene mostrato il percorso, il file resta intatto e Consumi rimane disponibile. Dopo aver recuperato il file usa **Riprova lettura**. Un errore di scrittura conserva la bozza nell'editor e non indica un salvataggio riuscito.
 
 ## Sviluppo
 

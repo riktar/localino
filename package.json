@@ -15,7 +15,7 @@
     "lint": "eslint .",
     "build": "npm run typecheck && electron-vite build",
     "build:win": "npm run build && electron-builder --win --x64 --publish never",
-    "test": "npm run test:unit && npm run build && node --test --test-concurrency=1 tests/desktop.test.mjs tests/development.test.mjs tests/quotas-ui.test.mjs tests/dashboard.test.mjs tests/navigation.test.mjs",
+    "test": "npm run test:unit && npm run build && node --test --test-concurrency=1 tests/desktop.test.mjs tests/development.test.mjs tests/quotas-ui.test.mjs tests/dashboard.test.mjs tests/navigation.test.mjs tests/clipboard.test.mjs",
     "test:packaged": "node --test tests/packaged.test.mjs",
     "check": "npm run lint && npm test",
     "test:unit": "node --import tsx --test --test-concurrency=1 tests/unit/*.test.ts",

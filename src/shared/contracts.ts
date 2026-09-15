@@ -33,6 +33,15 @@ export interface ResourceState<T> {
 }
 
 export interface LocalinoApi {
+  getNotes: () => Promise<import('./notes').NotesState>
+  reloadNotes: () => Promise<import('./notes').NotesState>
+  mutateNote: (action: import('./notes').NoteMutation) => Promise<import('./notes').NoteResult>
+  copyNote: (id: string) => Promise<{ok:boolean;error?:string}>
+  onNotes: (listener: (state: import('./notes').NotesState) => void) => () => void
+  setUnsaved: (value: boolean) => void
+  onActionRequest: (listener: (request: import('./actions').ActionRequest) => void) => () => void
+  resolveAction: (id: number, proceed: boolean) => Promise<void>
+  quit: () => Promise<void>
   navigate: (destination: import('./navigation').Destination) => Promise<void>
   getDestination: () => Promise<import('./navigation').Destination>
   onNavigate: (listener: (destination: import('./navigation').Destination) => void) => () => void
