@@ -13,6 +13,15 @@ test('shortcut format, context collisions and editing combinations',()=>{
  assert.equal(keyFromEvent({key:',',ctrlKey:true,altKey:false,shiftKey:false,metaKey:false}),'Ctrl+Comma')
  for(const [key,code,shiftKey,expected] of [[' ','Space',false,'Ctrl+Space'],['ArrowLeft','ArrowLeft',false,'Ctrl+Left'],['!','Digit1',true,'Ctrl+Shift+1']] as const){assert.equal(keyFromEvent({key,code,shiftKey,ctrlKey:true,altKey:false,metaKey:false}),expected)}
 })
+test('all supported key names match their browser events, including shifted punctuation',()=>{
+ const keys=[...Array.from({length:26},(_,i)=>[String.fromCharCode(65+i),String.fromCharCode(97+i),'Key'+String.fromCharCode(65+i)]),...Array.from({length:10},(_,i)=>[String(i),String(i),'Digit'+i]),...Array.from({length:24},(_,i)=>['F'+(i+1),'F'+(i+1),'F'+(i+1)]),...['Enter','Escape','Delete','Backspace','Tab','Home','End','PageUp','PageDown'].map(k=>[k,k,k]),['Space',' ','Space'],...['Left','Right','Up','Down'].map(k=>[k,'Arrow'+k,'Arrow'+k]),['Comma',',','Comma'],['Period','.','Period']]
+ for(const [name,key,code] of keys)for(const shiftKey of [false,true]){
+  const actualKey=shiftKey?(name==='Comma'?'<':name==='Period'?'>':/^[0-9]$/.test(name)?')!@#$%^&*('[Number(name)]:key):key
+  const expected='Ctrl+'+(shiftKey?'Shift+':'')+name
+  assert.equal(canonicalKey(expected),expected)
+  assert.equal(keyFromEvent({key:actualKey,code,shiftKey,ctrlKey:true,altKey:false,metaKey:false}),expected,expected)
+ }
+})
 test('global conflict rollback, persistence, disable, callbacks and disposal',async()=>{
  const file=join(await mkdtemp(join(tmpdir(),'localino-keys-')),'shortcuts.json')
  const callbacks=new Map<string,()=>void>();const invoked:string[]=[];const occupied=new Set(['Ctrl+Alt+O'])

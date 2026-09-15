@@ -72,10 +72,28 @@ test('1000 notes search within 500ms, Unicode edit, minimum layout and oversized
     const page=await mainPage(app)
     await page.getByRole('navigation').getByRole('button',{name:'Clipboard',exact:true}).click()
     await page.getByText('1000 prompt · Più recenti per primi',{exact:true}).waitFor()
+    // Measure the approved interval: final input event -> committed result ready
+    // for paint. Playwright's fill can spend time focusing an unfocused window.
+    await page.evaluate(()=>{
+      globalThis.searchTimes={}
+      const input=document.querySelector('input[type=search]')
+      const section=document.querySelector('[aria-label="Elenco prompt"]')
+      input.addEventListener('input',()=>{globalThis.searchTimes.input=performance.now()},{once:true,capture:true})
+      const observer=new MutationObserver(()=>{
+        if(section.textContent.startsWith('1 prompt')){
+          requestAnimationFrame(()=>{globalThis.searchTimes.frame=performance.now()})
+          observer.disconnect()
+        }
+      })
+      observer.observe(section,{subtree:true,childList:true,characterData:true})
+    })
     const started=performance.now()
     await page.getByRole('searchbox',{name:'Cerca prompt'}).fill('bersaglio')
     await page.getByText('1 prompt · Più recenti per primi',{exact:true}).waitFor()
-    const searchMs=performance.now()-started;assert.ok(searchMs<500,`search: ${searchMs}ms`)
+    await page.waitForFunction(()=>Number.isFinite(globalThis.searchTimes.frame))
+    const harnessMs=performance.now()-started
+    const searchMs=await page.evaluate(()=>globalThis.searchTimes.frame-globalThis.searchTimes.input)
+    assert.ok(Number.isFinite(searchMs)&&searchMs>=0&&searchMs<500,`search: ${searchMs}ms`)
     await page.getByRole('region',{name:'Elenco prompt'}).getByRole('button').click()
     await page.getByRole('button',{name:'Modifica',exact:true}).click()
     const editor=page.getByRole('textbox',{name:'Testo del prompt'})
@@ -89,7 +107,7 @@ test('1000 notes search within 500ms, Unicode edit, minimum layout and oversized
     await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('view=main')).setSize(800,600))
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
     await page.screenshot({path:'test-results/clipboard-minimum.png'})
-    await writeFile('test-results/clipboard-performance.json',JSON.stringify({notes:1000,searchMs,environment:'Windows x64 / Electron44'}))
+    await writeFile('test-results/clipboard-performance.json',JSON.stringify({notes:1000,searchMs,harnessMs,interval:'input event to frame after matching results',environment:'Windows x64 / Electron44'}))
   } finally {await app.close()}
 })
 

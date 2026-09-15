@@ -71,7 +71,7 @@ test('custom event keys work, native cursor editing is preserved and unavailable
  await page.keyboard.press('Control+k');const box=page.getByRole('combobox',{name:'Cerca comando'});await box.fill('Nuovo prompt')
  assert.equal(await page.getByRole('dialog').getByRole('option').getAttribute('aria-disabled'),'true');await box.press('Enter');assert.equal(await box.count(),1);await box.press('Escape')
  await writeFile(file,JSON.stringify({version:1,notes:[]}));await page.getByRole('button',{name:'Riprova lettura'}).click()
- for(const [key,press] of [['Ctrl+Space','Control+Space'],['Ctrl+Left','Control+ArrowLeft'],['Ctrl+Shift+1','Control+Shift+Digit1']]){
+ for(const [key,press] of [['Ctrl+Space','Control+Space'],['Ctrl+Left','Control+ArrowLeft'],['Ctrl+Shift+1','Control+Shift+Digit1'],['Ctrl+Shift+Comma','Control+Shift+Comma'],['Ctrl+Shift+Period','Control+Shift+Period']]){
   assert.equal((await page.evaluate(key=>window.localino.updateShortcuts({id:'new',scope:'local',key}),key)).ok,true)
   await page.getByRole('navigation').getByRole('button',{name:'Home',exact:true}).click();await page.keyboard.press(press)
   const editor=page.getByRole('textbox',{name:'Testo del prompt'});await editor.waitFor()

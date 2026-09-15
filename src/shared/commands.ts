@@ -69,6 +69,7 @@ export function bindingsError(bindings:Binding[]):string|null {
 export function keyFromEvent(e:Pick<KeyboardEvent,'key'|'ctrlKey'|'altKey'|'shiftKey'|'metaKey'> & {code?:string}):string|null {
   if(e.metaKey)return null
   const named:Record<string,string>={' ':'Space',ArrowLeft:'Left',ArrowRight:'Right',ArrowUp:'Up',ArrowDown:'Down'}
-  const key=e.code&&/^Digit[0-9]$/.test(e.code)?e.code.slice(5):named[e.key]??e.key
+  const punctuation:Record<string,string>={Comma:'Comma',Period:'Period'}
+  const key=e.code&&/^Digit[0-9]$/.test(e.code)?e.code.slice(5):(e.code&&punctuation[e.code])||named[e.key]||e.key
   return canonicalKey([...(e.ctrlKey?['Ctrl']:[]),...(e.altKey?['Alt']:[]),...(e.shiftKey?['Shift']:[]),key].join('+'))
 }
