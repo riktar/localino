@@ -7,6 +7,7 @@ import { isTrustedSender } from './security'
 import { Resource } from './codex/resource'
 import { freshness, normalizeQuotas, quotaResets, quotaSummary } from '../shared/quotas'
 import { normalizeUsage } from '../shared/usage'
+import { destinationLabels, isDestination, type Destination } from '../shared/navigation'
 
 const customData = app.commandLine.getSwitchValue('user-data-dir')
 if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPath('userData', resolve(customData)) }
@@ -18,6 +19,7 @@ usage.setActive(false)
 
 let panel: BrowserWindow | null = null
 let dashboard: BrowserWindow | null = null
+let destination: Destination = 'home'
 let tray: Tray | null = null
 let quitting = false
 let quitReady = false
@@ -33,21 +35,27 @@ function secureWindow(window: BrowserWindow): void {
 async function loadWindow(window: BrowserWindow, dashboardView = false): Promise<void> {
   if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
     const url = new URL(process.env.ELECTRON_RENDERER_URL)
-    if (dashboardView) url.searchParams.set('view','dashboard')
+    if (dashboardView) url.searchParams.set('view','main')
     await window.loadURL(url.toString())
-  } else await window.loadFile(join(__dirname,'../renderer/index.html'), dashboardView ? { query: { view:'dashboard' } } : {})
+  } else await window.loadFile(join(__dirname,'../renderer/index.html'), dashboardView ? { query: { view:'main' } } : {})
 }
-async function showDashboard(): Promise<void> {
+function updateUsageActivity(): void { usage.setActive(destination === 'consumi' && !!dashboard?.isVisible() && !dashboard.isMinimized()) }
+async function showMain(next: Destination = 'home'): Promise<void> {
+  destination = next
   if (dashboard && !dashboard.isDestroyed()) {
     if (dashboard.isMinimized()) dashboard.restore()
-    dashboard.show(); dashboard.focus(); return
+    dashboard.setTitle(`Localino ? ${destinationLabels[destination]}`)
+    dashboard.webContents.send('localino:navigated', destination)
+    dashboard.show(); dashboard.focus(); updateUsageActivity(); return
   }
   dashboard = new BrowserWindow({ width:1120,height:800,minWidth:800,minHeight:600,title:'Localino — Statistiche Codex',backgroundColor:'#faf9f6',show:false,autoHideMenuBar:true,
     webPreferences:{preload:join(__dirname,'../preload/index.js'),contextIsolation:true,nodeIntegration:false,sandbox:true} })
   const window = dashboard
   secureWindow(window)
   window.on('page-title-updated', event => event.preventDefault())
-  window.on('show', () => usage.setActive(true))
+  window.on('show', updateUsageActivity)
+  window.on('minimize', updateUsageActivity)
+  window.on('restore', updateUsageActivity)
   window.on('hide', () => usage.setActive(false))
   window.on('close', event => { if (!quitting) { event.preventDefault(); window.hide() } })
   window.on('closed', () => { dashboard = null; usage.setActive(false) })
@@ -74,8 +82,10 @@ function updateTray(): void {
     { label: status, enabled: false },
     ...(connected ? [{ label: summary, enabled: false }, { label: timestamp, enabled: false }] : []),
     { type: 'separator' },
-    { label: 'Apri Localino', click: showPanel },
-    { label: 'Apri dashboard', click: () => { void showDashboard() } },
+    { label: 'Apri Home', click: () => { void showMain('home') } },
+    { label: 'Apri Consumi', click: () => { void showMain('consumi') } },
+    { label: 'Apri Clipboard', click: () => { void showMain('clipboard') } },
+    { label: 'Scorciatoie', click: () => { void showMain('shortcuts') } },
     { label: 'Aggiorna quote', enabled: connected, click: () => void quotas.refresh() },
     { type: 'separator' },
     { label: 'Esci', click: () => app.quit() },
@@ -98,8 +108,8 @@ function createTrayIcon(): Electron.NativeImage {
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', showPanel)
-  app.on('activate', showPanel)
+  app.on('second-instance', () => { void showMain('home') })
+  app.on('activate', () => { void showMain('home') })
   app.on('before-quit', (event) => {
     if (quitReady) return
     event.preventDefault()
@@ -142,14 +152,19 @@ if (!app.requestSingleInstanceLock()) {
         BrowserWindow.fromWebContents(event.sender)?.hide()
       }
     })
-    const handle = (channel: string, action: (owner: BrowserWindow) => unknown) => ipcMain.handle(channel, event => {
+    const handle = (channel: string, action: (owner: BrowserWindow, value: unknown) => unknown) => ipcMain.handle(channel, (event, value: unknown) => {
       if (!isTrustedSender(event.sender, event.senderFrame, ownedWindows().map(w => w.webContents))) throw new Error('Access denied')
-      return action(BrowserWindow.fromWebContents(event.sender)!)
+      return action(BrowserWindow.fromWebContents(event.sender)!, value)
     })
     handle('localino:connection', () => connection.state)
     handle('localino:quotas', () => quotas.state)
     handle('localino:refresh-quotas', () => quotas.refresh())
-    handle('localino:open-dashboard', showDashboard)
+    handle('localino:open-dashboard', () => showMain('consumi'))
+    handle('localino:destination', () => destination)
+    handle('localino:navigate', (_owner, value) => {
+      if (!isDestination(value)) throw new Error('Destinazione non valida')
+      return showMain(value)
+    })
     handle('localino:usage', () => usage.state)
     handle('localino:refresh-usage', () => usage.refresh())
     handle('localino:connect', () => connection.connect())
@@ -173,7 +188,7 @@ if (!app.requestSingleInstanceLock()) {
     tray = new Tray(createTrayIcon())
     updateTray()
     tray.on('click', () => panel?.isVisible() ? panel.hide() : showPanel())
-    panel.once('ready-to-show', showPanel)
+    await showMain('home')
     await loadWindow(panel)
     void connection.autoConnect()
   }).catch((error: unknown) => {

@@ -2,11 +2,11 @@
 
 Toolkit desktop Electron per lavorare con i coding agent. Frontend React e TypeScript con shadcn/ui e Tailwind CSS.
 
-Localino collega l'account ChatGPT già autenticato nella CLI Codex sul PC, mostra le quote dalla barra di sistema e offre una dashboard delle statistiche disponibili. La cattura dei prompt rimane un incremento futuro.
+Localino collega l'account ChatGPT già autenticato nella CLI Codex sul PC, mostra le quote dalla barra di sistema e offre una dashboard delle statistiche disponibili. All?avvio si apre Home: dalla navigazione puoi aprire Consumi, Clipboard e Scorciatoie. Libreria e shortcut sono in corso di completamento nello sprint corrente.
 
 ## Collegare Codex
 
-Apri Localino e premi **Collega Codex**. Serve la CLI Codex nativa (verificata con 0.151.0) con accesso ChatGPT già effettuato. Non inserire un'API key: l'abbonamento usa l'autenticazione gestita da Codex. Per accesso/installazione consulta la [documentazione Codex CLI](https://learn.chatgpt.com/docs/codex-cli).
+Apri Localino, entra in **Consumi** e premi **Collega Codex**. Serve la CLI Codex nativa (verificata con 0.151.0) con accesso ChatGPT già effettuato. Non inserire un'API key: l'abbonamento usa l'autenticazione gestita da Codex. Per accesso/installazione consulta la [documentazione Codex CLI](https://learn.chatgpt.com/docs/codex-cli).
 
 Localino cerca `codex.exe` nel PATH e nell'installazione desktop OpenAI del PC. Se non lo trova, usa **Seleziona eseguibile Codex** per scegliere il binario nativo; i wrapper `.cmd` non vengono eseguiti tramite shell. CLI assente/incompatibile, account non autenticato, autenticazione API key e timeout hanno stati separati con possibilità di riprovare.
 
@@ -24,13 +24,13 @@ Il click sull'icona apre/chiude il pannello; il menu della barra mostra stato, u
 
 ## Dashboard
 
-**Apri dashboard**, dal pannello o dal menu della barra, apre un'unica finestra ridimensionabile. Il riepilogo cumulativo mostra token complessivi, picco giornaliero, durata del turno più lungo e serie di giorni attivi riportati da Codex. Questi dati riguardano l'account e non cambiano con il filtro.
+**Apri dashboard** dal pannello, **Apri Consumi** dal menu della barra e la navigazione Home riutilizzano un?unica finestra principale ridimensionabile. La seconda istanza riporta Home in primo piano; il click sull?icona conserva il pannello quote compatto. Il riepilogo cumulativo mostra token complessivi, picco giornaliero, durata del turno più lungo e serie di giorni attivi riportati da Codex. Questi dati riguardano l'account e non cambiano con il filtro.
 
 Il grafico shadcn/ui e la tabella mostrano i token giornalieri con filtri 7/30 giorni (incluso oggi nel calendario del PC) o tutto il periodo ricevuto. Le date giornaliere del servizio non subiscono conversioni di fuso. Copertura, totale, media sui giorni disponibili e picco del periodo usano soltanto dati ricevuti; i giorni mancanti restano gap, zero è un dato valido e un totale incompleto è etichettato parziale. Duplicati identici contano una volta; date/valori invalidi e date in conflitto sono esclusi e segnalati. La tabella raggruppa gli intervalli senza dati senza inventare valori.
 
 Quote e crediti sono separati dai token: saldi e reset disponibili si mostrano solo se forniti, senza conversioni monetarie o acquisti. Crediti illimitati non significano quote illimitate.
 
-Le statistiche si aggiornano ogni 5 minuti solo con dashboard aperta e con **Aggiorna statistiche**; all'apertura vengono rilette se assenti o vecchie di almeno 5 minuti. Errori e timestamp sono indipendenti dalle quote. Chiudere la dashboard mantiene il monitor nella barra. Rileggi account/Scollega svuotano entrambe le viste; nessuno storico statistico o prompt è salvato. La dashboard funziona da 800×600 con scroll verticale e tabella accessibile da tastiera.
+Le statistiche si aggiornano ogni 5 minuti solo con Consumi visibile (anche la riduzione a icona sospende questo polling) e con **Aggiorna statistiche**; all'apertura vengono rilette se assenti o vecchie di almeno 5 minuti. Errori e timestamp sono indipendenti dalle quote. Chiudere la dashboard mantiene il monitor nella barra. Rileggi account/Scollega svuotano entrambe le viste; nessuno storico statistico o prompt è salvato. La dashboard funziona da 800×600 con scroll verticale e tabella accessibile da tastiera.
 
 ## Sviluppo
 

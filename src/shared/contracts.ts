@@ -33,6 +33,9 @@ export interface ResourceState<T> {
 }
 
 export interface LocalinoApi {
+  navigate: (destination: import('./navigation').Destination) => Promise<void>
+  getDestination: () => Promise<import('./navigation').Destination>
+  onNavigate: (listener: (destination: import('./navigation').Destination) => void) => () => void
   hide: () => void
   getConnection: () => Promise<ConnectionState>
   connect: () => Promise<void>

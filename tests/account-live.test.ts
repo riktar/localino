@@ -1,3 +1,4 @@
+import { compactPage } from './helpers.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readFile } from 'node:fs/promises'
@@ -19,14 +20,14 @@ test('Real Codex account: connect, reread, restart, disconnect without logout', 
     const launch = () => electron.launch({ args: ['.', `--user-data-dir=${profile}`], env })
     let app = await launch()
     try {
-      let page = await app.firstWindow()
+      let page = await compactPage(app)
       await page.getByRole('button',{name:'Collega Codex',exact:true}).click()
       await page.getByText('Collegato',{exact:true}).waitFor()
       assert.ok(await page.evaluate(email => window.localino.getConnection().then(s=>s.account?.email===email),before.account.email))
       await page.getByRole('button',{name:'Rileggi account',exact:true}).click()
       await page.getByText('Collegato',{exact:true}).waitFor()
       await app.close()
-      app = await launch(); page = await app.firstWindow()
+      app = await launch(); page = await compactPage(app)
       await page.getByText('Collegato',{exact:true}).waitFor()
       await page.getByRole('button',{name:'Scollega da Localino',exact:true}).click()
       await page.getByRole('button',{name:'Collega Codex',exact:true}).waitFor()

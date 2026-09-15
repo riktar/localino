@@ -2,6 +2,13 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { ConnectionState, LocalinoApi, Quotas, ResourceState, Usage } from '../shared/contracts'
 
 const api: LocalinoApi = {
+  navigate: destination => ipcRenderer.invoke('localino:navigate', destination),
+  getDestination: () => ipcRenderer.invoke('localino:destination'),
+  onNavigate: listener => {
+    const callback = (_event: Electron.IpcRendererEvent, destination: import('../shared/navigation').Destination) => listener(destination)
+    ipcRenderer.on('localino:navigated', callback)
+    return () => { ipcRenderer.removeListener('localino:navigated', callback) }
+  },
   hide: (): void => ipcRenderer.send('localino:hide'),
   getConnection: () => ipcRenderer.invoke('localino:connection'),
   connect: () => ipcRenderer.invoke('localino:connect'),

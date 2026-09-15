@@ -1,3 +1,4 @@
+import { compactPage } from './helpers.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { _electron as electron } from 'playwright'
@@ -10,14 +11,14 @@ test('Dashboard: one secure window, sparse data, filters, keyboard, credits and 
   const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;delete env.ELECTRON_RENDERER_URL
   const app=await electron.launch({args:['.',`--user-data-dir=${profile}`],env})
   try {
-    const panel=await app.firstWindow();await panel.getByRole('button',{name:'Apri dashboard',exact:true}).click()
+    const panel=await compactPage(app);await panel.getByRole('button',{name:'Apri dashboard',exact:true}).click()
     const page=app.windows().find(w=>w!==panel)??await app.waitForEvent('window')
     const errors=[];page.on('pageerror',error=>errors.push(error.message))
     await page.getByRole('heading',{name:'Statistiche Codex',exact:true}).waitFor()
     await page.clock.setFixedTime(new Date('2026-01-07T12:00:00Z'))
     await panel.evaluate(()=>window.localino.openDashboard())
     assert.equal(app.windows().length,2)
-    await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows().find(w=>w.getTitle().includes('Statistiche')) ;w.setSize(800,600)})
+    await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows().find(w=>w.getTitle().includes('Consumi')) ;w.setSize(800,600)})
     const usage={data:{summary:{lifetimeTokens:1000,peakDailyTokens:500,longestRunningTurnSec:90061,currentStreakDays:0,longestStreakDays:null},days:[{date:'2026-01-01',tokens:10},{date:'2026-01-03',tokens:0},{date:'2026-01-07',tokens:20}],issues:0,range:{start:'2026-01-01',end:'2026-01-07'}},lastSuccessAt:Date.now(),refreshing:false,stale:false,error:null}
     const quotas={data:{buckets:[{id:'codex',name:'Codex',windows:[{kind:'primary',usedPercent:12,durationMins:10080,resetsAt:null}],credits:{hasCredits:true,unlimited:true,balance:'12.34'}}],availableResets:0},lastSuccessAt:Date.now(),refreshing:false,stale:false,error:null}
     await app.evaluate(({BrowserWindow},{usage,quotas})=>{for(const w of BrowserWindow.getAllWindows()){
@@ -37,7 +38,7 @@ test('Dashboard: one secure window, sparse data, filters, keyboard, credits and 
     assert.match(await tooltip.innerText(),/10 token/)
     // End mouse interaction before testing keyboard navigation: its active tooltip takes precedence.
     await page.mouse.move(0,0)
-    await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle().includes('Statistiche')).focus())
+    await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle().includes('Consumi')).focus())
     await page.locator('.recharts-surface').first().focus()
     await page.keyboard.press('ArrowRight');await page.keyboard.press('ArrowRight')
     await tooltip.getByText('2026-01-03',{exact:true}).waitFor({state:'visible'})
@@ -57,7 +58,7 @@ test('Dashboard: one secure window, sparse data, filters, keyboard, credits and 
     await page.getByRole('alert').filter({hasText:'non sono supportate'}).waitFor()
     assert.equal(await page.getByRole('progressbar').count(),1)
     await page.evaluate(()=>window.localino.hide())
-    assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle().includes('Statistiche')).isVisible()),false)
+    assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle().includes('Consumi')).isVisible()),false)
     await panel.evaluate(()=>window.localino.openDashboard());assert.equal(app.windows().length,2)
     await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().forEach(w=>w.webContents.send('localino:connection-changed',{status:'disconnected',account:null,error:null})))
     await page.getByText("Collega Codex per leggere le statistiche dell'account.",{exact:true}).waitFor()

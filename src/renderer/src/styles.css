@@ -40,4 +40,5 @@
   * { @apply border-border outline-ring/50; }
   body { @apply m-0 bg-background text-foreground antialiased; }
   button { -webkit-app-region: no-drag; }
+  :is(button, a, input, textarea, select, summary):focus-visible { outline: 2px solid var(--color-ring); outline-offset: 3px; }
 }

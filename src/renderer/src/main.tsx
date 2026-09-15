@@ -6,7 +6,7 @@ import { AccountCard } from '@/components/account-card'
 import { useConnection } from '@/hooks/use-connection'
 import { useQuotas } from '@/hooks/use-quotas'
 import { QuotaCard } from '@/components/quota-card'
-import { Dashboard } from '@/components/dashboard'
+import { Shell } from '@/components/shell'
 import './styles.css'
 
 function App(): React.JSX.Element {
@@ -41,5 +41,5 @@ function App(): React.JSX.Element {
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>{new URLSearchParams(location.search).get('view') === 'dashboard' ? <Dashboard /> : <App />}</React.StrictMode>,
+  <React.StrictMode>{new URLSearchParams(location.search).get('view') === 'main' ? <Shell /> : <App />}</React.StrictMode>,
 )

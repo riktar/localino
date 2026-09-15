@@ -1,3 +1,4 @@
+import { compactPage } from './helpers.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
@@ -14,7 +15,7 @@ test('Real quotas agree with contemporary Codex reading, render promptly and pol
   const env={...process.env}; delete env.ELECTRON_RUN_AS_NODE; delete env.ELECTRON_RENDERER_URL
   const app=await electron.launch({args:['.',`--user-data-dir=${profile}`],env})
   try {
-    const page=await app.firstWindow()
+    const page=await compactPage(app)
     await page.getByRole('button',{name:'Collega Codex',exact:true}).click()
     await page.getByRole('progressbar').first().waitFor()
     await app.evaluate(({Tray})=>{
@@ -55,7 +56,7 @@ test('Real quotas agree with contemporary Codex reading, render promptly and pol
       hidden=await page.evaluate(()=>window.localino.getQuotas())
       if(hidden.lastSuccessAt!==null&&!observedReadTimes.includes(hidden.lastSuccessAt)) observedReadTimes.push(hidden.lastSuccessAt)
     }
-    assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].isVisible()),false)
+    assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>!w.webContents.getURL().includes('view=main')).isVisible()),false)
     const gap=hidden.lastSuccessAt!-snapshot.lastSuccessAt!
     assert.ok(gap>=59000&&gap<70000,`hidden polling gap: ${gap} ms`)
     await writeFile('test-results/rates-live.json',JSON.stringify({observedAt:new Date().toISOString(),receivedAt:snapshot.lastSuccessAt,renderedAt,responseToRenderMs:renderedAt-snapshot.lastSuccessAt!,responseToTrayCallMs:trayAt!-snapshot.lastSuccessAt!,trayMeasurement:'actual native setToolTip call; OS paint not timed',hiddenPollGapMs:gap,observedReadTimes,comparisons},null,2))
