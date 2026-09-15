@@ -11,6 +11,7 @@ test('shortcut format, context collisions and editing combinations',()=>{
  assert.equal(canonicalKey(''),'');assert.equal(bindingsError(defaultBindings()),null)
  const bindings=defaultBindings();bindings.find(b=>b.id==='search')!.key='Ctrl+1';assert.match(bindingsError(bindings)!,/Collisione/)
  assert.equal(keyFromEvent({key:',',ctrlKey:true,altKey:false,shiftKey:false,metaKey:false}),'Ctrl+Comma')
+ for(const [key,code,shiftKey,expected] of [[' ','Space',false,'Ctrl+Space'],['ArrowLeft','ArrowLeft',false,'Ctrl+Left'],['!','Digit1',true,'Ctrl+Shift+1']] as const){assert.equal(keyFromEvent({key,code,shiftKey,ctrlKey:true,altKey:false,metaKey:false}),expected)}
 })
 test('global conflict rollback, persistence, disable, callbacks and disposal',async()=>{
  const file=join(await mkdtemp(join(tmpdir(),'localino-keys-')),'shortcuts.json')

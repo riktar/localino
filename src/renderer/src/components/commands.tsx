@@ -27,12 +27,13 @@ export function CommandProvider({children}:{children:ReactNode}):React.JSX.Eleme
   useEffect(()=>{const off=window.localino.onShortcuts(setState);void window.localino.getShortcuts().then(setState);return off},[])
   useEffect(()=>{
     const keydown=(event:KeyboardEvent)=>{
-      if(event.defaultPrevented||event.repeat||event.isComposing||event.keyCode===229||document.querySelector('dialog[open]'))return
+      if(event.defaultPrevented||event.repeat||event.isComposing||event.keyCode===229||event.getModifierState('AltGraph')||document.querySelector('dialog[open]'))return
       const target=event.target as HTMLElement
       if(target.closest('[data-binding]'))return
       const key=keyFromEvent(event);if(!key)return
       const editing=!!target.closest('input,textarea,select,[contenteditable=true]')
       if(editing && (/^Ctrl\+(A|C|V|X|Z|Y)$/.test(key)||['Delete','Backspace','Enter','Tab'].includes(key)))return
+      if(editing && (/^(Arrow(Left|Right|Up|Down)|Home|End|PageUp|PageDown|Backspace|Delete)$/.test(event.key)||key==='Ctrl+Space'||(!event.ctrlKey&&!event.altKey&&event.key.length===1)))return
       const binding=state.bindings.find(b=>b.scope==='local'&&b.active&&b.key===key&&actions[b.id]&&!actions[b.id]?.disabled&&!(editing&&commands.find(c=>c.id===b.id)?.area==='Lista'))
       if(binding){event.preventDefault();run(binding.id)}
     }

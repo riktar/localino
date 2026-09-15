@@ -6,6 +6,7 @@ import { Dashboard } from './dashboard'
 import { Clipboard, type LeaveGuard } from './clipboard'
 import { destinations, destinationLabels, type Destination } from '../../../shared/navigation'
 import { CommandProvider,ShortcutSettings,useCommandRegistry,useCommands } from './commands'
+import type { NotesState } from '../../../shared/notes'
 
 export function Shell(): React.JSX.Element {
   return <CommandProvider><ShellContent /></CommandProvider>
@@ -17,6 +18,9 @@ function ShellContent(): React.JSX.Element {
   const guard = useRef<LeaveGuard|null>(null)
   const settingsOrigin=useRef<{destination:Destination;element:HTMLElement|null}>({destination:'home',element:null})
   const returnFocus=useRef<HTMLElement|null>(null)
+  const [notesState,setNotesState]=useState<NotesState|null>(null)
+  const [clipboardBusy,setClipboardBusy]=useState(false)
+  useEffect(()=>{const off=window.localino.onNotes(setNotesState);void window.localino.getNotes().then(setNotesState);return off},[])
   useEffect(() => {
     const off = window.localino.onNavigate(next=>setDestination(previous=>{
       if(next==='shortcuts'&&previous!=='shortcuts')settingsOrigin.current={destination:previous,element:document.activeElement as HTMLElement}
@@ -45,7 +49,7 @@ function ShellContent(): React.JSX.Element {
   // A command may request the Clipboard editor from any destination. The mounted
   // Clipboard consumes the request only after the existing navigation guard permits it.
   const [newRequest,setNewRequest]=useState(0)
-  useCommands({new:{run:()=>{setNewRequest(n=>n+1);navigate('clipboard')}}})
+  useCommands({new:{run:()=>{setNewRequest(n=>n+1);navigate('clipboard')},disabled:!notesState||notesState.error?'Libreria non disponibile.':clipboardBusy?'Operazione in corso.':undefined}})
   useCommands({closeSettings:{run:()=>{returnFocus.current=settingsOrigin.current.element;navigate(settingsOrigin.current.destination)},disabled:destination!=='shortcuts'?'Apri prima le impostazioni.':undefined}})
   return <div className="min-h-screen">
     <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b bg-background/95 px-6 py-3">
@@ -57,7 +61,7 @@ function ShellContent(): React.JSX.Element {
     </header>
     {registry.state.bindings.some(b=>b.error)&&<p role="alert" className="px-6 py-2 text-sm text-destructive">Una o più scorciatoie globali non sono disponibili. Apri Scorciatoie per cambiare la combinazione.</p>}
     <div ref={content} tabIndex={-1} className="outline-none" data-destination={destination}>
-      {destination === 'consumi' ? <Dashboard /> : destination === 'clipboard' ? <Clipboard guard={guard} newRequest={newRequest} consumeNew={()=>setNewRequest(0)} /> : destination==='shortcuts' ? <ShortcutSettings/> : <main className="mx-auto max-w-5xl space-y-8 p-6 lg:p-10">
+      {destination === 'consumi' ? <Dashboard /> : destination === 'clipboard' ? <Clipboard guard={guard} newRequest={newRequest} consumeNew={()=>setNewRequest(0)} onBusy={setClipboardBusy} /> : destination==='shortcuts' ? <ShortcutSettings/> : <main className="mx-auto max-w-5xl space-y-8 p-6 lg:p-10">
         {destination === 'home' ? <>
           <div className="space-y-3 pt-5"><p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Il tuo spazio di lavoro</p><h1 className="text-4xl font-semibold tracking-tight">Benvenuto in Localino</h1><p className="max-w-xl text-muted-foreground">Tieni d'occhio i consumi dei tuoi agenti e raccogli le idee per il prossimo prompt.</p></div>
           <div className="grid grid-cols-2 gap-5">

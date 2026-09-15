@@ -58,3 +58,29 @@ test('real OS registrations: occupied startup, rollback and release on quit',asy
  assert.equal(await holder.evaluate(({globalShortcut})=>globalShortcut.register('Ctrl+Alt+C',()=>{})),true)
  }finally{if(app)await app.close();await holder.close()}
 })
+test('custom event keys work, native cursor editing is preserved and unavailable new cannot run',async()=>{
+ const profile=await mkdtemp(resolve('test-results/profiles/shortcuts-rework-'))
+ const file=join(profile,'notes.json');await writeFile(file,'{broken')
+ const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;delete env.ELECTRON_RENDERER_URL
+ const app=await electron.launch({args:['.',`--user-data-dir=${profile}`],env})
+ try{
+ const page=await mainPage(app);page.setDefaultTimeout(6000)
+ await page.keyboard.press('Control+n');assert.equal(await page.getByRole('textbox',{name:'Testo del prompt'}).count(),0)
+ await page.keyboard.press('Control+3');await page.getByRole('heading',{name:'Clipboard',exact:true}).waitFor()
+ assert.equal(await page.getByRole('button',{name:'Nuovo prompt',exact:true}).isDisabled(),true)
+ await page.keyboard.press('Control+k');const box=page.getByRole('combobox',{name:'Cerca comando'});await box.fill('Nuovo prompt')
+ assert.equal(await page.getByRole('dialog').getByRole('option').getAttribute('aria-disabled'),'true');await box.press('Enter');assert.equal(await box.count(),1);await box.press('Escape')
+ await writeFile(file,JSON.stringify({version:1,notes:[]}));await page.getByRole('button',{name:'Riprova lettura'}).click()
+ for(const [key,press] of [['Ctrl+Space','Control+Space'],['Ctrl+Left','Control+ArrowLeft'],['Ctrl+Shift+1','Control+Shift+Digit1']]){
+  assert.equal((await page.evaluate(key=>window.localino.updateShortcuts({id:'new',scope:'local',key}),key)).ok,true)
+  await page.getByRole('navigation').getByRole('button',{name:'Home',exact:true}).click();await page.keyboard.press(press)
+  const editor=page.getByRole('textbox',{name:'Testo del prompt'});await editor.waitFor()
+  if(key==='Ctrl+Left'){
+   await editor.fill('uno due');await editor.press('Control+ArrowLeft');assert.equal(await editor.inputValue(),'uno due');assert.equal(await page.getByRole('dialog').count(),0)
+   await editor.press('Control+Enter');await page.getByText('Prompt salvato.',{exact:true}).waitFor()
+  }else await page.getByRole('button',{name:'Chiudi editor'}).click()
+ }
+ await page.keyboard.press('Control+f');const search=page.getByRole('searchbox');await search.focus();await page.keyboard.press('Control+Comma')
+ await page.getByRole('button',{name:'Chiudi impostazioni',exact:true}).click();await search.waitFor();await page.waitForFunction(()=>document.activeElement?.getAttribute('type')==='search')
+ }finally{await app.evaluate(({app})=>app.exit(0)).catch(()=>{});await app.close().catch(()=>{})}
+})

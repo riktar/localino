@@ -66,7 +66,9 @@ export function bindingsError(bindings:Binding[]):string|null {
   }
   return null
 }
-export function keyFromEvent(e:Pick<KeyboardEvent,'key'|'ctrlKey'|'altKey'|'shiftKey'|'metaKey'>):string|null {
+export function keyFromEvent(e:Pick<KeyboardEvent,'key'|'ctrlKey'|'altKey'|'shiftKey'|'metaKey'> & {code?:string}):string|null {
   if(e.metaKey)return null
-  return canonicalKey([...(e.ctrlKey?['Ctrl']:[]),...(e.altKey?['Alt']:[]),...(e.shiftKey?['Shift']:[]),e.key].join('+'))
+  const named:Record<string,string>={' ':'Space',ArrowLeft:'Left',ArrowRight:'Right',ArrowUp:'Up',ArrowDown:'Down'}
+  const key=e.code&&/^Digit[0-9]$/.test(e.code)?e.code.slice(5):named[e.key]??e.key
+  return canonicalKey([...(e.ctrlKey?['Ctrl']:[]),...(e.altKey?['Alt']:[]),...(e.shiftKey?['Shift']:[]),key].join('+'))
 }

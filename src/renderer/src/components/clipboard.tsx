@@ -5,7 +5,7 @@ import { NOTE_LIMIT, textError, type Note, type NotesState } from '../../../shar
 import { useCommands } from './commands'
 
 export type LeaveGuard = () => Promise<boolean>
-export function Clipboard({guard,newRequest=0,consumeNew=()=>{}}:{guard:RefObject<LeaveGuard|null>;newRequest?:number;consumeNew?:()=>void}): React.JSX.Element {
+export function Clipboard({guard,newRequest=0,consumeNew=()=>{},onBusy}:{guard:RefObject<LeaveGuard|null>;newRequest?:number;consumeNew?:()=>void;onBusy?:(busy:boolean)=>void}): React.JSX.Element {
   const [state,setState] = useState<NotesState|null>(null)
   const [filter,setFilter] = useState('open')
   const [query,setQuery] = useState('')
@@ -18,6 +18,7 @@ export function Clipboard({guard,newRequest=0,consumeNew=()=>{}}:{guard:RefObjec
   const textArea = useRef<HTMLTextAreaElement>(null)
   const searchInput = useRef<HTMLInputElement>(null)
   const saving = useRef(false)
+  useEffect(()=>{onBusy?.(busy);return ()=>onBusy?.(false)},[busy,onBusy])
   const dirty = editor !== null && draft !== editor.original
   const {ask,dialog} = useConfirm()
   useEffect(() => {
@@ -50,6 +51,7 @@ export function Clipboard({guard,newRequest=0,consumeNew=()=>{}}:{guard:RefObjec
   },[ask,busy,dirty,save])
   useEffect(() => {guard.current=canLeave;return () => {guard.current=null}},[guard,canLeave])
   const begin = async (target?:Note) => {
+    if(!state||state.error||busy||saving.current)return
     if (!(await canLeave())) return
     setError('');setMessage('');setDraft(target?.text ?? '');setEditor({id:target?.id??null,original:target?.text??'',updatedAt:target?.updatedAt??0})
     requestAnimationFrame(()=>textArea.current?.focus())
