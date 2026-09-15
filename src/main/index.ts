@@ -44,11 +44,11 @@ async function showMain(next: Destination = 'home'): Promise<void> {
   destination = next
   if (dashboard && !dashboard.isDestroyed()) {
     if (dashboard.isMinimized()) dashboard.restore()
-    dashboard.setTitle(`Localino ? ${destinationLabels[destination]}`)
+    dashboard.setTitle(`Localino — ${destinationLabels[destination]}`)
     dashboard.webContents.send('localino:navigated', destination)
     dashboard.show(); dashboard.focus(); updateUsageActivity(); return
   }
-  dashboard = new BrowserWindow({ width:1120,height:800,minWidth:800,minHeight:600,title:'Localino — Statistiche Codex',backgroundColor:'#faf9f6',show:false,autoHideMenuBar:true,
+  dashboard = new BrowserWindow({ width:1120,height:800,minWidth:800,minHeight:600,title:`Localino — ${destinationLabels[destination]}`,backgroundColor:'#faf9f6',show:false,autoHideMenuBar:true,
     webPreferences:{preload:join(__dirname,'../preload/index.js'),contextIsolation:true,nodeIntegration:false,sandbox:true} })
   const window = dashboard
   secureWindow(window)

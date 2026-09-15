@@ -67,9 +67,14 @@ test('Real dashboard and packaged lifecycle: source comparison, shared views, hi
     await page.getByRole('navigation').getByRole('button',{name:'Clipboard',exact:true}).click()
     assert.equal((await page.evaluate(()=>window.localino.getUsage())).lastSuccessAt,beforeNavigation.lastSuccessAt)
     await page.getByRole('navigation').getByRole('button',{name:'Consumi',exact:true}).click()
-    // Await the refresh already started by navigation before testing hidden polling.
-    await page.evaluate(()=>window.localino.refreshUsage())
-    assert.ok((await page.evaluate(()=>window.localino.getUsage())).lastSuccessAt!>beforeNavigation.lastSuccessAt!)
+    // Observe the automatic refresh, without starting a request from the test.
+    const refreshDeadline = Date.now() + 17000
+    let returned = await page.evaluate(()=>window.localino.getUsage())
+    while ((returned.lastSuccessAt === null || returned.lastSuccessAt <= beforeNavigation.lastSuccessAt! || returned.refreshing) && Date.now() < refreshDeadline) {
+      await new Promise(resolve => setTimeout(resolve,100))
+      returned = await page.evaluate(()=>window.localino.getUsage())
+    }
+    assert.ok(returned.lastSuccessAt! > beforeNavigation.lastSuccessAt! && !returned.refreshing)
     const old=await page.evaluate(()=>window.localino.getUsage())
     await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.getTitle().includes('Consumi'))!.close())
     await app.evaluate(()=>{const original=Date.now;Date.now=()=>original()+301000})
