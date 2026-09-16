@@ -72,7 +72,7 @@ const api: LocalinoApi = {
   getNotes: () => ipcRenderer.invoke('localino:notes'),
   reloadNotes: () => ipcRenderer.invoke('localino:reload-notes'),
   mutateNote: action => ipcRenderer.invoke('localino:mutate-note',action),
-  copyNote: id => ipcRenderer.invoke('localino:copy-note',id),
+  copyNotes: ids => ipcRenderer.invoke('localino:copy-notes',ids),
   onNotes: listener => {
     const callback = (_event: Electron.IpcRendererEvent, state: import('../shared/notes').NotesState) => listener(state)
     ipcRenderer.on('localino:notes-changed',callback)

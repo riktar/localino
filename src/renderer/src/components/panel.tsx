@@ -64,9 +64,9 @@ function PanelContent(): React.JSX.Element {
     <div className="panel-content" hidden={recovering}>
       <section hidden={destination==='settings'} className="panel-home">
         <AgentSummary/>
-        <Clipboard captured={captured} guard={guard} newRequest={newRequest} consumeNew={()=>setNewRequest(0)}/>
+        <Clipboard active={destination==='panel'&&!recovering} captured={captured} guard={guard} newRequest={newRequest} consumeNew={()=>setNewRequest(0)}/>
       </section>
-      {destination==='settings'&&<PanelSettings/>}
+      <div hidden={destination!=='settings'} className="panel-settings">{destination==='settings'&&<PanelSettings/>}</div>
     </div>
     {recovering&&<CaptureView guard={captureGuard}/>}
   </div>

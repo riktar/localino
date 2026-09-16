@@ -39,16 +39,16 @@ function CodexSummary():React.JSX.Element {
 }
 function LocalSummary({id}:{id:LocalAgentId}):React.JSX.Element {
   const state=useHistory(id),bridge=useBridge(),[error,setError]=useState<string>()
-  if(!state?.enabled)return <div className="mt-2 space-y-1">{error&&<p role="alert" className="text-sm text-destructive">{error}</p>}<Button size="sm" disabled={!state} onClick={()=>void window.localino.connectAgent(id).then(result=>setError(result.error))}>Connect</Button></div>
+  if(!state?.enabled&&!(id==='claude'&&bridge?.enabled))return <div className="mt-2 space-y-1">{error&&<p role="alert" className="text-sm text-destructive">{error}</p>}<Button size="sm" disabled={!state} onClick={()=>void window.localino.connectAgent(id).then(result=>setError(result.error))}>Connect</Button></div>
   return <>{id==='claude'&&bridge?.enabled?<QuotaSummary state={bridge.quotas} refresh={()=>void window.localino.refreshBridge()}/>:<p className="mt-2 text-xs text-muted-foreground">Local history · No account quota</p>}
-    {(state.error||state.stale||state.data?.partial)&&<p className="text-xs text-destructive">{state.error?'Source unavailable':state.stale?'Stale history':'Partial history'}</p>}</>
+    {(state?.error||state?.stale||state?.data?.partial)&&<p className="text-xs text-destructive">{state?.error?'Source unavailable':state?.stale?'Stale history':'Partial history'}</p>}</>
 }
 function QuotaSummary({state,refresh}:{state:ResourceState<Quotas>;refresh?:()=>void}):React.JSX.Element {
   const {bucket,window,count,remaining,otherExhausted,resetPending}=compactQuota(state)
   return <div className="mt-2 space-y-1.5" data-quota-summary>
     <div className="flex justify-between gap-2 text-xs"><span className="truncate">{bucket?`${bucket.name} · ${durationLabel(window?.durationMins??null)}`:'Quota'}</span><strong className="shrink-0">{remaining===null?'Unavailable':`${remaining.toLocaleString('en-US')}% remaining`}</strong></div>
     {remaining!==null&&<div role="progressbar" aria-label="Remaining quota" aria-valuemin={0} aria-valuemax={100} aria-valuenow={remaining} className="h-2 overflow-hidden rounded-full bg-muted"><div className={`h-full ${remaining===0?'bg-destructive':'bg-primary'}`} style={{width:`${remaining}%`}}/></div>}
-    {(state.stale||state.error||otherExhausted||resetPending||((window?.usedPercent??0)>100))&&<p className="text-xs text-destructive">{[state.stale?'Stale':state.error?'Update failed':null,otherExhausted?'Another limit is exhausted':null,resetPending?'Reset needs verification':null,(window?.usedPercent??0)>100?'Limit exceeded':null].filter(Boolean).join(' · ')}</p>}
+    {(state?.stale||state?.error||otherExhausted||resetPending||((window?.usedPercent??0)>100))&&<p className="text-xs text-destructive">{[state?.stale?'Stale':state?.error?'Update failed':null,otherExhausted?'Another limit is exhausted':null,resetPending?'Reset needs verification':null,(window?.usedPercent??0)>100?'Limit exceeded':null].filter(Boolean).join(' · ')}</p>}
     <details className="text-xs"><summary className="cursor-pointer text-muted-foreground">Details{count>1?` · ${count} limits`:''}</summary><div className="mt-3"><QuotaCard state={state} refresh={refresh}/></div></details>
   </div>
 }

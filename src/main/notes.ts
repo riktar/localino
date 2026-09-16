@@ -1,3 +1,4 @@
+import { newestFirst } from '../shared/note-selection'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
@@ -30,7 +31,7 @@ export class NotesStore extends EventEmitter {
         if (typeof n.id !== 'string' || !n.id || ids.has(n.id) || textError(n.text) || !Number.isSafeInteger(n.createdAt) || n.createdAt < 0 || !Number.isSafeInteger(n.updatedAt) || n.updatedAt < n.createdAt || typeof n.completed !== 'boolean') throw Error('schema')
         ids.add(n.id)
       }
-      this.notes = (raw.notes as Note[]).map(({id,text,createdAt,updatedAt,completed}) => ({id,text,createdAt,updatedAt,completed})).sort((a,b) => b.createdAt-a.createdAt)
+      this.notes = (raw.notes as Note[]).map(({id,text,createdAt,updatedAt,completed}) => ({id,text,createdAt,updatedAt,completed})).sort(newestFirst)
       this.error = null
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') { this.notes = []; this.error = null }

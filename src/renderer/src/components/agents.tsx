@@ -37,7 +37,7 @@ export function AgentPicker(): React.JSX.Element {
   </div>
 }
 export function LocalAgentView({id}:{id:LocalAgentId}): React.JSX.Element {
-  return <LocalHistory id={id}/>
+  return <LocalHistory key={id} id={id}/>
 }
 export function AgentDashboard(): React.JSX.Element {
   const state=useAgents()

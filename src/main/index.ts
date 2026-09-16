@@ -1,3 +1,4 @@
+import { selectedText } from '../shared/note-selection'
 import { nativeHelper } from './platform'
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, screen, Tray } from 'electron'
 import { dirname, join, resolve } from 'node:path'
@@ -345,16 +346,11 @@ if (!app.requestSingleInstanceLock()) {
     handle('localino:notes',() => notes.get())
     handle('localino:reload-notes',() => notes.reload())
     handle('localino:mutate-note',(_owner,value) => notes.mutate(value))
-    handle('localino:copy-note',async (_owner,value) => {
-      if (typeof value !== 'string') return {ok:false,error:'Prompt non valido.'}
-      const state = await notes.get()
-      const note = state.notes.find(n => n.id === value)
-      if (state.error || !note) return {ok:false,error:state.error ?? 'Prompt non disponibile.'}
-      try {
-        await clipboard.writeText(note.text)
-        if (await clipboard.readText() !== note.text) return {ok:false,error:'Copia non riuscita: riprova.'}
-        return {ok:true}
-      } catch { return {ok:false,error:'Appunti non disponibili: riprova.'} }
+    handle('localino:copy-notes',async (_owner,value) => {
+      const result=selectedText(await notes.get(),value)
+      if(!result.ok)return result
+      try {await clipboard.writeText(result.text);return await clipboard.readText()===result.text?{ok:true}:{ok:false,error:'Could not copy. Retry.'}}
+      catch{return {ok:false,error:'Clipboard unavailable. Retry.'}}
     })
     notes.on('change',state => broadcast('localino:notes-changed',state))
     handle('localino:connection', () => connection.state)
