@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { agentIds, agentLabels, initialAgents, type AgentsState, type LocalAgentId } from '../../../shared/agents'
+import { agentIds, agentLabels, agentCapabilities, initialAgents, type AgentsState, type LocalAgentId } from '../../../shared/agents'
 import { useCommands } from './commands'
 import { Button } from './ui/button'
 import { Dashboard } from './dashboard'
@@ -36,6 +36,16 @@ export function AgentPicker(): React.JSX.Element {
   </div>
 }
 export function LocalAgentView({id}:{id:LocalAgentId}): React.JSX.Element {
+  const capability=agentCapabilities[id]
+  const historyReason=capability.history?'Collega prima la cronologia locale.':`Lettore ${agentLabels[id]} in preparazione.`
+  const unavailable=(disabled:string)=>({run:()=>{},disabled})
+  useCommands({
+    connect:unavailable(historyReason),choose:unavailable(historyReason),disconnect:unavailable(historyReason),
+    reread:unavailable(`${agentLabels[id]} usa una fonte locale, senza account Codex.`),
+    quotas:unavailable(`Quote non esposte da ${agentLabels[id]}.`),usage:unavailable(historyReason),
+    period7:unavailable(historyReason),period30:unavailable(historyReason),periodAll:unavailable(historyReason),
+    table:unavailable(capability.daily?historyReason:`${agentLabels[id]} non fornisce una serie giornaliera.`),
+  })
   return <main className="mx-auto max-w-5xl space-y-5 p-6" data-agent={id}>
     <h1 className="text-2xl font-semibold">Consumi {agentLabels[id]}</h1>
     <p className="text-muted-foreground">Cronologia locale non collegata. Il lettore sarà disponibile con il completamento di questo incremento.</p>

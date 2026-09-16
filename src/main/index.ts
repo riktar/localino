@@ -17,7 +17,7 @@ import type { CapturedNote } from '../shared/capture'
 import { homedir } from 'node:os'
 import { AgentPreferences } from './agents/preferences'
 import { HistoryResource, HistoryFailure } from './agents/history-resource'
-import { agentIds, agentLabels, isAgentId, isLocalAgentId, isAgentPeriod, type AgentId, type AgentResult, type LocalAgentId } from '../shared/agents'
+import { agentIds, agentLabels, agentCapabilities, isAgentId, isLocalAgentId, isAgentPeriod, type AgentId, type AgentResult, type LocalAgentId } from '../shared/agents'
 
 const customData = app.commandLine.getSwitchValue('user-data-dir')
 if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPath('userData', resolve(customData)) }
@@ -212,7 +212,8 @@ function updateTray(): void {
       {label:'Apri Home',click:()=>{void showMain('home')}}, {label:'Apri Consumi',click:()=>{void showMain('consumi')}},
       {label:'Apri Clipboard',click:()=>{void showMain('clipboard')}}, {label:'Cattura selezione',click:()=>capture.request()},
       {label:'Scorciatoie',click:()=>{void showMain('shortcuts')}},
-      {label:'Aggiorna statistiche',enabled:state.enabled&&!state.refreshing,click:()=>{void histories[selected].refresh()}},
+      ...(!agentCapabilities[selected].history?[{label:'Lettore in preparazione',enabled:false}]:[]),
+      {label:'Aggiorna statistiche',enabled:agentCapabilities[selected].history&&state.enabled&&!state.refreshing,click:()=>{if(agentCapabilities[selected].history)void histories[selected].refresh()}},
       {type:'separator'}, {label:'Esci',click:()=>app.quit()},
     ]))
     return
@@ -379,7 +380,7 @@ if (!app.requestSingleInstanceLock()) {
     handle('localino:select-agent', (_owner,id) => { if(!isAgentId(id))throw Error('Agente non valido'); return selectAgent(id) })
     const localId = (id:unknown):LocalAgentId => { if(!isLocalAgentId(id))throw Error('Agente non valido');return id }
     handle('localino:history',(_owner,id)=>histories[localId(id)].state)
-    handle('localino:refresh-history',(_owner,id)=>histories[localId(id)].refresh())
+    handle('localino:refresh-history',(_owner,value)=>{const id=localId(value);if(!agentCapabilities[id].history)throw Error('Lettore non disponibile');return histories[id].refresh()})
     handle('localino:agent-period',(_owner,value)=>{
       if(!value||typeof value!=='object')throw Error('Periodo non valido')
       const {id,period}=value as {id:unknown;period:unknown}
