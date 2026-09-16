@@ -17,6 +17,7 @@ function PanelContent(): React.JSX.Element {
   const registry=useCommandRegistry()!
   const guard=useRef<LeaveGuard|null>(null)
   const openList=useRef<(()=>Promise<void>)|null>(null)
+  const dismiss=useRef<(()=>Promise<void>)|null>(null)
   const captureGuard=useRef<LeaveGuard|null>(null)
   const [destination,setDestination]=useState<Destination>('panel')
   const [captured,setCaptured]=useState<CapturedNote|null>(null)
@@ -52,7 +53,7 @@ function PanelContent(): React.JSX.Element {
     closeSettings:{run:()=>window.localino.navigate('panel'),disabled:destination!=='settings'?'Open settings first.':undefined},
   })
   const recovering=!!capture&&!capture.acquiring
-  return <div className="panel" data-destination={destination}>
+  return <div className="panel" data-destination={destination} onKeyDown={event=>{if(!event.defaultPrevented&&event.key==='Escape'&&!document.querySelector('dialog[open]')&&dismiss.current&&destination==='panel'&&!recovering){event.preventDefault();event.stopPropagation();void dismiss.current()}}}>
     <AgentCommands/>
     <header className="panel-header">
       {destination==='settings'?<Button size="icon" variant="ghost" aria-label="Back" onClick={()=>void window.localino.navigate('panel')}><ArrowLeft/></Button>:<span className="brand-mark" aria-hidden="true">l.</span>}
@@ -66,7 +67,7 @@ function PanelContent(): React.JSX.Element {
     <div className="panel-content" hidden={recovering}>
       <section hidden={destination==='settings'} className="panel-root">
         <AgentSummary/>
-        <Clipboard openList={openList} onAvailability={setNewDisabled} active={destination==='panel'&&!recovering} captured={captured} guard={guard} newRequest={newRequest} consumeNew={()=>setNewRequest(0)}/>
+        <Clipboard dismiss={dismiss} openList={openList} onAvailability={setNewDisabled} active={destination==='panel'&&!recovering} captured={captured} guard={guard} newRequest={newRequest} consumeNew={()=>setNewRequest(0)}/>
       </section>
       <div hidden={destination!=='settings'} className="panel-settings">{destination==='settings'&&<PanelSettings/>}</div>
     </div>

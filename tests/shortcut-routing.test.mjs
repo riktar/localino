@@ -28,7 +28,7 @@ test('Escape closes editors first and every Clipboard route guards drafts and fo
     await page.locator('[data-destination="panel"]').waitFor()
     await waitFor(page,()=>document.activeElement?.matches('[data-note-id] input'))
     await page.getByRole('button',{name:'New note',exact:true}).click();await editor.fill('Discard on Escape')
-    await editor.press('Escape');await page.getByRole('button',{name:'Discard',exact:true}).click()
+    await page.getByRole('button',{name:'Commands',exact:true}).focus();await page.keyboard.press('Escape');await page.getByRole('button',{name:'Discard',exact:true}).click()
     await editor.waitFor({state:'hidden'})
     assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('view=main')).isVisible()),true)
   }finally{const timer=setTimeout(()=>app.process().kill(),3000);try{await app.close()}finally{clearTimeout(timer)}}
