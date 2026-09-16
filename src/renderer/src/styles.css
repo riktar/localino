@@ -13,10 +13,10 @@
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--muted);
   --color-accent-foreground: var(--foreground);
-  --color-destructive: #b42318;
+  --color-destructive: var(--destructive);
   --color-border: var(--border);
   --color-input: var(--border);
-  --color-ring: #8a611c;
+  --color-ring: var(--ring);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -24,6 +24,7 @@
 }
 
 :root {
+  color-scheme: light dark;
   font-family: "Segoe UI", system-ui, sans-serif;
   --radius: 0.75rem;
   --background: #faf9f6;
@@ -34,6 +35,23 @@
   --muted: #f0eeea;
   --muted-foreground: #706c63;
   --border: #e5e1da;
+  --destructive: #b42318;
+  --ring: #8a611c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #191a1d;
+    --foreground: #eeece6;
+    --card: #222327;
+    --primary: #eec268;
+    --primary-foreground: #28231c;
+    --muted: #2c2d32;
+    --muted-foreground: #aaa8a2;
+    --border: #3c3d43;
+    --destructive: #ff9288;
+    --ring: #eec268;
+  }
 }
 
 @layer base {
@@ -45,7 +63,7 @@
 
 [hidden] { display: none !important; }
 .panel { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
-.panel-header { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.panel-header { -webkit-app-region: drag; user-select: none; display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .panel-header h1 { font-size: .95rem; font-weight: 650; }
 .brand-mark { background: var(--primary); border-radius: .55rem; padding: .15rem .5rem; font-weight: 700; }
 .panel-content { flex: 1; min-height: 0; overflow: hidden; }
@@ -66,3 +84,24 @@
 
 .panel-settings {height:100%;overflow:auto;}
 .agent-summary {max-height:45%;overflow:auto;}
+
+/* Small, finite transitions: feedback without delaying capture or keyboard focus. */
+button, .note-row, .note-selector, select, input, textarea {
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease;
+}
+button:active:not(:disabled) { translate: 0 1px; }
+.note-row:hover { background: color-mix(in srgb, var(--primary) 4%, var(--card)); }
+.note-row.selected:hover { background: color-mix(in srgb, var(--primary) 10%, var(--card)); }
+.panel-root, .panel-settings, .clipboard > section, dialog[open] { animation: view-enter 180ms ease-out; }
+.note-row { animation: view-enter 160ms ease-out; }
+.note-row.captured { animation: capture-enter 420ms ease-out; }
+dialog::backdrop { background: rgb(0 0 0 / 35%); backdrop-filter: blur(3px); }
+@keyframes view-enter { from { opacity: .3; } to { opacity: 1; } }
+@keyframes capture-enter {
+  from { opacity: .4; box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 40%, transparent); }
+  to { opacity: 1; box-shadow: 0 0 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  button:active:not(:disabled) { translate: none; }
+}

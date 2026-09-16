@@ -33,6 +33,10 @@ export interface ResourceState<T> {
 }
 
 export interface LocalinoApi {
+  getTheme: () => Promise<import('./theme').ThemeState>
+  setTheme: (theme: import('./theme').Theme) => Promise<import('./theme').ThemeState>
+  onTheme: (listener: (state: import('./theme').ThemeState) => void) => () => void
+  windowAction: (action: 'minimize' | 'maximize') => Promise<void>
   getBridge: () => Promise<import('./agents').BridgeState>
   setBridgeEnabled: (enabled:boolean) => Promise<import('./agents').AgentResult>
   refreshBridge: () => Promise<void>

@@ -64,7 +64,7 @@ export function Dashboard(): React.JSX.Element {
               ['Mean per reported day',numberLabel(view.mean)],
               ['Period peak',view.peak ? `${numberLabel(view.peak.tokens)} · ${view.peak.date}` : 'Unavailable'],
             ].map(([name,value]) => <div key={name} className="min-w-0 rounded-lg bg-muted/60 p-3"><p className="text-xs text-muted-foreground">{name}</p><p className="mt-1 break-words font-semibold tabular-nums">{value}</p></div>)}</div>
-            {view.days.length > 0 ? <ChartContainer config={{tokens:{label:'Token',color:'#946316'}}} className="h-[260px] w-full" aria-label="Daily tokens; exact values in the table">
+            {view.days.length > 0 ? <ChartContainer config={{tokens:{label:'Token',color:'var(--ring)'}}} className="h-[260px] w-full" aria-label="Daily tokens; exact values in the table">
               <LineChart accessibilityLayer data={view.rows} margin={{left:12,right:20,top:12,bottom:8}}>
                 <CartesianGrid vertical={false} />
                 <XAxis dataKey="timestamp" type="number" domain={[Date.parse(`${view.start}T00:00:00Z`),Date.parse(`${view.end}T00:00:00Z`)]} ticks={view.rows.filter((_,index)=>index%Math.max(1,Math.ceil(view.rows.length/6))===0).map(row=>row.timestamp)} tickFormatter={value => new Date(Number(value)).toISOString().slice(5,10)} tickMargin={8} minTickGap={35} />

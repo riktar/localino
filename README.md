@@ -4,6 +4,8 @@ A compact desktop panel for coding agents and local notes. Built with Electron, 
 
 Open Localino from the Windows tray or macOS menu bar. The panel stays above ordinary windows while open. Close, minimize or Hide keeps the app running; **Quit** stops it. **Advanced usage** opens one reusable detail window; Back or its close button returns to the panel.
 
+Drag the app header to move either window. Choose **Settings → Theme → System, Light or Dark**; System is the default and follows live OS changes. The preference applies to both windows and survives restarts. Subtle transitions respect the system reduced-motion preference.
+
 ## Use the panel
 
 - Choose Codex, Claude Code, Pi or OpenCode. Switching agents does not connect them or open another screen.
@@ -19,7 +21,7 @@ Notes live in the versioned `notes.json` under Electron's user-data directory. U
 
 Select text in another app, then press and release **Shift twice within 350 ms**, without other keys. The alternative is Ctrl+Alt+P on Windows or Cmd+Alt+P on a fresh Mac profile. Configure both in Settings.
 
-A readable selection saves once and opens its full text in the panel. An existing manual draft stays in memory under **Resume draft**. Empty, inaccessible, changed or oversized selections open recovery; text is never truncated. Cancel is guarded and attempts to restore the source app. Software acquisition/presentation timings are in Details.
+A readable selection saves once and appears selected in the Clipboard list, scrolled into view. Click its text to read the full note. An existing manual draft stays in memory under **Resume draft**. Empty, inaccessible, changed or oversized selections open recovery; text is never truncated. Cancel is guarded and attempts to restore the source app. Software acquisition/presentation timings are in Details.
 
 Windows uses UI Automation; macOS uses Accessibility and a passive event tap. Capture reads selected text only: no simulated copy, clipboard substitution, OCR or retained key history. Protected/password controls are excluded. Workers have hard deadlines. Unsupported controls allow manual paste.
 

@@ -13,7 +13,7 @@ export function Clipboard({captured,guard,newRequest=0,consumeNew=()=>{},active=
   const [selected,setSelected]=useState<string[]>([]),[focused,setFocused]=useState<string|null>(null),[detail,setDetail]=useState<string|null>(null)
   const [editor,setEditor]=useState<{id:string|null;original:string;updatedAt:number}|null>(null),[draft,setDraft]=useState(''),[suspended,setSuspended]=useState(false)
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[menu,setMenu]=useState(false)
-  const textArea=useRef<HTMLTextAreaElement>(null),searchInput=useRef<HTMLInputElement>(null),saving=useRef(false),consumedCapture=useRef(0)
+  const textArea=useRef<HTMLTextAreaElement>(null),searchInput=useRef<HTMLInputElement>(null),saving=useRef(false),consumedCapture=useRef(0),presentedCapture=useRef(0)
   const {ask,dialog}=useConfirm(),dirty=!!editor&&draft!==editor.original
   useEffect(()=>{let updated=false,disposed=false;const off=window.localino.onNotes(next=>{updated=true;setState(next)});void window.localino.getNotes().then(next=>{if(!updated&&!disposed)setState(next)});return()=>{disposed=true;off()}},[])
   useEffect(()=>{window.localino.setUnsaved(dirty);return()=>window.localino.setUnsaved(false)},[dirty])
@@ -23,14 +23,19 @@ export function Clipboard({captured,guard,newRequest=0,consumeNew=()=>{},active=
   const focusedNote=state?.notes.find(note=>note.id===focused),detailNote=state?.notes.find(note=>note.id===detail)
   useEffect(()=>{
     if(busy||!captured||captured.sequence===consumedCapture.current||!state?.notes.some(note=>note.id===captured.noteId))return
-    consumedCapture.current=captured.sequence;setQuery('');setFilter('open');setSelected([captured.noteId]);setFocused(captured.noteId);setDetail(captured.noteId);setError('');setMessage('Captured.')
+    consumedCapture.current=captured.sequence;setQuery('');setFilter('open');setSelected([captured.noteId]);setFocused(captured.noteId);setDetail(null);setMenu(false);setError('');setMessage('Captured.')
     if(editor&&dirty)setSuspended(true);else{setEditor(null);setSuspended(false)}
   },[captured,state,busy,editor,dirty])
   useEffect(()=>{
-    if(!captured||detail!==captured.noteId||(editor&&!suspended))return
-    let second=0;const first=requestAnimationFrame(()=>{second=requestAnimationFrame(()=>{document.querySelector<HTMLElement>('[data-note-text]')?.focus();void window.localino.capturedNotePresented(captured.sequence)})})
+    if(!active||!captured||consumedCapture.current!==captured.sequence||presentedCapture.current===captured.sequence||detail||(editor&&!suspended))return
+    let second=0;const first=requestAnimationFrame(()=>{second=requestAnimationFrame(()=>{
+      const row=document.querySelector<HTMLElement>(`[data-note-id="${CSS.escape(captured.noteId)}"]`)
+      if(!row)return
+      row.scrollIntoView({block:'nearest',behavior:'instant'});row.querySelector<HTMLElement>('input')?.focus({preventScroll:true})
+      presentedCapture.current=captured.sequence;void window.localino.capturedNotePresented(captured.sequence)
+    })})
     return()=>{cancelAnimationFrame(first);cancelAnimationFrame(second)}
-  },[captured?.sequence,detail,editor,suspended])
+  },[active,captured?.sequence,detail,editor,suspended,notes])
   const save=useCallback(async():Promise<boolean>=>{
     if(!editor||saving.current)return false
     const invalid=textError(draft);if(invalid){setError(invalid);textArea.current?.focus();return false}
@@ -95,7 +100,7 @@ export function Clipboard({captured,guard,newRequest=0,consumeNew=()=>{},active=
       <details className="text-xs text-muted-foreground"><summary>Details</summary><p>Created: {new Date(detailNote.createdAt).toLocaleString('en-US')}<br/>Updated: {new Date(detailNote.updatedAt).toLocaleString('en-US')}</p>{captured?.noteId===detailNote.id&&<p>Acquisition: {captured.elapsedMs??'—'} ms · Presentation: {captured.visibleMs??'—'} ms</p>}</details>
     </section>:<>
       {!!selected.length&&<p className="shrink-0 text-xs text-muted-foreground">{selected.length} selected</p>}
-      <ul className="note-list" aria-label="Notes">{notes.map(note=><li key={note.id} data-note-id={note.id} className={`note-row ${selected.includes(note.id)?'selected':''}`} onContextMenu={event=>{event.preventDefault();openMenu(note.id)}} onKeyDown={event=>{if(event.key==='ContextMenu'||(event.shiftKey&&event.key==='F10')){event.preventDefault();openMenu(note.id)}}} onFocus={()=>setFocused(note.id)}>
+      <ul className="note-list" aria-label="Notes">{notes.map(note=><li key={note.id} data-note-id={note.id} className={`note-row ${selected.includes(note.id)?'selected':''} ${captured?.noteId===note.id?'captured':''}`} onContextMenu={event=>{event.preventDefault();openMenu(note.id)}} onKeyDown={event=>{if(event.key==='ContextMenu'||(event.shiftKey&&event.key==='F10')){event.preventDefault();openMenu(note.id)}}} onFocus={()=>setFocused(note.id)}>
         <input type="checkbox" aria-label={`Select note: ${note.text.slice(0,60)}`} checked={selected.includes(note.id)} onChange={()=>setSelected(previous=>previous.includes(note.id)?previous.filter(id=>id!==note.id):[...previous,note.id])} className="note-selector"/>
         <button type="button" className={`min-w-0 flex-1 text-left text-sm ${note.completed?'text-muted-foreground line-through':''}`} aria-label={`Read note: ${note.text.slice(0,60)}`} onClick={()=>setDetail(note.id)}><span className="line-clamp-3 whitespace-pre-wrap break-words">{note.text}</span>{note.completed&&<span className="sr-only">Completed</span>}</button>
         <div className="flex shrink-0 flex-col"><Button size="icon" variant="ghost" aria-label="Edit note" title="Edit note" disabled={busy} onClick={()=>void begin(note)}><SquarePen/></Button><Button size="icon" variant="ghost" aria-label="Delete note" title="Delete note" disabled={busy} onClick={()=>void mutate(note,'delete')}><Trash2/></Button><Button size="icon" variant="ghost" aria-label={note.completed?'Reopen note':'Complete note'} title={note.completed?'Reopen note':'Complete note'} disabled={busy} onClick={()=>void mutate(note,'complete')}>{note.completed?<Undo2/>:<Check/>}</Button></div>

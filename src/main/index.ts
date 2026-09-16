@@ -1,6 +1,7 @@
 import { selectedText } from '../shared/note-selection'
 import { nativeHelper } from './platform'
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, screen, Tray } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, powerMonitor, screen, Tray } from 'electron'
+import { Appearance } from './appearance'
 import { dirname, join, resolve } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { Connection } from './codex/connection'
@@ -27,6 +28,9 @@ import { agentLabels, agentCapabilities, isAgentId, isLocalAgentId, isAgentPerio
 
 const customData = app.commandLine.getSwitchValue('user-data-dir')
 if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPath('userData', resolve(customData)) }
+const appearance = new Appearance(join(app.getPath('userData'), 'appearance.json'))
+nativeTheme.themeSource = appearance.state.preference
+const windowBackground = (): string => nativeTheme.shouldUseDarkColors ? '#191a1d' : '#faf9f6'
 const codexPreferences = new FilePreferences(join(app.getPath('userData'), 'connection.json'))
 const connection = new Connection(codexPreferences)
 const agents = new AgentPreferences(join(app.getPath('userData'), 'agents.json'))
@@ -174,7 +178,7 @@ async function showMain(next: Destination = 'panel', preserveDraft = false): Pro
     return true
   }
   if (!dashboard || dashboard.isDestroyed()) {
-    dashboard = new BrowserWindow({width:1120,height:800,minWidth:800,minHeight:600,title:'Localino — Usage',backgroundColor:'#faf9f6',show:false,autoHideMenuBar:true,
+    dashboard = new BrowserWindow({width:1120,height:800,minWidth:800,minHeight:600,title:'Localino — Usage',frame:false,backgroundColor:windowBackground(),show:false,autoHideMenuBar:true,
       webPreferences:{preload:join(__dirname,'../preload/index.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}})
     const window = dashboard
     secureWindow(window)
@@ -263,7 +267,8 @@ if (!app.requestSingleInstanceLock()) {
       minWidth: 360,
       minHeight: 460,
       title: 'Localino',
-      backgroundColor: '#faf9f6',
+      frame: false,
+      backgroundColor: windowBackground(),
       show: false,
       alwaysOnTop: true,
       autoHideMenuBar: true,
@@ -291,6 +296,19 @@ if (!app.requestSingleInstanceLock()) {
     const handle = (channel: string, action: (owner: BrowserWindow, value: unknown) => unknown) => ipcMain.handle(channel, (event, value: unknown) => {
       if (!isTrustedSender(event.sender, event.senderFrame, ownedWindows().map(w => w.webContents))) throw new Error('Access denied')
       return action(BrowserWindow.fromWebContents(event.sender)!, value)
+    })
+    nativeTheme.on('updated', () => { for (const window of ownedWindows()) window.setBackgroundColor(windowBackground()) })
+    handle('localino:theme', () => appearance.state)
+    handle('localino:set-theme', (_owner, value) => {
+      const state = appearance.set(value)
+      nativeTheme.themeSource = state.preference
+      broadcast('localino:theme-changed', state)
+      return state
+    })
+    handle('localino:window-action', (owner, action) => {
+      if (action === 'minimize') { if (owner === panel) hideWindow(owner); else owner.minimize() }
+      else if (action === 'maximize') { if (owner.isMaximized()) owner.unmaximize(); else owner.maximize() }
+      else throw Error('Invalid window action')
     })
     ipcMain.on('localino:unsaved',(event,value:unknown) => {
       if (typeof value === 'boolean' && panel && isTrustedSender(event.sender,event.senderFrame,[panel.webContents])) unsaved = value

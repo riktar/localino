@@ -2,6 +2,14 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { ConnectionState, LocalinoApi, Quotas, ResourceState, Usage } from '../shared/contracts'
 
 const api: LocalinoApi = {
+  getTheme: () => ipcRenderer.invoke('localino:theme'),
+  setTheme: theme => ipcRenderer.invoke('localino:set-theme', theme),
+  onTheme: listener => {
+    const callback = (_event: Electron.IpcRendererEvent, state: import('../shared/theme').ThemeState) => listener(state)
+    ipcRenderer.on('localino:theme-changed', callback)
+    return () => ipcRenderer.removeListener('localino:theme-changed', callback)
+  },
+  windowAction: action => ipcRenderer.invoke('localino:window-action', action),
   platform: process.platform as 'win32'|'darwin',
   requestCapturePermissions:()=>ipcRenderer.invoke('localino:capture-permissions'),
   getBridge:()=>ipcRenderer.invoke('localino:bridge'),

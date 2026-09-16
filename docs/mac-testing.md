@@ -33,6 +33,8 @@ After granting the required permissions, `npm run test:capture:native` tests rea
 
 ## Required desktop checks
 
+- Drag the app header to move both frameless windows; header buttons remain clickable. Test dashboard minimize, maximize/restore and close-to-panel.
+- Check System (default), Light and Dark themes in both windows, persistence after restart and live changes to macOS appearance. Enable Reduce Motion and confirm transitions stop.
 - Open Localino. Only the compact panel appears. Open it again from the menu bar and a second app launch; confirm there is no duplicate panel.
 - Keep another app focused. Localino stays above ordinary windows without repeatedly taking focus. Close and minimize Localino: it remains available from the menu bar. Quit ends the app and its capture helper.
 - Open advanced usage, then return with Back, the window close button, the menu bar and the app activation shortcut. Only one operating window is visible at a time; the dashboard is reused.
@@ -51,7 +53,7 @@ Use TextEdit, a Chromium text field and VS Code (`editor.accessibilitySupport: o
 
 - Deny Accessibility and Input Monitoring initially. Localino must explain the missing permission with a recovery action; clipboard and manual note entry remain usable.
 - Grant the requested permissions, retry, then restart the app. Record the identity/path shown in System Settings. Revoke each permission while running and verify recovery without an unbounded worker or stale capture.
-- Select synthetic text and press/release Shift twice within 350 ms. Exact text saves once, appears newest first and receives focus in the panel. Measure acquisition and presentation from capture Details.
+- Select synthetic text and press/release Shift twice within 350 ms. Exact text saves once, appears selected newest first in the Clipboard list and receives focus, without opening the full-note view. Repeat with active search/filter and an existing manual draft. Measure acquisition and presentation from capture Details.
 - A single Shift, held/repeated Shift, two simultaneous Shift keys, Shift plus a letter/modifier, slow taps and injected events must not capture. Disabling the gesture must stop detection.
 - Test empty selection, inaccessible/custom controls, a password field, text above 100,000 characters and a foreground-app change during acquisition. Do not fall back to reading the entire control, clipboard substitution or keystroke injection. Show editable recovery when needed.
 - During acquisition, switch between two windows of the same application and between two controls in the same window. A changed focus, window or selection must discard the stale result and open recovery; matching only the application PID is insufficient.

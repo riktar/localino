@@ -32,7 +32,7 @@ export async function desktopSmoke(packaged = false, rendererUrl = null) {
       return { sandbox: prefs.sandbox, contextIsolation: prefs.contextIsolation, nodeIntegration: prefs.nodeIntegration }
     })
     assert.deepEqual(preferences, { sandbox: true, contextIsolation: true, nodeIntegration: false })
-    assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(250, 249, 246)')
+    assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), await instance.evaluate(({nativeTheme})=>nativeTheme.shouldUseDarkColors?'rgb(25, 26, 29)':'rgb(250, 249, 246)'))
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     assert.equal(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight), true)
     await mkdir('test-results', { recursive: true })

@@ -1,7 +1,7 @@
 import { AgentSummary } from './agent-summary'
 import { Settings as PanelSettings } from './settings'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowLeft, Command, Settings, X } from 'lucide-react'
+import { ArrowLeft, Command, Settings, X, Minus, Maximize2 } from 'lucide-react'
 import { Button } from './ui/button'
 import { AgentCommands, AgentDashboard } from './agents'
 import { Clipboard, type LeaveGuard } from './clipboard'
@@ -94,5 +94,9 @@ function UsageContent(): React.JSX.Element {
   useCommands({localino:{run:()=>window.localino.openPanel()},panel:{run:()=>window.localino.openPanel()},clipboard:{run:()=>window.localino.requestCommand('clipboard')},
     shortcuts:{run:()=>window.localino.navigate('settings')},new:{run:()=>window.localino.requestCommand('new')},
     palette:{run:registry.open},hide:{run:()=>window.localino.hide()},quit:{run:()=>window.localino.quit()},capture:{run:()=>window.localino.requestCapture()}})
-  return <><header className="panel-header"><Button variant="ghost" onClick={()=>void window.localino.openPanel()}><ArrowLeft/>Back to panel</Button><Button className="ml-auto" variant="ghost" onClick={registry.open}>Commands</Button></header><AgentCommands/><AgentDashboard/></>
+  return <><header className="panel-header"><Button variant="ghost" onClick={()=>void window.localino.openPanel()}><ArrowLeft/>Back to panel</Button><Button className="ml-auto" variant="ghost" onClick={registry.open}>Commands</Button>
+    <Button size="icon" variant="ghost" aria-label="Minimize window" title="Minimize" onClick={()=>void window.localino.windowAction('minimize')}><Minus/></Button>
+    <Button size="icon" variant="ghost" aria-label="Maximize or restore window" title="Maximize / restore" onClick={()=>void window.localino.windowAction('maximize')}><Maximize2/></Button>
+    <Button size="icon" variant="ghost" aria-label="Close usage" title="Back to panel" onClick={()=>void window.localino.openPanel()}><X/></Button>
+  </header><AgentCommands/><AgentDashboard/></>
 }
