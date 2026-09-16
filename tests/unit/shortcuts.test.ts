@@ -5,6 +5,20 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Shortcuts } from '../../src/main/shortcuts'
 import { canonicalKey,bindingsError,defaultBindings,keyFromEvent } from '../../src/shared/commands'
+
+test('agent command migration preserves old bindings and adds unassigned local/global selections',async()=>{
+ const file=join(await mkdtemp(join(tmpdir(),'localino-agent-keys-')),'shortcuts.json')
+ const old=defaultBindings().filter(b=>!b.id.startsWith('select'))
+ old.find(b=>b.id==='home'&&b.scope==='global')!.key='Ctrl+Alt+H'
+ await writeFile(file,JSON.stringify({version:1,bindings:old}))
+ const store=new Shortcuts(file,{register:()=>true,unregister:()=>{}},()=>{})
+ await store.init()
+ assert.equal(store.state.error,undefined)
+ assert.equal(store.state.bindings.find(b=>b.id==='home'&&b.scope==='global')!.key,'Ctrl+Alt+H')
+ const added=store.state.bindings.filter(b=>b.id.startsWith('select'))
+ assert.equal(added.length,8);assert.ok(added.every(b=>b.key===''))
+ store.dispose()
+})
 test('shortcut format, context collisions and editing combinations',()=>{
  assert.equal(canonicalKey('control+shift+r'),'Ctrl+Shift+R')
  for(const invalid of ['Win+R','Ctrl+Ctrl+N','a','Shift','Ctrl+Potato'])assert.equal(canonicalKey(invalid),null)

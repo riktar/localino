@@ -2,6 +2,25 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { ConnectionState, LocalinoApi, Quotas, ResourceState, Usage } from '../shared/contracts'
 
 const api: LocalinoApi = {
+  getAgents: () => ipcRenderer.invoke('localino:agents'),
+  selectAgent: id => ipcRenderer.invoke('localino:select-agent', id),
+  recoverPreferences: target => ipcRenderer.invoke('localino:recover-preferences', target),
+  getHistory: id => ipcRenderer.invoke('localino:history', id),
+  connectAgent: id => ipcRenderer.invoke('localino:connect-agent', id),
+  chooseAgentSource: id => ipcRenderer.invoke('localino:choose-agent-source', id),
+  disconnectAgent: id => ipcRenderer.invoke('localino:disconnect-agent', id),
+  refreshHistory: id => ipcRenderer.invoke('localino:refresh-history', id),
+  setAgentPeriod: (id, period) => ipcRenderer.invoke('localino:agent-period', { id, period }),
+  onAgents: listener => {
+    const callback = (_event: Electron.IpcRendererEvent, state: import('../shared/agents').AgentsState) => listener(state)
+    ipcRenderer.on('localino:agents-changed', callback)
+    return () => { ipcRenderer.removeListener('localino:agents-changed', callback) }
+  },
+  onHistory: listener => {
+    const callback = (_event: Electron.IpcRendererEvent, state: import('../shared/agents').HistoryState) => listener(state)
+    ipcRenderer.on('localino:history-changed', callback)
+    return () => { ipcRenderer.removeListener('localino:history-changed', callback) }
+  },
   getCapturedNote:()=>ipcRenderer.invoke('localino:captured-note'),
   capturedNotePresented:sequence=>ipcRenderer.invoke('localino:captured-note-presented',sequence),
   onCapturedNote:listener=>{

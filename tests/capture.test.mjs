@@ -91,7 +91,9 @@ test('capture UI with protocol fixture: exact text, protected draft, save retry,
     await draftPage.screenshot({ path: 'test-results/capture-minimum.png' })
     await editor.press('Escape')
     await page.evaluate(() => window.localino.navigate('shortcuts'))
-    await page.getByRole('checkbox', { name: 'Abilita doppio Shift' }).uncheck()
+    // Controlled value changes only after the asynchronous main-process write.
+    await page.getByRole('checkbox', { name: 'Abilita doppio Shift' }).click()
+    await page.waitForFunction(()=>!document.querySelector('input[type="checkbox"]').checked)
     await waitInPage(page,async () => !(await window.localino.getCaptureStatus()).enabled)
     assert.match(await page.getByRole('main').innerText(), /accessibilitySupport/)
     const state = await page.evaluate(() => window.localino.getShortcuts())

@@ -33,6 +33,17 @@ export interface ResourceState<T> {
 }
 
 export interface LocalinoApi {
+  getAgents: () => Promise<import('./agents').AgentsState>
+  onAgents: (listener: (state: import('./agents').AgentsState) => void) => () => void
+  selectAgent: (id: import('./agents').AgentId) => Promise<import('./agents').AgentResult>
+  recoverPreferences: (target: 'agents' | 'codex') => Promise<import('./agents').AgentResult>
+  getHistory: (id: import('./agents').LocalAgentId) => Promise<import('./agents').HistoryState>
+  onHistory: (listener: (state: import('./agents').HistoryState) => void) => () => void
+  connectAgent: (id: import('./agents').LocalAgentId) => Promise<import('./agents').AgentResult>
+  chooseAgentSource: (id: import('./agents').LocalAgentId) => Promise<import('./agents').AgentResult>
+  disconnectAgent: (id: import('./agents').LocalAgentId) => Promise<import('./agents').AgentResult>
+  refreshHistory: (id: import('./agents').LocalAgentId) => Promise<void>
+  setAgentPeriod: (id: import('./agents').LocalAgentId, period: import('./agents').AgentPeriod) => Promise<void>
   getCapturedNote: () => Promise<import('./capture').CapturedNote|null>
   onCapturedNote: (listener:(note:import('./capture').CapturedNote)=>void)=>()=>void
   capturedNotePresented: (sequence:number) => Promise<void>

@@ -14,10 +14,21 @@ import { Shortcuts } from './shortcuts'
 import { Capture } from './capture'
 import { Foreground } from './foreground'
 import type { CapturedNote } from '../shared/capture'
+import { homedir } from 'node:os'
+import { AgentPreferences } from './agents/preferences'
+import { HistoryResource, HistoryFailure } from './agents/history-resource'
+import { agentIds, agentLabels, isAgentId, isLocalAgentId, isAgentPeriod, type AgentId, type AgentResult, type LocalAgentId } from '../shared/agents'
 
 const customData = app.commandLine.getSwitchValue('user-data-dir')
 if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPath('userData', resolve(customData)) }
-const connection = new Connection(new FilePreferences(join(app.getPath('userData'), 'connection.json')))
+const codexPreferences = new FilePreferences(join(app.getPath('userData'), 'connection.json'))
+const connection = new Connection(codexPreferences)
+const agents = new AgentPreferences(join(app.getPath('userData'), 'agents.json'))
+const histories = Object.fromEntries(['claude', 'pi', 'opencode'].map(id => [id, new HistoryResource(id as LocalAgentId, async () => { throw new HistoryFailure('unsupported') })])) as Record<LocalAgentId, HistoryResource>
+const defaultSources: Record<LocalAgentId, string> = {
+  claude: join(homedir(), '.claude', 'projects'), pi: join(homedir(), '.pi', 'agent', 'sessions'),
+  opencode: join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'opencode', 'opencode.db'),
+}
 const notes = new NotesStore(join(app.getPath('userData'),'notes.json'))
 const quotas = new Resource(connection, { method: 'account/rateLimits/read', normalize: normalizeQuotas, interval: 60_000, staleAfter: 180_000, resets: quotaResets })
 connection.on('ratesChanged', () => void quotas.refresh())
@@ -48,7 +59,15 @@ let pendingAction: ActionRequest | null = null
 const shortcuts = new Shortcuts(join(app.getPath('userData'),'shortcuts.json'),globalShortcut,id=>{
   if(id==='home'||id==='consumi'||id==='clipboard')void showMain(id)
   if(id==='capture')capture.request()
+  const selected = ({selectCodex:'codex', selectClaude:'claude', selectPi:'pi', selectOpenCode:'opencode'} as Record<string, AgentId>)[id]
+  if(selected)void selectAgent(selected)
 })
+
+async function selectAgent(id: AgentId): Promise<AgentResult> {
+  if (unsaved && destination !== 'consumi') { requestGuard({kind:'navigate',destination:'consumi',agent:id}); return {ok:true} }
+  try { agents.select(id); await showMain('consumi'); return {ok:true} }
+  catch (error) { return {ok:false,error:error instanceof Error ? error.message : 'Selezione non riuscita.'} }
+}
 
 function requestGuard(action: WindowAction): void {
   if (!dashboard || dashboard.isDestroyed()) return
@@ -143,7 +162,11 @@ capture.on('timing',draft=>{
 })
 capture.on('status',state=>broadcast('localino:capture-status',state))
 
-function updateUsageActivity(): void { usage.setActive(destination === 'consumi' && !!dashboard?.isVisible() && !dashboard.isMinimized()) }
+function updateUsageActivity(): void {
+  const visible = destination === 'consumi' && !!dashboard?.isVisible() && !dashboard.isMinimized()
+  usage.setActive(visible && agents.state.selected === 'codex')
+  for (const id of Object.keys(histories) as LocalAgentId[]) histories[id].setActive(visible && agents.state.selected === id)
+}
 async function showMain(next: Destination = 'home'): Promise<void> {
   if (unsaved && next !== destination) { requestGuard({kind:'navigate',destination:next}); return }
   destination = next
@@ -161,9 +184,9 @@ async function showMain(next: Destination = 'home'): Promise<void> {
   window.on('show', updateUsageActivity)
   window.on('minimize', updateUsageActivity)
   window.on('restore', updateUsageActivity)
-  window.on('hide', () => usage.setActive(false))
+  window.on('hide', updateUsageActivity)
   window.on('close', event => { if (!quitting) { event.preventDefault(); hideWindow(window) } })
-  window.on('closed', () => { dashboard = null; usage.setActive(false) })
+  window.on('closed', () => { dashboard = null; updateUsageActivity() })
   window.once('ready-to-show', () => { window.show(); window.focus() })
   await loadWindow(window,true)
 }
@@ -178,6 +201,22 @@ function showPanel(): void {
 
 function updateTray(): void {
   if (!tray) return
+  const selected = agents.state.selected
+  if (selected !== 'codex') {
+    const state = histories[selected].state
+    const status = `${agentLabels[selected]} · ${state.enabled ? state.error ? 'Lettura non disponibile' : state.stale ? 'Dati da aggiornare' : 'Cronologia locale' : 'Non collegato'}`
+    tray.setToolTip(`Localino · ${status}`.slice(0,127))
+    tray.setContextMenu(Menu.buildFromTemplate([
+      {label:status,enabled:false},
+      {label:'Agente',submenu:agentIds.map(id=>({label:agentLabels[id],type:'radio' as const,checked:selected===id,click:()=>{void selectAgent(id)}}))},
+      {label:'Apri Home',click:()=>{void showMain('home')}}, {label:'Apri Consumi',click:()=>{void showMain('consumi')}},
+      {label:'Apri Clipboard',click:()=>{void showMain('clipboard')}}, {label:'Cattura selezione',click:()=>capture.request()},
+      {label:'Scorciatoie',click:()=>{void showMain('shortcuts')}},
+      {label:'Aggiorna statistiche',enabled:state.enabled&&!state.refreshing,click:()=>{void histories[selected].refresh()}},
+      {type:'separator'}, {label:'Esci',click:()=>app.quit()},
+    ]))
+    return
+  }
   const connected = connection.state.status === 'connected'
   const status = connected ? `Codex collegato · ${freshness(quotas.state)}` : connection.state.status === 'connecting' ? 'Collegamento Codex…' : 'Codex non collegato'
   const summary = quotaSummary(quotas.state)
@@ -185,6 +224,7 @@ function updateTray(): void {
   tray.setToolTip(`Localino · ${status}${connected ? ` · ${summary}` : ''}`.slice(0,127))
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: status, enabled: false },
+    {label:'Agente',submenu:agentIds.map(id=>({label:agentLabels[id],type:'radio' as const,checked:selected===id,click:()=>{void selectAgent(id)}}))},
     ...(connected ? [{ label: summary, enabled: false }, { label: timestamp, enabled: false }] : []),
     { type: 'separator' },
     { label: 'Apri Home', click: () => { void showMain('home') } },
@@ -227,6 +267,7 @@ if (!app.requestSingleInstanceLock()) {
     shortcuts.dispose()
     quotas.dispose()
     usage.dispose()
+    Object.values(histories).forEach(resource=>resource.dispose())
     void connection.shutdown().finally(() => { quitReady = true; app.quit() })
   })
   app.on('window-all-closed', () => { if (quitting) app.quit() })
@@ -277,7 +318,7 @@ if (!app.requestSingleInstanceLock()) {
       const {action} = pendingAction; pendingAction = null
       if (!response.proceed) return
       unsaved = false
-      if (action.kind === 'navigate') return showMain(action.destination)
+      if (action.kind === 'navigate') return action.agent ? selectAgent(action.agent) : showMain(action.destination)
       if (action.kind === 'hide') owner.hide()
       else app.quit()
     })
@@ -334,6 +375,43 @@ if (!app.requestSingleInstanceLock()) {
     })
     notes.on('change',state => broadcast('localino:notes-changed',state))
     handle('localino:connection', () => connection.state)
+    handle('localino:agents', () => agents.state)
+    handle('localino:select-agent', (_owner,id) => { if(!isAgentId(id))throw Error('Agente non valido'); return selectAgent(id) })
+    const localId = (id:unknown):LocalAgentId => { if(!isLocalAgentId(id))throw Error('Agente non valido');return id }
+    handle('localino:history',(_owner,id)=>histories[localId(id)].state)
+    handle('localino:refresh-history',(_owner,id)=>histories[localId(id)].refresh())
+    handle('localino:agent-period',(_owner,value)=>{
+      if(!value||typeof value!=='object')throw Error('Periodo non valido')
+      const {id,period}=value as {id:unknown;period:unknown}
+      if(!isAgentPeriod(period))throw Error('Periodo non valido')
+      histories[localId(id)].period(period)
+    })
+    const configureSource = (id:LocalAgentId,enabled:boolean,path:string|null):AgentResult => {
+      try { agents.source(id,{enabled,path}); histories[id].configure({enabled,path}); return {ok:true} }
+      catch(error){return {ok:false,error:error instanceof Error?error.message:'Collegamento non riuscito.'}}
+    }
+    handle('localino:connect-agent',(_owner,value)=>{const id=localId(value);return configureSource(id,true,agents.state.sources[id].path??defaultSources[id])})
+    handle('localino:disconnect-agent',(_owner,value)=>{const id=localId(value);return configureSource(id,false,agents.state.sources[id].path)})
+    handle('localino:choose-agent-source',async(owner,value)=>{
+      const id=localId(value)
+      const choice=await dialog.showOpenDialog(owner,{title:`Sorgente ${agentLabels[id]}`,properties:[id==='opencode'?'openFile':'openDirectory']})
+      return choice.canceled||!choice.filePaths[0]?{ok:true}:configureSource(id,true,choice.filePaths[0])
+    })
+    handle('localino:recover-preferences',async(owner,target)=>{
+      if(target!=='agents'&&target!=='codex')throw Error('Preferenze non valide')
+      const result=await dialog.showMessageBox(owner,{type:'question',message:'Ripristinare le preferenze? Il file precedente sarà conservato.',buttons:['Annulla','Ripristina'],defaultId:0,cancelId:0})
+      if(result.response!==1)return {ok:true}
+      try {
+        if(target==='codex'){codexPreferences.recover();await connection.disconnect()}
+        else {agents.recover();for(const id of Object.keys(histories) as LocalAgentId[])histories[id].configure(agents.state.sources[id])}
+        return {ok:true}
+      }catch{return {ok:false,error:'Ripristino non riuscito. Il file precedente è conservato.'}}
+    })
+    agents.on('change',state=>{broadcast('localino:agents-changed',state);updateUsageActivity();updateTray()})
+    for(const id of Object.keys(histories) as LocalAgentId[]){
+      histories[id].on('change',state=>{broadcast('localino:history-changed',state);updateTray()})
+      histories[id].configure(agents.state.sources[id])
+    }
     handle('localino:quotas', () => quotas.state)
     handle('localino:refresh-quotas', () => quotas.refresh())
     handle('localino:open-dashboard', () => showMain('consumi'))
@@ -360,8 +438,8 @@ if (!app.requestSingleInstanceLock()) {
       updateTray()
     })
     usage.on('change', state => broadcast('localino:usage-changed',state))
-    powerMonitor.on('suspend', () => { capture.suspend(); quotas.suspend(); usage.suspend() })
-    powerMonitor.on('resume', () => { capture.resume(); quotas.resume(); usage.resume() })
+    powerMonitor.on('suspend', () => { capture.suspend(); quotas.suspend(); usage.suspend();Object.values(histories).forEach(r=>r.suspend()) })
+    powerMonitor.on('resume', () => { capture.resume(); quotas.resume(); usage.resume();Object.values(histories).forEach(r=>r.resume()) })
     tray = new Tray(createTrayIcon())
     updateTray()
     tray.on('click', () => panel?.isVisible() ? panel.hide() : showPanel())

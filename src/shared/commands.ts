@@ -1,4 +1,8 @@
 export const commands = [
+  {id:'selectCodex',label:'Seleziona Codex',area:'App',local:'',global:''},
+  {id:'selectClaude',label:'Seleziona Claude Code',area:'App',local:'',global:''},
+  {id:'selectPi',label:'Seleziona Pi',area:'App',local:'',global:''},
+  {id:'selectOpenCode',label:'Seleziona OpenCode',area:'App',local:'',global:''},
   {id:'home',label:'Apri Home',area:'App',local:'Ctrl+1',global:'Ctrl+Alt+L'},
   {id:'consumi',label:'Apri Consumi',area:'App',local:'Ctrl+2',global:'Ctrl+Alt+U'},
   {id:'clipboard',label:'Apri Clipboard',area:'App',local:'Ctrl+3',global:'Ctrl+Alt+C'},

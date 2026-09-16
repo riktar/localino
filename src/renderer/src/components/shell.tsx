@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowDownRight, ArrowUpRight, BarChart3, ClipboardList, Keyboard } from 'lucide-react'
 import { Button } from './ui/button'
 import { Card, CardContent } from './ui/card'
-import { Dashboard } from './dashboard'
+import { AgentDashboard, AgentCommands } from './agents'
 import { Clipboard, type LeaveGuard } from './clipboard'
 import { destinations, destinationLabels, type Destination } from '../../../shared/navigation'
 import { CommandProvider,ShortcutSettings,useCommandRegistry,useCommands } from './commands'
@@ -60,6 +60,7 @@ function ShellContent(): React.JSX.Element {
   useCommands({new:{run:()=>{setNewRequest(n=>n+1);navigate('clipboard')},disabled:!notesState||notesState.error?'Libreria non disponibile.':clipboardBusy?'Operazione in corso.':undefined}})
   useCommands({closeSettings:{run:()=>{returnFocus.current=settingsOrigin.current.element;navigate(settingsOrigin.current.destination)},disabled:destination!=='shortcuts'?'Apri prima le impostazioni.':undefined}})
   return <div className="min-h-screen">
+    <AgentCommands/>
     <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b bg-background/95 px-6 py-3">
       <span className="flex items-center gap-2 font-semibold"><span className="rounded-lg bg-primary px-2 py-1" aria-hidden="true">l.</span> localino</span>
       <Button size="sm" variant="outline" onClick={registry.open}>Comandi</Button>
@@ -70,7 +71,7 @@ function ShellContent(): React.JSX.Element {
     {registry.state.bindings.some(b=>b.error)&&<p role="alert" className="px-6 py-2 text-sm text-destructive">Una o più scorciatoie globali non sono disponibili. Apri Scorciatoie per cambiare la combinazione.</p>}
     {captureStatus.status==='error'&&<p role="alert" className="px-6 py-2 text-sm text-destructive">{captureStatus.error} La libreria Clipboard resta disponibile.</p>}
     <div ref={content} tabIndex={-1} className="outline-none" data-destination={destination}>
-      {destination === 'consumi' ? <Dashboard /> : destination === 'clipboard' ? <Clipboard captured={captured} guard={guard} newRequest={newRequest} consumeNew={()=>setNewRequest(0)} onBusy={setClipboardBusy} /> : destination==='shortcuts' ? <ShortcutSettings/> : <main className="mx-auto max-w-5xl space-y-8 p-6 lg:p-10">
+      {destination === 'consumi' ? <AgentDashboard /> : destination === 'clipboard' ? <Clipboard captured={captured} guard={guard} newRequest={newRequest} consumeNew={()=>setNewRequest(0)} onBusy={setClipboardBusy} /> : destination==='shortcuts' ? <ShortcutSettings/> : <main className="mx-auto max-w-5xl space-y-8 p-6 lg:p-10">
         {destination === 'home' ? <>
           <div className="space-y-3 pt-5"><p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Il tuo spazio di lavoro</p><h1 className="text-4xl font-semibold tracking-tight">Benvenuto in Localino</h1><p className="max-w-xl text-muted-foreground">Tieni d'occhio i consumi dei tuoi agenti e raccogli le idee per il prossimo prompt.</p></div>
           <div className="grid grid-cols-2 gap-5">

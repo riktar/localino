@@ -15,6 +15,7 @@ export class Connection extends EventEmitter {
   constructor(private store: PreferenceStore, factory = (path: string): RpcClient => new CodexRpc(path), private resolve = resolveCodex) {
     super()
     this.cliPath = store.load().cliPath
+    if (store.error) this.state = { status: 'error', account: null, error: 'preferences' }
     this.factory = factory
   }
 

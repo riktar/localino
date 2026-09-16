@@ -37,6 +37,7 @@ export function AccountCard({ state }: { state: ConnectionState }): React.JSX.El
       </> : <>
         <p className="text-sm leading-relaxed text-muted-foreground">Collega l'account Codex già autenticato su questo PC.</p>
         {state.error && <p role="alert" className="text-sm text-destructive">{errors[state.error]}</p>}
+        {state.error === 'preferences' && <Button size="sm" variant="outline" onClick={() => void window.localino.recoverPreferences('codex')}>Ripristina preferenze Codex</Button>}
         <Button className="w-full" disabled={busy} onClick={() => void window.localino.connect()}>
           {busy && <LoaderCircle className="animate-spin" aria-hidden="true" />}{busy ? 'Collegamento…' : state.error ? 'Riprova' : 'Collega Codex'}
         </Button>

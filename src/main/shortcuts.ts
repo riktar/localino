@@ -20,9 +20,8 @@ export class Shortcuts extends EventEmitter {
       const raw=JSON.parse(await readFile(this.file,'utf8')) as {version?:unknown;bindings?:unknown}
       if(raw.version!==1||!Array.isArray(raw.bindings))throw Error('schema')
       const defaults=defaultBindings()
-      // Version 1 from STORY-006 lacks only the new capture global. Preserve every saved binding.
-      const legacy=raw.bindings.length===defaults.length-1
-      if(raw.bindings.length!==defaults.length&&!legacy)throw Error('schema')
+      // Add known new commands without requiring old preference files to contain them.
+      const additions=new Set(['selectCodex','selectClaude','selectPi','selectOpenCode'])
       const seen=new Set<string>()
       const bindings=raw.bindings.map((value:unknown)=>{
         if(!value||typeof value!=='object')throw Error('schema')
@@ -30,10 +29,10 @@ export class Shortcuts extends EventEmitter {
         if(key===null||!defaults.some(d=>d.id===b.id&&d.scope===b.scope)||seen.has(identity))throw Error('schema')
         seen.add(identity);return {id:b.id,scope:b.scope,key,active:false}
       })
-      if(legacy){
-        if(bindings.some(b=>b.id==='capture'&&b.scope==='global'))throw Error('schema')
-        const added=defaults.find(b=>b.id==='capture'&&b.scope==='global')!
-        // A pre-existing user assignment wins over the newly introduced default.
+      for(const added of defaults){
+        if(seen.has(`${added.id}:${added.scope}`))continue
+        if(!additions.has(added.id)&&!(added.id==='capture'&&added.scope==='global'))throw Error('schema')
+        // Existing user assignments always win over introduced defaults.
         bindings.push({...added,key:bindings.some(b=>b.key===added.key)?'':added.key,active:false})
       }
       if(bindingsError(bindings))throw Error('collision')

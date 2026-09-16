@@ -4,9 +4,15 @@ Toolkit desktop Electron per lavorare con i coding agent. Frontend React e TypeS
 
 Localino collega l'account ChatGPT già autenticato nella CLI Codex sul PC, mostra le quote dalla barra di sistema e offre una dashboard delle statistiche disponibili. All'avvio si apre Home: dalla navigazione puoi aprire Consumi, Clipboard e Scorciatoie. La Clipboard conserva prompt e appunti solo sul PC. Le shortcut configurabili sono in corso di completamento.
 
+## Selezionare un agente
+
+Il selettore **Agente** in Consumi e nel pannello condivide e conserva la scelta tra Codex, Claude Code, Pi e OpenCode. Il menu della barra e i comandi **Seleziona ?** aprono Consumi sullo stesso agente; puoi assegnare combinazioni locali o globali in Scorciatoie, senza nuovi binding imposti. Le bozze Clipboard vengono protette anche quando cambi agente.
+
+`agents.json` conserva soltanto selezione e percorsi delle fonti locali. I nuovi lettori restano disattivati finch? non scegli di collegarli. Preferenze corrotte vengono conservate e richiedono un ripristino esplicito. In questo primo incremento del registro, i lettori locali sono indicati come in preparazione; le successive story dello sprint li completano.
+
 ## Collegare Codex
 
-Apri Localino, entra in **Consumi** e premi **Collega Codex**. Serve la CLI Codex nativa (verificata con 0.151.0) con accesso ChatGPT già effettuato. Non inserire un'API key: l'abbonamento usa l'autenticazione gestita da Codex. Per accesso/installazione consulta la [documentazione Codex CLI](https://learn.chatgpt.com/docs/codex-cli).
+Apri Localino, entra in **Consumi** e premi **Collega Codex**. Serve la CLI Codex nativa (latest stabile verificata: 0.154.0) con accesso ChatGPT già effettuato. Non inserire un'API key: l'abbonamento usa l'autenticazione gestita da Codex. Per accesso/installazione consulta la [documentazione Codex CLI](https://learn.chatgpt.com/docs/codex-cli).
 
 Localino cerca `codex.exe` nel PATH e nell'installazione desktop OpenAI del PC. Se non lo trova, usa **Seleziona eseguibile Codex** per scegliere il binario nativo; i wrapper `.cmd` non vengono eseguiti tramite shell. CLI assente/incompatibile, account non autenticato, autenticazione API key e timeout hanno stati separati con possibilità di riprovare.
 

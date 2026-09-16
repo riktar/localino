@@ -9,16 +9,23 @@ import { QuotaCard } from '@/components/quota-card'
 import { Shell } from '@/components/shell'
 import { CommandProvider,useCommands } from '@/components/commands'
 import { CaptureView } from '@/components/capture'
+import { AgentCommands, AgentPicker, LocalAgentView, useAgents } from '@/components/agents'
 import './styles.css'
 
 function App(): React.JSX.Element {
-  const state = useConnection()
-  const quotas = useQuotas()
-  const unavailable=state.status!=='connected'?'Collega prima Codex.':undefined
+  const state=useAgents()
   useCommands({
     home:{run:()=>window.localino.navigate('home')},consumi:{run:()=>window.localino.navigate('consumi')},clipboard:{run:()=>window.localino.navigate('clipboard')},shortcuts:{run:()=>window.localino.navigate('shortcuts')},
     capture:{run:()=>window.localino.requestCapture()},
     palette:{run:()=>window.localino.requestCommand('palette')},new:{run:()=>window.localino.requestCommand('new')},hide:{run:()=>window.localino.hide()},quit:{run:()=>window.localino.quit()},
+  })
+  return <><AgentCommands/><AgentPicker/>{state.selected==='codex'?<CodexPanel/>:<LocalAgentView id={state.selected}/>}</>
+}
+function CodexPanel(): React.JSX.Element {
+  const state = useConnection()
+  const quotas = useQuotas()
+  const unavailable=state.status!=='connected'?'Collega prima Codex.':undefined
+  useCommands({
     connect:{run:()=>window.localino.connect(),disabled:state.status==='connected'||state.status==='connecting'?'Account già collegato o collegamento in corso.':undefined},
     reread:{run:()=>window.localino.rereadAccount(),disabled:unavailable},choose:{run:()=>window.localino.chooseCodex(),disabled:state.status==='connecting'?'Collegamento in corso.':undefined},
     disconnect:{run:()=>window.localino.disconnect(),disabled:state.status==='disconnected'?'Account già scollegato.':undefined},quotas:{run:()=>window.localino.refreshQuotas(),disabled:unavailable??(quotas.refreshing?'Lettura in corso.':undefined)},
