@@ -30,9 +30,11 @@ static void selection(pid_t pid) {
     AXUIElementRef app = AXUIElementCreateApplication(pid);
     AXUIElementSetMessagingTimeout(app,0.15);
     id focused = attribute(app,kAXFocusedUIElementAttribute);
+    id originalWindow = attribute(app,kAXFocusedWindowAttribute);
     if (focused && CFGetTypeID((__bridge CFTypeRef)focused) == AXUIElementGetTypeID()) {
       AXUIElementRef element = (__bridge AXUIElementRef)focused;
       AXUIElementSetMessagingTimeout(element,0.15);
+      id originalRange = attribute(element,kAXSelectedTextRangeAttribute);
       BOOL protected = NO;
       id ancestor = focused;
       for (int depth=0; depth<8 && ancestor; depth++) {
@@ -52,6 +54,15 @@ static void selection(pid_t pid) {
           else if ([selected length]) { text=selected; reason=@"ok"; }
         }
       }
+      // A PID alone is insufficient: an app can switch windows or controls mid-read.
+      // Missing identity after a read is not evidence that the old selection is still current.
+      id currentFocus = attribute(app,kAXFocusedUIElementAttribute);
+      id currentWindow = attribute(app,kAXFocusedWindowAttribute);
+      id currentRange = attribute(element,kAXSelectedTextRangeAttribute);
+      if ([reason isEqual:@"ok"] && (!currentFocus || !CFEqual((__bridge CFTypeRef)focused,(__bridge CFTypeRef)currentFocus) ||
+          !originalWindow || !currentWindow || !CFEqual((__bridge CFTypeRef)originalWindow,(__bridge CFTypeRef)currentWindow) ||
+          (originalRange && (!currentRange || !CFEqual((__bridge CFTypeRef)originalRange,(__bridge CFTypeRef)currentRange))) ||
+          ![attribute(element,kAXSelectedTextAttribute) isEqual:text])) { text=@"";reason=@"changed"; }
     }
     CFRelease(app);
     if (NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier != pid) { reason=@"changed"; text=@""; }
