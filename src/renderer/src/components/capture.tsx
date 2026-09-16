@@ -73,20 +73,21 @@ export function CaptureView({guard}:{guard:React.MutableRefObject<LeaveGuard|nul
     catch { setError('Salvataggio non riuscito. Il testo è conservato: riprova.') }
     finally { saving.current = false; setBusy(false) }
   }
-  const cancel = () => { if (draft && !saving.current) void window.localino.cancelCapture(draft.id) }
+  const cancel = async () => { if (draft && !saving.current && await guard.current?.()) { await window.localino.cancelCapture(draft.id) } }
   useEffect(()=>{
     guard.current=async()=>{
       if(saving.current)return false
       if(!draft)return true
       const answer=await ask('Keep this capture?','Save the text or discard it.',['Save','Discard','Stay'])
-      if(answer===0){const invalid=textError(text);if(invalid){setError(invalid);return false}const result=await window.localino.saveCapture(draft.id,text);if(!result.ok){setError(result.error??'Could not save.');return false}return true}
+      if(answer===0){const invalid=textError(text);if(invalid){setError(invalid);return false}saving.current=true;setBusy(true);try{const result=await window.localino.saveCapture(draft.id,text);if(!result.ok){setError(result.error??'Could not save.');return false}return true}catch{setError('Could not save. Your draft is safe.');return false}finally{saving.current=false;setBusy(false)}}
       if(answer===1){await window.localino.cancelCapture(draft.id);return true}
+      requestAnimationFrame(()=>editor.current?.focus())
       return false
     }
     return ()=>{guard.current=null}
   },[guard,draft,text,ask])
   return <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4" onKeyDown={event => {
-    if (event.repeat || event.nativeEvent.isComposing || event.keyCode === 229) return
+    if (document.querySelector('dialog[open]') || event.repeat || event.nativeEvent.isComposing || event.keyCode === 229) return
     if (event.key === 'Escape') { event.preventDefault(); cancel() }
     if (event.key === 'Enter' && event.ctrlKey && !event.altKey && !event.shiftKey) { event.preventDefault(); void save() }
   }}>

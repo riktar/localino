@@ -43,7 +43,7 @@ function PanelContent(): React.JSX.Element {
     home:{run:()=>window.localino.navigate('panel')},panel:{run:()=>window.localino.openPanel()},
     consumi:{run:()=>window.localino.openDashboard()},clipboard:{run:()=>window.localino.navigate('panel')},
     shortcuts:{run:()=>window.localino.navigate('settings')},palette:{run:registry.open},
-    new:{run:()=>{void window.localino.navigate('panel');setNewRequest(n=>n+1)}},
+    new:{run:async()=>{if(await window.localino.navigate('panel'))setNewRequest(n=>n+1)}},
     hide:{run:()=>window.localino.hide()},quit:{run:()=>window.localino.quit()},capture:{run:()=>window.localino.requestCapture()},
     closeSettings:{run:()=>window.localino.navigate('panel'),disabled:destination!=='settings'?'Open settings first.':undefined},
   })

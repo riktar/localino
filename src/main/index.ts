@@ -62,6 +62,7 @@ let quitReady = false
 let unsaved = false
 let actionSequence = 0
 let pendingAction: ActionRequest | null = null
+let resolvePendingAction: ((proceed:boolean)=>void) | null = null
 const shortcuts = new Shortcuts(join(app.getPath('userData'),'shortcuts.json'),globalShortcut,id=>{
   if(id==='home'||id==='clipboard')void showMain('panel')
   if(id==='consumi')void showMain('usage')
@@ -75,13 +76,13 @@ async function selectAgent(id: AgentId): Promise<AgentResult> {
   catch (error) { return {ok:false,error:error instanceof Error ? error.message : 'Could not select agent.'} }
 }
 
-function requestGuard(action: WindowAction): void {
-  if (!panel || panel.isDestroyed()) return
-  if (!pendingAction) {
-    pendingAction = {id:++actionSequence,action}
-    panel.webContents.send('localino:action-request',pendingAction)
-  }
+function requestGuard(action: WindowAction): Promise<boolean> {
+  if (!panel || panel.isDestroyed() || pendingAction) return Promise.resolve(false)
+  const result = new Promise<boolean>(resolve=>{resolvePendingAction=resolve})
+  pendingAction = {id:++actionSequence,action}
+  panel.webContents.send('localino:action-request',pendingAction)
   showPanel()
+  return result
 }
 function hideWindow(window: BrowserWindow): void {
   if (window === panel && (unsaved || capture.draft)) requestGuard({kind:'hide'})
@@ -161,14 +162,14 @@ function updateUsageActivity(): void {
   const localVisible = visible || (!!panel && !panel.isDestroyed() && panel.isVisible() && !panel.isMinimized())
   for (const id of Object.keys(histories) as LocalAgentId[]) histories[id].setActive(localVisible && agents.state.selected === id)
 }
-async function showMain(next: Destination = 'panel', preserveDraft = false): Promise<void> {
-  if (!panelLoaded || !panel) return
-  if (!preserveDraft && (unsaved || capture.draft) && next !== destination) { requestGuard({kind:'navigate',destination:next}); return }
+async function showMain(next: Destination = 'panel', preserveDraft = false): Promise<boolean> {
+  if (!panelLoaded || !panel) return false
+  if (!preserveDraft && (unsaved || capture.draft) && next !== destination) return requestGuard({kind:'navigate',destination:next})
   if (next !== 'usage') {
     destination = next
     panel.webContents.send('localino:navigated',next)
     showPanel()
-    return
+    return true
   }
   if (!dashboard || dashboard.isDestroyed()) {
     dashboard = new BrowserWindow({width:1120,height:800,minWidth:800,minHeight:600,title:'Localino — Usage',backgroundColor:'#faf9f6',show:false,autoHideMenuBar:true,
@@ -185,6 +186,7 @@ async function showMain(next: Destination = 'panel', preserveDraft = false): Pro
   panel.hide()
   if(dashboard.isMinimized())dashboard.restore()
   dashboard.show();dashboard.focus();updateUsageActivity()
+  return true
 }
 function positionPanel(anchor = false): void {
   if (!panel || panel.isDestroyed()) return
@@ -196,6 +198,7 @@ function positionPanel(anchor = false): void {
 }
 function showPanel(anchor = false): void {
   if (!panelLoaded || !panel || panel.isDestroyed()) return
+  dashboard?.hide()
   positionPanel(anchor)
   if(panel.isMinimized())panel.restore()
   panel.show();panel.focus()
@@ -287,16 +290,18 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.on('localino:unsaved',(event,value:unknown) => {
       if (typeof value === 'boolean' && panel && isTrustedSender(event.sender,event.senderFrame,[panel.webContents])) unsaved = value
     })
-    handle('localino:resolve-action',(owner,value) => {
+    handle('localino:resolve-action',async(owner,value) => {
       if (owner !== panel || !value || typeof value !== 'object') throw Error('Access denied')
       const response = value as {id:unknown;proceed:unknown}
       if (!pendingAction || response.id !== pendingAction.id || typeof response.proceed !== 'boolean') throw Error('Richiesta scaduta')
       const {action} = pendingAction; pendingAction = null
-      if (!response.proceed) return
+      const done=resolvePendingAction;resolvePendingAction=null
+      if (!response.proceed) {done?.(false);return}
       unsaved = false
-      if (action.kind === 'navigate') return action.agent ? selectAgent(action.agent) : showMain(action.destination)
-      if (action.kind === 'hide') owner.hide()
+      if (action.kind === 'navigate') await showMain(action.destination,true)
+      else if (action.kind === 'hide') owner.hide()
       else app.quit()
+      done?.(true)
     })
     handle('localino:captured-note',owner=>{if(owner!==panel)throw Error('Access denied');return capturedNote})
     handle('localino:captured-note-presented',(owner,sequence)=>{
@@ -333,8 +338,7 @@ if (!app.requestSingleInstanceLock()) {
     handle('localino:panel',()=>{dashboard?.hide();showPanel()})
     handle('localino:request-command',async (_owner,id)=>{
       if(id!=='new'&&id!=='palette')throw Error('Comando non valido')
-      await showMain('panel')
-      panel?.webContents.send('localino:command',id)
+      if(await showMain('panel'))panel?.webContents.send('localino:command',id)
     })
     shortcuts.on('change',state=>broadcast('localino:shortcuts-changed',state))
     await shortcuts.init()

@@ -79,7 +79,7 @@ export interface LocalinoApi {
   onActionRequest: (listener: (request: import('./actions').ActionRequest) => void) => () => void
   resolveAction: (id: number, proceed: boolean) => Promise<void>
   quit: () => Promise<void>
-  navigate: (destination: import('./navigation').Destination) => Promise<void>
+  navigate: (destination: import('./navigation').Destination) => Promise<boolean>
   getDestination: () => Promise<import('./navigation').Destination>
   onNavigate: (listener: (destination: import('./navigation').Destination) => void) => () => void
   hide: () => void
