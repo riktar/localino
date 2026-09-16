@@ -25,7 +25,7 @@ export function CaptureSettings(): React.JSX.Element {
   return <section aria-labelledby="capture-settings-title" className="space-y-3 rounded-xl border bg-card p-4">
     <h2 id="capture-settings-title" className="font-semibold">Cattura della selezione</h2>
     <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={state.enabled} disabled={busy} onChange={e => void update(e.target.checked)} />Abilita doppio Shift</label>
-    <p className="text-sm text-muted-foreground">Premi e rilascia Shift due volte entro 350 ms, senza altri tasti. L’alternativa globale predefinita è Ctrl+Alt+P, configurabile sotto.</p>
+    <p className="text-sm text-muted-foreground">Premi e rilascia Shift due volte entro 350 ms, senza altri tasti. L’alternativa globale predefinita è Ctrl+Alt+P, configurabile sotto. Il testo selezionato viene salvato automaticamente e mostrato in Clipboard, in primo piano.</p>
     <p className="text-sm text-muted-foreground">{captureHelp}</p>
     <p role="status" className="text-sm">{state.status === 'ready' ? 'Componente di cattura disponibile.' : state.status === 'starting' ? 'Avvio cattura…' : state.status === 'suspended' ? 'Cattura sospesa.' : state.error}</p>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}

@@ -2,6 +2,13 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { ConnectionState, LocalinoApi, Quotas, ResourceState, Usage } from '../shared/contracts'
 
 const api: LocalinoApi = {
+  getCapturedNote:()=>ipcRenderer.invoke('localino:captured-note'),
+  capturedNotePresented:sequence=>ipcRenderer.invoke('localino:captured-note-presented',sequence),
+  onCapturedNote:listener=>{
+    const callback=(_event:Electron.IpcRendererEvent,note:import('../shared/capture').CapturedNote)=>listener(note)
+    ipcRenderer.on('localino:note-captured',callback)
+    return ()=>{ipcRenderer.removeListener('localino:note-captured',callback)}
+  },
   getCaptureStatus:()=>ipcRenderer.invoke('localino:capture-status'),
   requestCapture:()=>ipcRenderer.invoke('localino:capture-request'),
   setCaptureEnabled:value=>ipcRenderer.invoke('localino:capture-enable',value),

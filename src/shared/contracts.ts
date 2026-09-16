@@ -33,6 +33,10 @@ export interface ResourceState<T> {
 }
 
 export interface LocalinoApi {
+  getCapturedNote: () => Promise<import('./capture').CapturedNote|null>
+  onCapturedNote: (listener:(note:import('./capture').CapturedNote)=>void)=>()=>void
+  capturedNotePresented: (sequence:number) => Promise<void>
+
   getCaptureStatus: () => Promise<import('./capture').CaptureStatus>
   onCaptureStatus: (listener:(state:import('./capture').CaptureStatus)=>void)=>()=>void
   requestCapture: () => Promise<void>

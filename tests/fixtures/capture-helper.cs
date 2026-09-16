@@ -3,7 +3,8 @@ using System;
 using System.IO;
 using System.Web.Script.Serialization;
 class Fixture {
-  static void Main() {
+  static void Main(string[] args) {
+    if(args.Length>0 && args[0]=="--focus"){Console.WriteLine("focused");return;}
     Console.OutputEncoding=new System.Text.UTF8Encoding(false);
     var json=new JavaScriptSerializer();int id=0;bool active=false;
     Action<object> send=value=>{Console.WriteLine(json.Serialize(value));Console.Out.Flush();};

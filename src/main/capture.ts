@@ -97,8 +97,9 @@ export class Capture extends EventEmitter {
       if (!this.draft?.acquiring || msg.id !== this.nativeId) return
       if (typeof msg.text !== 'string' || msg.text.length > 100_000 || typeof msg.reason !== 'string' || typeof msg.ms !== 'number' || !Number.isFinite(msg.ms) || msg.ms < 0) throw Error('protocol')
       clearTimeout(this.timer)
-      this.draft = { ...this.draft, acquiring: false, text: msg.reason === 'ok' ? msg.text : '', message: captureMessage(msg.reason), elapsedMs: msg.ms }
-      this.emit('draft', this.draft)
+      this.draft = { ...this.draft, acquiring: false, text: msg.reason === 'ok' ? msg.text : '', message: captureMessage(msg.reason === 'ok' && !msg.text.trim() ? 'empty' : msg.reason), elapsedMs: msg.ms }
+      if (msg.reason === 'ok' && msg.text.trim()) this.emit('selection', this.draft)
+      else this.emit('draft', this.draft)
       return
     }
     throw Error('protocol')
@@ -130,16 +131,21 @@ export class Capture extends EventEmitter {
     this.origin = null
     this.emit('finished'); return true
   }
-  async save(id: number, text: unknown, persist: (text: string) => Promise<{ ok: boolean; error?: string }>): Promise<{ ok: boolean; error?: string }> {
+  async save(id: number, text: unknown, persist: (text: string) => Promise<{ ok: boolean; error?: string }>, complete = true): Promise<{ ok: boolean; error?: string }> {
     if (!this.draft || this.draft.id !== id || this.draft.acquiring || this.saving || typeof text !== 'string') return { ok: false, error: 'Cattura non disponibile o salvataggio in corso.' }
     this.saving = true
     try {
       const result = await persist(text)
       this.saving = false
-      if (result.ok) this.finish(id, false)
+      if (result.ok && complete) this.finish(id, false)
       return result
     } catch { return { ok: false, error: 'Salvataggio non riuscito. Il testo è conservato: riprova.' } }
     finally { this.saving = false }
+  }
+  saveError(error: string): void {
+    if (!this.draft) return
+    this.draft = { ...this.draft, message: error }
+    this.emit('draft', this.draft)
   }
   setEnabled(value: unknown): Promise<{ ok: boolean; error?: string }> {
     const operation = this.queue.then(async () => {

@@ -7,6 +7,7 @@ import { Clipboard, type LeaveGuard } from './clipboard'
 import { destinations, destinationLabels, type Destination } from '../../../shared/navigation'
 import { CommandProvider,ShortcutSettings,useCommandRegistry,useCommands } from './commands'
 import { useCaptureStatus } from './capture'
+import type { CapturedNote } from '../../../shared/capture'
 import type { NotesState } from '../../../shared/notes'
 
 export function Shell(): React.JSX.Element {
@@ -15,6 +16,11 @@ export function Shell(): React.JSX.Element {
 function ShellContent(): React.JSX.Element {
   const registry=useCommandRegistry()!
   const captureStatus=useCaptureStatus()
+  const [captured,setCaptured]=useState<CapturedNote|null>(null)
+  useEffect(()=>{
+    const receive=(next:CapturedNote|null)=>{if(next)setCaptured(previous=>!previous||next.sequence>=previous.sequence?next:previous)}
+    const off=window.localino.onCapturedNote(receive);void window.localino.getCapturedNote().then(receive);return off
+  },[])
   const [destination, setDestination] = useState<Destination>('home')
   const content = useRef<HTMLDivElement>(null)
   const guard = useRef<LeaveGuard|null>(null)
@@ -64,7 +70,7 @@ function ShellContent(): React.JSX.Element {
     {registry.state.bindings.some(b=>b.error)&&<p role="alert" className="px-6 py-2 text-sm text-destructive">Una o più scorciatoie globali non sono disponibili. Apri Scorciatoie per cambiare la combinazione.</p>}
     {captureStatus.status==='error'&&<p role="alert" className="px-6 py-2 text-sm text-destructive">{captureStatus.error} La libreria Clipboard resta disponibile.</p>}
     <div ref={content} tabIndex={-1} className="outline-none" data-destination={destination}>
-      {destination === 'consumi' ? <Dashboard /> : destination === 'clipboard' ? <Clipboard guard={guard} newRequest={newRequest} consumeNew={()=>setNewRequest(0)} onBusy={setClipboardBusy} /> : destination==='shortcuts' ? <ShortcutSettings/> : <main className="mx-auto max-w-5xl space-y-8 p-6 lg:p-10">
+      {destination === 'consumi' ? <Dashboard /> : destination === 'clipboard' ? <Clipboard captured={captured} guard={guard} newRequest={newRequest} consumeNew={()=>setNewRequest(0)} onBusy={setClipboardBusy} /> : destination==='shortcuts' ? <ShortcutSettings/> : <main className="mx-auto max-w-5xl space-y-8 p-6 lg:p-10">
         {destination === 'home' ? <>
           <div className="space-y-3 pt-5"><p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Il tuo spazio di lavoro</p><h1 className="text-4xl font-semibold tracking-tight">Benvenuto in Localino</h1><p className="max-w-xl text-muted-foreground">Tieni d'occhio i consumi dei tuoi agenti e raccogli le idee per il prossimo prompt.</p></div>
           <div className="grid grid-cols-2 gap-5">

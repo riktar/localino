@@ -16,6 +16,9 @@ internal sealed class CaptureHelper : Form {
   [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
   [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
+  [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+  [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from, uint to, bool attach);
+  [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr window);
   [DllImport("user32.dll")] static extern bool IsWindow(IntPtr window);
   [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
   [DllImport("kernel32.dll", CharSet=CharSet.Unicode)] static extern IntPtr CreateJobObject(IntPtr attributes, string name);
@@ -121,6 +124,31 @@ internal sealed class CaptureHelper : Form {
     IntPtr window=new IntPtr(handle);uint pid;GetWindowThreadProcessId(window,out pid);
     if(window!=IntPtr.Zero&&IsWindow(window)&&pid==expected)SetForegroundWindow(window);
   }
+  static void FocusWindow(long handle, uint expected) {
+    IntPtr target=new IntPtr(handle);uint pid;
+    uint targetThread=GetWindowThreadProcessId(target,out pid);
+    if(target==IntPtr.Zero||!IsWindow(target)||pid!=expected){Console.Write("unavailable");return;}
+    // A separate process bounds potentially hung input queues. It never simulates
+    // keystrokes and only runs after selection acquisition has completed.
+    using(var queue=new Form()) {
+      var queueHandle=queue.Handle;
+      uint current=GetCurrentThreadId(),foregroundPid;
+      uint foregroundThread=GetWindowThreadProcessId(GetForegroundWindow(),out foregroundPid);
+      bool attachedForeground=false,attachedTarget=false;
+      try {
+        if(GetForegroundWindow()!=target)SetForegroundWindow(target);
+        if(GetForegroundWindow()!=target) {
+          if(foregroundThread!=0&&foregroundThread!=current)attachedForeground=AttachThreadInput(current,foregroundThread,true);
+          if(targetThread!=0&&targetThread!=current&&targetThread!=foregroundThread)attachedTarget=AttachThreadInput(current,targetThread,true);
+          BringWindowToTop(target);SetForegroundWindow(target);
+        }
+      } finally {
+        if(attachedTarget)AttachThreadInput(current,targetThread,false);
+        if(attachedForeground)AttachThreadInput(current,foregroundThread,false);
+      }
+      Console.Write(GetForegroundWindow()==target?"focused":"unavailable");
+    }
+  }
   static void ReadSelection(long handle) {
     try {
       var foreground=new IntPtr(handle);
@@ -151,6 +179,7 @@ internal sealed class CaptureHelper : Form {
   }
   [STAThread] static void Main(string[] args) {
     Console.OutputEncoding=new UTF8Encoding(false);
+    if(args.Length==3&&args[0]=="--focus"){long hwnd;uint pid;if(long.TryParse(args[1],out hwnd)&&uint.TryParse(args[2],out pid)){using(var deadline=new System.Threading.Timer(_=>Environment.Exit(2),null,700,-1))FocusWindow(hwnd,pid);}return;}
     if(args.Length==3&&args[0]=="--restore"){long hwnd;uint pid;if(long.TryParse(args[1],out hwnd)&&uint.TryParse(args[2],out pid))Restore(hwnd,pid);return;}
     if(args.Length==1&&args[0]=="--self-test"){ShiftGesture.Test();return;}
     if(args.Length==2&&args[0]=="--read"){long hwnd;if(long.TryParse(args[1],out hwnd))ReadSelection(hwnd);return;}

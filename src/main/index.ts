@@ -12,6 +12,8 @@ import { NotesStore } from './notes'
 import type { ActionRequest, WindowAction } from '../shared/actions'
 import { Shortcuts } from './shortcuts'
 import { Capture } from './capture'
+import { Foreground } from './foreground'
+import type { CapturedNote } from '../shared/capture'
 
 const customData = app.commandLine.getSwitchValue('user-data-dir')
 if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPath('userData', resolve(customData)) }
@@ -22,7 +24,16 @@ connection.on('ratesChanged', () => void quotas.refresh())
 const usage = new Resource(connection, { method: 'account/usage/read', normalize: normalizeUsage, interval: 300_000, staleAfter: 300_000 })
 usage.setActive(false)
 
-const capture = new Capture(join(app.getPath('userData'),'capture.json'), app.isPackaged ? join(process.resourcesPath,'native/Localino.Capture.exe') : join(__dirname,'../native/Localino.Capture.exe'))
+const captureExecutable = app.isPackaged ? join(process.resourcesPath,'native/Localino.Capture.exe') : join(__dirname,'../native/Localino.Capture.exe')
+const capture = new Capture(join(app.getPath('userData'),'capture.json'), captureExecutable)
+const foreground = new Foreground(captureExecutable)
+let captureCompleting = false
+let quitAfterCapture = false
+let capturedNote: CapturedNote | null = null
+let captureSequence = 0
+let presentationReady = false
+let rendererPresented = false
+let presentationDone: (() => void) | null = null
 let captureWindow: BrowserWindow | null = null
 let captureLoading: Promise<void> | null = null
 let panel: BrowserWindow | null = null
@@ -69,14 +80,14 @@ async function loadWindow(window: BrowserWindow, dashboardView: boolean | 'captu
   } else await window.loadFile(join(__dirname,'../renderer/index.html'), dashboardView ? { query: { view:dashboardView === 'capture' ? 'capture' : 'main' } } : {})
 }
 async function presentCapture(): Promise<void> {
-  if (!capture.draft) return
+  if (!capture.draft || capture.draft.acquiring || captureCompleting) return
   if (!captureWindow || captureWindow.isDestroyed()) {
     captureWindow = new BrowserWindow({width:760,height:580,minWidth:580,minHeight:460,title:'Localino — Cattura selezione',show:false,autoHideMenuBar:true,backgroundColor:'#faf9f6',
       webPreferences:{preload:join(__dirname,'../preload/index.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}})
     const window = captureWindow
     secureWindow(window)
     window.on('page-title-updated',event=>event.preventDefault())
-    window.on('close',event=>{if(!quitting){event.preventDefault();if(capture.draft && !capture.isSaving){window.hide();capture.finish(capture.draft.id,true)}}})
+    window.on('close',event=>{if(!quitting){event.preventDefault();if(capture.draft && !capture.isSaving && !captureCompleting){window.hide();capture.finish(capture.draft.id,true)}}})
     window.on('closed',()=>{captureWindow=null})
     captureLoading = loadWindow(window,'capture').finally(()=>{captureLoading=null})
   }
@@ -85,13 +96,50 @@ async function presentCapture(): Promise<void> {
   captureWindow.webContents.send('localino:capture-draft',capture.draft)
   if(captureWindow.isMinimized())captureWindow.restore()
   // Keep origin focused until acquisition finishes, including the timeout path.
-  if(capture.draft.acquiring)captureWindow.showInactive()
-  else {captureWindow.show();captureWindow.focus()}
+  captureWindow.show();captureWindow.focus()
+  await foreground.focus(captureWindow.getNativeWindowHandle(),process.pid)
 }
+async function saveCapturedPrompt(id: number, text: unknown): Promise<{ok:boolean;error?:string}> {
+  if(captureCompleting)return {ok:false,error:'Salvataggio in corso.'}
+  captureCompleting=true
+  let noteId: string | undefined
+  const result = await capture.save(id,text,async value=>{
+    const saved=await notes.mutate({kind:'create',text:value})
+    if(saved.ok)noteId=saved.state.notes[0].id
+    return saved
+  },false)
+  if(result.ok && noteId){
+    try {
+      captureWindow?.hide()
+      presentationReady=false;rendererPresented=false
+      const presented=new Promise<void>(resolve=>{presentationDone=resolve})
+      capturedNote={sequence:++captureSequence,noteId,captureId:id,elapsedMs:capture.draft?.elapsedMs}
+      await showMain('clipboard')
+      if(dashboard&&!dashboard.isDestroyed()){
+        if(!dashboard.isVisible())dashboard.show()
+        dashboard.webContents.send('localino:note-captured',capturedNote)
+        const focused=await foreground.focus(dashboard.getNativeWindowHandle(),process.pid)
+        presentationReady=true
+        if(rendererPresented)capture.presented(id)
+        if(capturedNote?.captureId===id&&!focused){capturedNote={...capturedNote,focusFailed:true};dashboard.webContents.send('localino:note-captured',capturedNote);dashboard.flashFrame(true)}
+      }
+      await Promise.race([presented,new Promise<void>(resolve=>setTimeout(resolve,1000))])
+    } catch {if(dashboard&&!dashboard.isDestroyed())dashboard.flashFrame(true)} finally {presentationDone=null;capture.finish(id,false);captureCompleting=false;if(quitAfterCapture){quitAfterCapture=false;app.quit()}}
+  }else{
+    captureCompleting=false
+    capture.saveError(result.error??'Salvataggio non riuscito. Il testo è conservato: riprova.')
+    if(quitAfterCapture){quitAfterCapture=false;app.quit()}
+  }
+  return result
+}
+capture.on('selection',draft=>{void saveCapturedPrompt(draft.id,draft.text)})
 capture.on('draft',()=>{void presentCapture()})
 capture.on('raise',()=>{void presentCapture()})
 capture.on('finished',()=>captureWindow?.hide())
-capture.on('timing',draft=>captureWindow?.webContents.send('localino:capture-draft',draft))
+capture.on('timing',draft=>{
+  captureWindow?.webContents.send('localino:capture-draft',draft)
+  if(capturedNote && capturedNote.captureId===draft.id){capturedNote={...capturedNote,visibleMs:draft.visibleMs};dashboard?.webContents.send('localino:note-captured',capturedNote);presentationDone?.()}
+})
 capture.on('status',state=>broadcast('localino:capture-status',state))
 
 function updateUsageActivity(): void { usage.setActive(destination === 'consumi' && !!dashboard?.isVisible() && !dashboard.isMinimized()) }
@@ -170,11 +218,11 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', (event) => {
     if (quitReady) return
     event.preventDefault()
-    if (capture.isSaving) { void presentCapture(); return }
+    if (capture.isSaving || captureCompleting) { quitAfterCapture=true; return }
     if (unsaved && !quitting) { requestGuard({kind:'quit'}); return }
     if (quitting) return
     quitting = true
-    capture.dispose()
+    capture.dispose();foreground.dispose()
     shortcuts.dispose()
     quotas.dispose()
     usage.dispose()
@@ -232,6 +280,11 @@ if (!app.requestSingleInstanceLock()) {
       if (action.kind === 'hide') owner.hide()
       else app.quit()
     })
+    handle('localino:captured-note',owner=>{if(owner!==dashboard)throw Error('Access denied');return capturedNote})
+    handle('localino:captured-note-presented',(owner,sequence)=>{
+      if(owner!==dashboard||typeof sequence!=='number')throw Error('Access denied')
+      if(capturedNote?.sequence===sequence){rendererPresented=true;if(presentationReady)capture.presented(capturedNote.captureId);owner.flashFrame(false)}
+    })
     handle('localino:capture-status',()=>capture.state)
     handle('localino:capture-request',()=>capture.request())
     handle('localino:capture-enable',(_owner,value)=>capture.setEnabled(value))
@@ -244,13 +297,13 @@ if (!app.requestSingleInstanceLock()) {
     })
     handle('localino:capture-cancel',(owner,id)=>{
       if(owner!==captureWindow||typeof id!=='number')throw Error('Access denied')
-      if(capture.draft?.id===id&&!capture.isSaving){owner.hide();capture.finish(id,true)}
+      if(capture.draft?.id===id&&!capture.isSaving&&!captureCompleting){owner.hide();capture.finish(id,true)}
     })
     handle('localino:capture-save',(owner,value)=>{
       if(owner!==captureWindow||!value||typeof value!=='object')throw Error('Access denied')
       const request=value as {id:unknown;text:unknown}
       if(typeof request.id!=='number')throw Error('Richiesta non valida')
-      return capture.save(request.id,request.text,text=>notes.mutate({kind:'create',text}))
+      return saveCapturedPrompt(request.id,request.text)
     })
     await capture.init()
     handle('localino:quit',() => app.quit())
@@ -318,5 +371,5 @@ if (!app.requestSingleInstanceLock()) {
     console.error('Impossibile avviare Localino', error)
     app.exit(1)
   })
-  app.on('will-quit', () => { capture.dispose();shortcuts.dispose();tray?.destroy() })
+  app.on('will-quit', () => { capture.dispose();foreground.dispose();shortcuts.dispose();tray?.destroy() })
 }

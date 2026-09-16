@@ -3,15 +3,19 @@ import { Button } from './ui/button'
 import { useConfirm } from './confirm-dialog'
 import { NOTE_LIMIT, textError, type Note, type NotesState } from '../../../shared/notes'
 import { useCommands } from './commands'
+import type { CapturedNote } from '../../../shared/capture'
 
 export type LeaveGuard = () => Promise<boolean>
-export function Clipboard({guard,newRequest=0,consumeNew=()=>{},onBusy}:{guard:RefObject<LeaveGuard|null>;newRequest?:number;consumeNew?:()=>void;onBusy?:(busy:boolean)=>void}): React.JSX.Element {
+export function Clipboard({captured,guard,newRequest=0,consumeNew=()=>{},onBusy}:{captured?:CapturedNote|null;guard:RefObject<LeaveGuard|null>;newRequest?:number;consumeNew?:()=>void;onBusy?:(busy:boolean)=>void}): React.JSX.Element {
   const [state,setState] = useState<NotesState|null>(null)
   const [filter,setFilter] = useState('open')
   const [query,setQuery] = useState('')
   const [selected,setSelected] = useState<string|null>(null)
   const [editor,setEditor] = useState<{id:string|null;original:string;updatedAt:number}|null>(null)
   const [draft,setDraft] = useState('')
+  const [editorSuspended,setEditorSuspended] = useState(false)
+  const consumedCapture = useRef(0)
+  const [pendingPresentation,setPendingPresentation] = useState<CapturedNote|null>(null)
   const [busy,setBusy] = useState(false)
   const [message,setMessage] = useState('')
   const [error,setError] = useState('')
@@ -29,6 +33,26 @@ export function Clipboard({guard,newRequest=0,consumeNew=()=>{},onBusy}:{guard:R
   useEffect(() => {window.localino.setUnsaved(dirty);return () => window.localino.setUnsaved(false)},[dirty])
   const notes = useMemo(() => (state?.notes ?? []).filter(n => (filter==='all' || n.completed===(filter==='completed')) && n.text.toLocaleLowerCase().includes(query.toLocaleLowerCase())),[state,filter,query])
   const note = state?.notes.find(n=>n.id===selected)
+  useEffect(()=>{
+    if(busy||!captured||captured.sequence===consumedCapture.current||!state?.notes.some(n=>n.id===captured.noteId))return
+    consumedCapture.current=captured.sequence
+    setQuery('');setFilter('open');setSelected(captured.noteId);setError('');setMessage('Prompt acquisito e salvato.')
+    if(editor&&dirty)setEditorSuspended(true)
+    else {setEditor(null);setEditorSuspended(false)}
+    setPendingPresentation(captured)
+  },[captured,state,editor,dirty,busy])
+  useEffect(()=>{
+    if(!pendingPresentation||selected!==pendingPresentation.noteId||query||filter!=='open'||(editor&&!editorSuspended))return
+    let frame=0
+    const first=requestAnimationFrame(()=>{frame=requestAnimationFrame(()=>{
+      const row=document.querySelector<HTMLButtonElement>(`[data-note-id="${pendingPresentation.noteId}"]`)
+      row?.scrollIntoView({block:'nearest'});row?.focus()
+      void window.localino.capturedNotePresented(pendingPresentation.sequence)
+      setPendingPresentation(null)
+    })})
+    return ()=>{cancelAnimationFrame(first);cancelAnimationFrame(frame)}
+  },[pendingPresentation,selected,query,filter,editor,editorSuspended])
+  useEffect(()=>{if(captured?.focusFailed)setMessage('Prompt acquisito e salvato. Attiva Localino dalla barra di sistema.')},[captured?.focusFailed])
   const save = useCallback(async ():Promise<boolean> => {
     if (!editor || busy || saving.current) return false
     const invalid = textError(draft)
@@ -37,7 +61,7 @@ export function Clipboard({guard,newRequest=0,consumeNew=()=>{},onBusy}:{guard:R
     try {
       const result = await window.localino.mutateNote(editor.id ? {kind:'update',id:editor.id,text:draft,expectedUpdatedAt:editor.updatedAt} : {kind:'create',text:draft})
       if (!result.ok) {setError(result.error);return false}
-      setState(result.state);setSelected(editor.id ?? result.state.notes[0].id);setEditor(null);window.localino.setUnsaved(false);setMessage('Prompt salvato.');return true
+      setState(result.state);setSelected(editor.id ?? result.state.notes[0].id);setEditor(null);setEditorSuspended(false);window.localino.setUnsaved(false);setMessage('Prompt salvato.');return true
     } catch {setError('Salvataggio non riuscito. La bozza è conservata.');return false}
     finally {saving.current=false;setBusy(false)}
   },[editor,draft,busy])
@@ -47,16 +71,16 @@ export function Clipboard({guard,newRequest=0,consumeNew=()=>{},onBusy}:{guard:R
     const answer = await ask('Conservare le modifiche?','La bozza contiene modifiche non salvate.',['Salva','Scarta','Resta'])
     if (answer===0) return save()
     if (answer===1) {setEditor(null);window.localino.setUnsaved(false);return true}
-    textArea.current?.focus();return false
+    setEditorSuspended(false);requestAnimationFrame(()=>textArea.current?.focus());return false
   },[ask,busy,dirty,save])
   useEffect(() => {guard.current=canLeave;return () => {guard.current=null}},[guard,canLeave])
   const begin = async (target?:Note) => {
     if(!state||state.error||busy||saving.current)return
     if (!(await canLeave())) return
-    setError('');setMessage('');setDraft(target?.text ?? '');setEditor({id:target?.id??null,original:target?.text??'',updatedAt:target?.updatedAt??0})
+    setEditorSuspended(false);setError('');setMessage('');setDraft(target?.text ?? '');setEditor({id:target?.id??null,original:target?.text??'',updatedAt:target?.updatedAt??0})
     requestAnimationFrame(()=>textArea.current?.focus())
   }
-  const select = async (id:string) => {if(await canLeave()){setEditor(null);setSelected(id);setError('');setMessage('')}}
+  const select = async (id:string) => {if(editorSuspended){setSelected(id);return}if(await canLeave()){setEditor(null);setSelected(id);setError('');setMessage('')}}
   const copy = async () => {
     if (!note) return
     const result=await window.localino.copyNote(note.id)
@@ -76,11 +100,11 @@ export function Clipboard({guard,newRequest=0,consumeNew=()=>{},onBusy}:{guard:R
   const newAction=useRef(()=>{});newAction.current=()=>{consumeNew();void begin()}
   useEffect(()=>{if(newRequest&&state)newAction.current()},[newRequest,state])
   const unavailable=!state||state.error?'Libreria non disponibile.':busy?'Operazione in corso.':undefined
-  const listDisabled=unavailable??(editor?'Chiudi prima l’editor.':!note?'Seleziona un prompt.':undefined)
+  const listDisabled=unavailable??(editor&&!editorSuspended?'Chiudi prima l’editor.':!note?'Seleziona un prompt.':undefined)
   useCommands({
     search:{run:()=>searchInput.current?.focus(),disabled:unavailable},
     edit:{run:()=>begin(note),disabled:listDisabled},copy:{run:copy,disabled:listDisabled},complete:{run:complete,disabled:listDisabled},delete:{run:remove,disabled:listDisabled},
-    save:{run:save,disabled:unavailable??(!editor?'Apri un editor.':undefined)},
+    save:{run:save,disabled:unavailable??(!editor||editorSuspended?'Apri un editor.':undefined)},
     closeEditor:{run:()=>canLeave().then(ok=>{if(ok)setEditor(null)}),disabled:!editor?'Apri un editor.':undefined},
     notesReload:{run:()=>window.localino.reloadNotes().then(setState),disabled:!state?.error?'La libreria è disponibile.':undefined},
     notesOpen:{run:()=>setFilter('open')},notesCompleted:{run:()=>setFilter('completed')},notesAll:{run:()=>setFilter('all')},
@@ -90,13 +114,15 @@ export function Clipboard({guard,newRequest=0,consumeNew=()=>{},onBusy}:{guard:R
     {state?.error && <div role="alert" className="space-y-3 break-words rounded-xl border border-destructive p-4 text-sm"><p>{state.error}</p><Button variant="outline" onClick={()=>void window.localino.reloadNotes().then(setState)}>Riprova lettura</Button></div>}
     {error && <p role="alert" className="break-words text-sm text-destructive">{error}</p>}
     <p role="status" className="min-h-5 text-sm text-muted-foreground">{message}</p>
+    {captured?.visibleMs!==undefined&&<p className="text-xs text-muted-foreground">Ultima cattura · Acquisizione: {captured.elapsedMs} ms · Presentazione: {captured.visibleMs} ms</p>}
+    {editor&&editorSuspended&&<div className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm"><span>La tua bozza precedente è conservata.</span><Button variant="outline" onClick={()=>{setEditorSuspended(false);requestAnimationFrame(()=>textArea.current?.focus())}}>Riprendi bozza</Button></div>}
     <div className="flex gap-3"><label className="flex min-w-0 flex-1 flex-col gap-1 text-sm">Cerca prompt<input ref={searchInput} type="search" value={query} onChange={e=>setQuery(e.target.value)} className="w-full rounded-md border bg-card p-2" /></label><label className="flex flex-col gap-1 text-sm">Mostra<select aria-label="Mostra" value={filter} onChange={e=>setFilter(e.target.value)} className="rounded-md border bg-card p-2"><option value="open">Aperti</option><option value="completed">Completati</option><option value="all">Tutti</option></select></label></div>
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] gap-5">
       <section aria-label="Elenco prompt" className="min-w-0"><p className="mb-2 text-xs text-muted-foreground">{notes.length} prompt · Più recenti per primi</p>
-        {!state ? <p>Caricamento…</p> : notes.length===0 ? <p className="rounded-xl border p-5 text-sm text-muted-foreground">{state.notes.length===0?'Nessun prompt. Crea il primo con Nuovo prompt.':'Nessun risultato per questa ricerca o filtro.'}</p> : <ul className="max-h-[65vh] space-y-2 overflow-y-auto p-1">{notes.map(n=><li key={n.id}><button type="button" aria-pressed={selected===n.id} onClick={()=>void select(n.id)} className={`w-full rounded-xl border p-3 text-left ${selected===n.id?'border-primary bg-primary/10':'bg-card'}`}><span className="line-clamp-3 whitespace-pre-wrap break-words text-sm">{n.text.slice(0,160)}</span><span className="mt-2 block text-xs text-muted-foreground">{n.completed?'Completato':'Aperto'} · {new Date(n.createdAt).toLocaleString('it-IT')}</span></button></li>)}</ul>}
+        {!state ? <p>Caricamento…</p> : notes.length===0 ? <p className="rounded-xl border p-5 text-sm text-muted-foreground">{state.notes.length===0?'Nessun prompt. Crea il primo con Nuovo prompt.':'Nessun risultato per questa ricerca o filtro.'}</p> : <ul className="max-h-[65vh] space-y-2 overflow-y-auto p-1">{notes.map(n=><li key={n.id}><button type="button" data-note-id={n.id} aria-pressed={selected===n.id} onClick={()=>void select(n.id)} className={`w-full rounded-xl border p-3 text-left ${selected===n.id?'border-primary bg-primary/10':'bg-card'}`}><span className="line-clamp-3 whitespace-pre-wrap break-words text-sm">{n.text.slice(0,160)}</span><span className="mt-2 block text-xs text-muted-foreground">{n.completed?'Completato':'Aperto'} · {new Date(n.createdAt).toLocaleString('it-IT')}</span></button></li>)}</ul>}
       </section>
-      <section aria-label={editor?'Editor prompt':'Dettaglio prompt'} className="min-w-0 rounded-xl border bg-card p-4">
-        {editor ? <div className="space-y-3"><h2 className="font-medium">{editor.id?'Modifica prompt':'Nuovo prompt'}</h2><label className="block text-sm">Testo del prompt<textarea ref={textArea} readOnly={busy} value={draft} onChange={e=>{setDraft(e.target.value);window.localino.setUnsaved(e.target.value!==editor.original)}}  className="mt-2 min-h-64 w-full resize-y rounded-md border bg-background p-3" /></label><p className={`text-xs ${draft.length>NOTE_LIMIT?'text-destructive':'text-muted-foreground'}`}>{draft.length.toLocaleString('it-IT')} / {NOTE_LIMIT.toLocaleString('it-IT')} caratteri · Ctrl+Invio salva</p><div className="flex gap-2"><Button disabled={busy||!!state?.error} onClick={()=>void save()}>Salva prompt</Button><Button variant="outline" disabled={busy} onClick={()=>void canLeave().then(ok=>{if(ok)setEditor(null)})}>Chiudi editor</Button></div></div> : note ? <div className="space-y-4"><h2 className="font-medium">Prompt {note.completed?'completato':'aperto'}</h2><div className="flex flex-wrap gap-2"><Button onClick={()=>void copy()}>Copia</Button><Button variant="outline" onClick={()=>void begin(note)}>Modifica</Button><Button variant="outline" disabled={busy} onClick={()=>void complete()}>{note.completed?'Riapri':'Completa'}</Button><Button variant="outline" disabled={busy} onClick={()=>void remove()}>Elimina</Button></div><p className="max-h-[55vh] overflow-y-auto whitespace-pre-wrap break-words text-sm" data-note-text>{note.text}</p><p className="text-xs text-muted-foreground">Creato: {new Date(note.createdAt).toLocaleString('it-IT')}<br/>Modificato: {new Date(note.updatedAt).toLocaleString('it-IT')}</p></div> : <p className="text-sm text-muted-foreground">Seleziona un prompt per leggerlo o modificarlo.</p>}
+      <section aria-label={editor&&!editorSuspended?'Editor prompt':'Dettaglio prompt'} className="min-w-0 rounded-xl border bg-card p-4">
+        {editor&&!editorSuspended ? <div className="space-y-3"><h2 className="font-medium">{editor.id?'Modifica prompt':'Nuovo prompt'}</h2><label className="block text-sm">Testo del prompt<textarea ref={textArea} readOnly={busy} value={draft} onChange={e=>{setDraft(e.target.value);window.localino.setUnsaved(e.target.value!==editor.original)}}  className="mt-2 min-h-64 w-full resize-y rounded-md border bg-background p-3" /></label><p className={`text-xs ${draft.length>NOTE_LIMIT?'text-destructive':'text-muted-foreground'}`}>{draft.length.toLocaleString('it-IT')} / {NOTE_LIMIT.toLocaleString('it-IT')} caratteri · Ctrl+Invio salva</p><div className="flex gap-2"><Button disabled={busy||!!state?.error} onClick={()=>void save()}>Salva prompt</Button><Button variant="outline" disabled={busy} onClick={()=>void canLeave().then(ok=>{if(ok)setEditor(null)})}>Chiudi editor</Button></div></div> : note ? <div className="space-y-4"><h2 className="font-medium">Prompt {note.completed?'completato':'aperto'}</h2><div className="flex flex-wrap gap-2"><Button onClick={()=>void copy()}>Copia</Button><Button variant="outline" onClick={()=>void begin(note)}>Modifica</Button><Button variant="outline" disabled={busy} onClick={()=>void complete()}>{note.completed?'Riapri':'Completa'}</Button><Button variant="outline" disabled={busy} onClick={()=>void remove()}>Elimina</Button></div><p className="max-h-[55vh] overflow-y-auto whitespace-pre-wrap break-words text-sm" data-note-text>{note.text}</p><p className="text-xs text-muted-foreground">Creato: {new Date(note.createdAt).toLocaleString('it-IT')}<br/>Modificato: {new Date(note.updatedAt).toLocaleString('it-IT')}</p></div> : <p className="text-sm text-muted-foreground">Seleziona un prompt per leggerlo o modificarlo.</p>}
       </section>
     </div>
     {dialog}

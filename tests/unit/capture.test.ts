@@ -150,3 +150,23 @@ test('presentation timing is session-scoped, sent once and never overwrites draf
     child.message({type:'timing',id:0,ms:1000});assert.equal(service.draft!.visibleMs,90);assert.equal(service.draft!.text,'synthetic')
   } finally {service.dispose()}
 })
+
+
+test('only a valid nonblank selection triggers autosave; a held session suppresses repeated requests',async()=>{
+  const {service,child}=await fixture()
+  try {
+    let selected=0;service.on('selection',()=>selected++)
+    for(const [id,text,reason] of [[1,'','empty'],[2,'   ','ok'],[3,'ignored','unavailable']] as const){
+      child.message({type:'begin',id});child.message({type:'result',id,text,reason,ms:3})
+      assert.equal(selected,0);service.finish(service.draft!.id,false)
+    }
+    child.message({type:'begin',id:4});child.message({type:'result',id:4,text:'Exact\ntext',reason:'ok',ms:3})
+    assert.equal(selected,1);const id=service.draft!.id
+    assert.equal((await service.save(id,service.draft!.text,async()=>({ok:true}),false)).ok,true)
+    const before=child.commands.filter(c=>c==='capture').length
+    service.request();service.request()
+    assert.equal(child.commands.filter(c=>c==='capture').length,before)
+    service.presented(id);assert.equal(child.commands.at(-1),'visible:4')
+    service.finish(id,false);assert.equal(service.draft,null)
+  }finally{service.dispose()}
+})
