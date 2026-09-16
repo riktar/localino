@@ -9,7 +9,7 @@ test('frameless windows, persistent synchronized themes, live system scheme and 
   await mkdir('test-results/profiles', { recursive: true })
   const profile = await mkdtemp(resolve('test-results/profiles/appearance-'))
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE; delete env.ELECTRON_RENDERER_URL
-  const launch = () => electron.launch({ args: ['.', '--user-data-dir=' + profile], env })
+  const launch = () => electron.launch({ args: ['.', '--user-data-dir=' + profile], env, colorScheme: null })
   let app = await launch()
   try {
     let page = await panelPage(app)
@@ -23,11 +23,11 @@ test('frameless windows, persistent synchronized themes, live system scheme and 
     const theme = page.getByRole('combobox', { name: 'Theme', exact: true })
     await theme.selectOption('dark')
     await waitFor(page, () => getComputedStyle(document.body).backgroundColor === 'rgb(25, 26, 29)')
-    await page.screenshot({ path: 'test-results/appearance-dark-settings.png' })
+    await page.screenshot({ animations: 'disabled', path: 'test-results/appearance-dark-settings.png' })
     await page.getByRole('button', { name: 'Back', exact: true }).click()
     await page.evaluate(() => window.localino.mutateNote({ kind: 'create', text: 'A compact panel. Everything within reach.' }))
     await page.locator('.note-row').waitFor()
-    await page.screenshot({ path: 'test-results/appearance-dark-panel.png' })
+    await page.screenshot({ animations: 'disabled', path: 'test-results/appearance-dark-panel.png' })
     const opened = app.waitForEvent('window')
     await page.evaluate(() => window.localino.openDashboard())
     const usage = await opened
@@ -51,7 +51,7 @@ test('frameless windows, persistent synchronized themes, live system scheme and 
     await page.getByRole('button', { name: 'Back', exact: true }).click()
     assert.equal(await page.locator('.note-row').evaluate(el => getComputedStyle(el).animationName), 'none')
     assert.equal(await page.locator('.note-row').evaluate(el => getComputedStyle(el).transitionDuration), '0s')
-    await page.screenshot({ path: 'test-results/appearance-light-panel.png' })
+    await page.screenshot({ animations: 'disabled', path: 'test-results/appearance-light-panel.png' })
     await page.evaluate(() => window.localino.setTheme('dark'))
     assert.equal(JSON.parse(await readFile(join(profile, 'appearance.json'), 'utf8')).theme, 'dark')
     await app.close(); app = await launch(); page = await panelPage(app)

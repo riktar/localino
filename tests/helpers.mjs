@@ -15,6 +15,7 @@ export async function desktopSmoke(packaged = false, rendererUrl = null) {
       ? { executablePath: packagedExecutable(), args: [`--user-data-dir=${profile}`] }
       : { args: ['.', `--user-data-dir=${profile}`] }),
     env,
+    colorScheme: null,
     timeout: 30_000,
   })
   try {
