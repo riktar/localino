@@ -58,6 +58,8 @@ npm run check
 
 `build:common` builds TypeScript/React/Electron; `build:native` compiles host-platform helpers. Runtime users do not need Node or an SDK. Renderers are sandboxed and isolated. The preload exposes named operations with trusted main-frame sender checks. Native binaries are outside ASAR. New main/preload dependencies must be bundled or explicitly packaged.
 
+Use `npm run build:win` for the Windows x64 ZIP. On a Mac, `npm run build:mac` creates the host-architecture ZIP and DMG; explicit arm64/x64 commands are in the [Mac guide](docs/mac-testing.md). `npm run test:packaged` checks the unpacked artifact. The [regression map](docs/regression-map.md) describes retained coverage after removing the old screens. Mac bridge activation is still pending as described in the guide; no Mac release is verified yet.
+
 The [Mac checklist](docs/mac-testing.md) and [report](docs/mac-test-report.md) distinguish automated protocol fixtures from external-app testing. Native verification must cover permissions, focus, gestures, source changes, worker cleanup and packaged operation.
 
 ## Repository

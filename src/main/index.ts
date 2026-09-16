@@ -254,7 +254,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     app.setAppUserModelId('app.localino.desktop')
     Menu.setApplicationMenu(process.platform==='darwin'?Menu.buildFromTemplate([
-      {label:'Localino',submenu:[{label:'Hide Localino',accelerator:'Cmd+H',click:()=>{if(panel)hideWindow(panel)}},{type:'separator'},{label:'Quit Localino',accelerator:'Cmd+Q',click:()=>app.quit()}]},
+      {label:'Localino',submenu:[{label:'Hide Localino',accelerator:'Cmd+H',click:()=>{if(unsaved||capture.draft)void requestGuard({kind:'hide'});else{dashboard?.hide();panel?.hide()}}},{type:'separator'},{label:'Quit Localino',accelerator:'Cmd+Q',click:()=>app.quit()}]},
       {label:'Edit',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},
     ]):null)
     panel = new BrowserWindow({
@@ -343,7 +343,7 @@ if (!app.requestSingleInstanceLock()) {
     handle('localino:update-shortcuts',(_owner,value)=>shortcuts.update(value))
     handle('localino:panel',()=>{dashboard?.hide();showPanel()})
     handle('localino:request-command',async (_owner,id)=>{
-      if(id!=='new'&&id!=='palette')throw Error('Invalid command')
+      if(id!=='new'&&id!=='palette'&&id!=='clipboard')throw Error('Invalid command')
       if(await showMain('panel'))panel?.webContents.send('localino:command',id)
     })
     shortcuts.on('change',state=>broadcast('localino:shortcuts-changed',state))

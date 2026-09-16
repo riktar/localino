@@ -70,7 +70,7 @@ export interface LocalinoApi {
   updateShortcuts: (value: unknown) => Promise<import('./commands').ShortcutResult>
   onShortcuts: (listener:(state:import('./commands').ShortcutState)=>void)=>()=>void
   openPanel: () => Promise<void>
-  requestCommand: (id:'new'|'palette')=>Promise<void>
+  requestCommand: (id:'new'|'palette'|'clipboard')=>Promise<void>
   onCommand: (listener:(id:'new'|'palette')=>void)=>()=>void
   getNotes: () => Promise<import('./notes').NotesState>
   reloadNotes: () => Promise<import('./notes').NotesState>

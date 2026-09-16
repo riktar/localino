@@ -15,7 +15,7 @@
     "lint": "eslint .",
     "build": "npm run build:common && npm run build:native",
     "build:win": "npm run build && electron-builder --win --x64 --publish never",
-    "test": "npm run test:unit && npm run build && node --test --test-concurrency=1 tests/desktop.test.mjs tests/development.test.mjs tests/quotas-ui.test.mjs tests/dashboard.test.mjs tests/navigation.test.mjs tests/clipboard.test.mjs tests/shortcuts.test.mjs tests/capture.test.mjs tests/agents.test.mjs tests/local-history.test.mjs tests/pi-history.test.mjs tests/opencode-history.test.mjs tests/bridge.test.mjs tests/panel.test.mjs tests/panel-clipboard.test.mjs",
+    "test": "npm run test:unit && npm run build && node --test --test-concurrency=1 tests/desktop.test.mjs tests/development.test.mjs tests/quotas-ui.test.mjs tests/dashboard.test.mjs tests/navigation.test.mjs tests/clipboard.test.mjs tests/shortcuts.test.mjs tests/capture.test.mjs tests/agents.test.mjs tests/local-history.test.mjs tests/pi-history.test.mjs tests/opencode-history.test.mjs tests/bridge.test.mjs tests/panel.test.mjs tests/panel-clipboard.test.mjs tests/shortcut-routing.test.mjs",
     "test:packaged": "node --test tests/packaged.test.mjs",
     "check": "npm run lint && npm test",
     "test:unit": "npm run build:native && node --import tsx --test --test-concurrency=1 tests/unit/*.test.ts",
@@ -27,7 +27,8 @@
     "build:common": "npm run typecheck && electron-vite build",
     "build:mac": "node scripts/build-mac.mjs",
     "build:mac:arm64": "node scripts/build-mac.mjs arm64",
-    "build:mac:x64": "node scripts/build-mac.mjs x64"
+    "build:mac:x64": "node scripts/build-mac.mjs x64",
+    "test:capture:native": "node --test tests/native-capture.test.mjs"
   },
   "build": {
     "appId": "app.localino.desktop",

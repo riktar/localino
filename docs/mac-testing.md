@@ -10,6 +10,8 @@ Use a dedicated test account or a disposable Localino profile. Use synthetic not
 
 ## Build and automated checks
 
+Current preparation blocker: the optional Claude status-line bridge still needs an agreed macOS settings activation strategy. Its existing end-to-end/unit activation tests use the Windows transaction helper and PowerShell. Until that work is integrated, a full Mac `check` is expected to fail in that area; do not omit it and report an overall pass. Capture, panel and packaging work can be assessed separately, with this blocker retained in the report.
+
 From the repository root, run these commands and retain their exit codes:
 
 ```sh
@@ -26,6 +28,8 @@ For a non-host artifact set `LOCALINO_TEST_EXECUTABLE` to its full `Localino.app
 The default signing identity is ad hoc (`-`), intended for this local verification. Check `codesign --verify --deep --strict --verbose=2 dist/mac-arm64/Localino.app` (use `dist/mac` for x64). These builds are not notarized. Public signing and notarization require a separate configured identity and are not demonstrated by an ad hoc signature. Record any Gatekeeper or permission issue; do not remove quarantine or disable platform protection to manufacture a passing result.
 
 Automated capture fixtures test Localino's protocol and recovery. They do not test Accessibility access or physical double-Shift detection in another app. Complete the native checks below on the installed bundle.
+
+After granting the required permissions, `npm run test:capture:native` tests real selection acquisition from an owned external Electron text field. Run it again with `LOCALINO_TEST_PACKAGED=1` to use the packaged Localino app. It asserts exact text, unchanged source clipboard and panel focus. Its trigger is IPC, so it does not replace the physical gesture tests or the required external-editor matrix.
 
 ## Required desktop checks
 

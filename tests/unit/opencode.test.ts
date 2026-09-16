@@ -60,5 +60,5 @@ test('default discovery respects explicit OPENCODE_DB and requires a choice when
   await writeFile(join(dir,'opencode.db'),'');await writeFile(join(dir,'opencode-beta.db'),'')
   await assert.rejects(openCodeSource(dir,''),/Multiple OpenCode databases/)
   assert.equal(await openCodeSource(dir,'custom.db'),join(dir,'custom.db'))
-  await assert.rejects(openCodeSource(dir,':memory:'),/memoria/)
+  await assert.rejects(openCodeSource(dir,':memory:'),/in-memory/)
 })

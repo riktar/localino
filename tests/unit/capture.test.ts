@@ -112,10 +112,10 @@ test('STORY-006 shortcut migration preserves user preferences and handles collis
   for (const collision of [false, true]) {
     const file = join(await mkdtemp(join(tmpdir(), 'capture-migration-')), 'shortcuts.json')
     const legacy = defaultBindings().filter(b => !(b.id === 'capture' && b.scope === 'global'))
-    legacy.find(b => b.id === 'home' && b.scope === 'global')!.key = collision ? 'Ctrl+Alt+P' : 'Ctrl+Alt+H'
+    legacy.find(b => b.id === 'localino' && b.scope === 'global')!.key = collision ? 'Ctrl+Alt+P' : 'Ctrl+Alt+H'
     legacy.find(b => b.id === 'new')!.key = 'Ctrl+J'
     await writeFile(file, JSON.stringify({ version: 1, bindings: legacy }))
-    const store = new Shortcuts(file, { register: () => true, unregister: () => {} }, () => {})
+    const store = new Shortcuts(file, { register: () => true, unregister: () => {} }, () => {}, 'win32')
     await store.init()
     assert.equal(store.state.error, undefined)
     assert.equal(store.state.bindings.find(b => b.id === 'new')!.key, 'Ctrl+J')
