@@ -89,12 +89,12 @@ export class ClaudeBridge extends EventEmitter {
       await mkdir(this.directory,{recursive:true});await mkdir(dirname(this.state.settingsPath),{recursive:true})
       const deadline=Date.now()+500
       while(!gate){try{gate=await open(this.configPath+'.lock','a+')}catch(error){if(Date.now()>=deadline)throw error;await new Promise(resolve=>setTimeout(resolve,20))}}
-      if(!enabled&&this.config){this.config.enabled=false;await atomic(this.configPath,this.config);this.state.enabled=false;this.clear();await unlink(this.config.cachePath).catch(error=>{if(!absent(error))throw error})}
+      if(!enabled&&this.config){this.config.enabled=false;this.config.generation=randomUUID();await atomic(this.configPath,this.config);this.state.enabled=false;this.clear();await unlink(this.config.cachePath).catch(error=>{if(!absent(error))throw error})}
       const settings=await document(this.state.settingsPath,true)
       if(enabled) {
         for(const path of this.managedPaths)if(await exists(path)&&Object.hasOwn((await document(path)).value,'statusLine'))throw Error(`Una policy gestita imposta statusLine in ${path}. Localino non la sovrascrive.`)
         if(this.config&&equal(settings.value.statusLine,this.config.installed)) {
-          if(!this.config.enabled){await unlink(this.config.cachePath).catch(error=>{if(!absent(error))throw error});this.config.enabled=true;await atomic(this.configPath,this.config);this.state.enabled=true;this.state.error=null;this.clear()}
+          if(!this.config.enabled){await unlink(this.config.cachePath).catch(error=>{if(!absent(error))throw error});const next={...this.config,generation:randomUUID(),enabled:true};await atomic(this.configPath,next);this.config=next;this.state.enabled=true;this.state.error=null;this.clear()}
           return {ok:true}
         }
         if(this.config?.enabled) {
@@ -111,7 +111,7 @@ export class ClaudeBridge extends EventEmitter {
         if((await document(this.state.settingsPath,true)).text!==settings.text)throw Error('Impostazioni cambiate durante il collegamento: riprova. Nessuna sovrascrittura effettuata.')
         await updateBridgeSettings(this.helperSource,this.state.settingsPath,settings.text,installed)
         await unlink(config.cachePath).catch(error=>{if(!absent(error))throw error})
-        config.enabled=true;await atomic(this.configPath,config);this.state.enabled=true;this.state.error=null;this.clear()
+        const next={...config,enabled:true};await atomic(this.configPath,next);this.config=next;this.state.enabled=true;this.state.error=null;this.clear()
       }else {
         const config=this.config
         if(!config){this.state.enabled=false;this.state.error=null;this.clear();return {ok:true}}

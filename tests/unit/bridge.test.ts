@@ -108,15 +108,35 @@ test('settings compare and update is indivisible: stale expectation and concurre
   }finally{bridge.dispose()}
 })
 
-test('a pending snapshot cannot cross disable and re-enable generations',async()=>{
-  const {bridge,dir}=await setup();bridge.dispose()
+test('a pending snapshot cannot cross disable and re-enable generations, including failed settings restoration',async()=>{
+ for(const failedRestore of [false,true]) {
+  const {bridge,dir,settings}=await setup();bridge.dispose()
   const originalRead=fs.readFile;let release=()=>{},capturedResolve=()=>{};const captured=new Promise<void>(r=>capturedResolve=r)
   try{
     await bridge.setEnabled(true);const cache=join(dir,'snapshot.json')
     await writeFile(cache,JSON.stringify({sessionId:'old-generation',receivedAt:Date.now(),cost:1,windows:[]}))
     let delayed=false
     fs.readFile=async function(path,...args){const result=await (originalRead as (...values:unknown[])=>Promise<string|Buffer>)(path,...args);if(String(path)===cache&&!delayed){delayed=true;capturedResolve();await new Promise<void>(r=>release=r)}return result} as typeof fs.readFile
-    const pending=bridge.refresh();await captured;await bridge.setEnabled(false);await bridge.setEnabled(true);release();await pending
+    const pending=bridge.refresh();await captured
+    const installed=await originalRead(settings,'utf8')
+    if(failedRestore)await writeFile(settings,'corrupt JSON')
+    assert.equal((await bridge.setEnabled(false)).ok,!failedRestore)
+    if(failedRestore)await writeFile(settings,installed)
+    assert.equal((await bridge.setEnabled(true)).ok,true);release();await pending
     assert.equal(bridge.state.sessionId,null);assert.equal(bridge.state.cost,null);assert.equal(bridge.state.effective,false)
   }finally{release();fs.readFile=originalRead;bridge.dispose()}
+ }
+})
+
+test('failed final enable write can be retried in the same process without a recursive wrapper',async()=>{
+  const {bridge}=await setup(),originalRename=fs.rename
+  try{
+    let failed=false
+    fs.rename=async function(from,to){if(String(to)===bridge.configPath&&!failed&&JSON.parse(await readFile(from,'utf8')).enabled){failed=true;throw Error('simulated disk failure')}return originalRename(from,to)}
+    assert.equal((await bridge.setEnabled(true)).ok,false);assert.equal(bridge.state.enabled,false)
+    fs.rename=originalRename
+    assert.equal((await bridge.setEnabled(true)).ok,true);assert.equal(bridge.state.enabled,true)
+    assert.equal(JSON.parse(await readFile(bridge.configPath,'utf8')).previous,null)
+    assert.equal((await bridge.setEnabled(false)).ok,true)
+  }finally{fs.rename=originalRename;bridge.dispose()}
 })
