@@ -1,7 +1,8 @@
 import { EventEmitter } from 'node:events'
 import { access, copyFile, mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { dirname, join, delimiter, isAbsolute } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash,randomUUID } from 'node:crypto'
+import { spawn } from 'node:child_process'
 import type { BridgeState } from '../../shared/agents'
 import type { QuotaBucket } from '../../shared/contracts'
 import { object } from './jsonl'
@@ -11,6 +12,16 @@ const equal=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b)
 const absent=(error:unknown)=>(error as NodeJS.ErrnoException).code==='ENOENT'
 const ps=(value:string)=>`'${value.replaceAll("'","''")}'`
 const exists=async(path:string)=>{try{await access(path);return true}catch{return false}}
+export async function updateBridgeSettings(helper:string,path:string,expected:string,statusLine:unknown):Promise<void> {
+  await new Promise<void>((resolve,reject)=>{
+    const child=spawn(helper,['--settings-cas'],{windowsHide:true,stdio:['pipe','ignore','ignore']})
+    const timer=setTimeout(()=>{child.kill();reject(Error('Aggiornamento impostazioni scaduto; nessuna transazione incompleta viene applicata.'))},5000)
+    child.on('error',()=>{clearTimeout(timer);reject(Error('Helper impostazioni non disponibile.'))})
+    child.on('close',code=>{clearTimeout(timer);if(code===0)resolve();else reject(Error(code===2?'Impostazioni modificate contemporaneamente: nessuna sovrascrittura, riprova.':'Aggiornamento atomico non disponibile: verifica permessi, file occupato e volume NTFS locale. Nessuna modifica parziale applicata.'))})
+    child.stdin.on('error',()=>{})
+    child.stdin.end(JSON.stringify({path,expectedHash:createHash('sha256').update(expected,'utf8').digest('hex'),remove:statusLine===undefined,statusLine:statusLine??null}))
+  })
+}
 async function atomic(path:string,value:unknown):Promise<void> {
   const temp=`${path}.${randomUUID()}.tmp`
   try {const file=await open(temp,'wx');try{await file.writeFile(JSON.stringify(value,null,2)+'\n','utf8');await file.sync()}finally{await file.close()};await rename(temp,path)}
@@ -98,7 +109,7 @@ export class ClaudeBridge extends EventEmitter {
         const config:Config={enabled:false,generation:randomUUID(),settingsPath:this.state.settingsPath,cachePath:join(this.directory,'snapshot.json'),hadPrevious:previous!==undefined,previous:previous??null,installed,...await previousShell()}
         await atomic(this.configPath,config);this.config=config
         if((await document(this.state.settingsPath,true)).text!==settings.text)throw Error('Impostazioni cambiate durante il collegamento: riprova. Nessuna sovrascrittura effettuata.')
-        await atomic(this.state.settingsPath,{...settings.value,statusLine:installed})
+        await updateBridgeSettings(this.helperSource,this.state.settingsPath,settings.text,installed)
         await unlink(config.cachePath).catch(error=>{if(!absent(error))throw error})
         config.enabled=true;await atomic(this.configPath,config);this.state.enabled=true;this.state.error=null;this.clear()
       }else {
@@ -111,7 +122,7 @@ export class ClaudeBridge extends EventEmitter {
         }
         const restored={...settings.value};if(config.hadPrevious)restored.statusLine=config.previous;else delete restored.statusLine
         if((await document(this.state.settingsPath,true)).text!==settings.text)throw Error('Raccolta disattivata, impostazioni cambiate durante il ripristino: riprova.')
-        await atomic(this.state.settingsPath,restored);this.state.error=null
+        await updateBridgeSettings(this.helperSource,this.state.settingsPath,settings.text,restored.statusLine);this.state.error=null
       }
       return {ok:true}
     }catch(error){this.state.error=error instanceof Error?error.message:'Operazione bridge non riuscita.';return {ok:false,error:this.state.error}}
@@ -119,7 +130,7 @@ export class ClaudeBridge extends EventEmitter {
   }
   async refresh(now=Date.now()):Promise<void> {
     if(this.busy||this.reading||!this.state.enabled||!this.config)return
-    this.reading=true;const before=JSON.stringify(this.state)
+    this.reading=true;const before=JSON.stringify(this.state),generation=this.config.generation
     try {
       const raw=object(JSON.parse(await readFile(this.config.cachePath,'utf8')))
       if(!raw||typeof raw.sessionId!=='string'||!raw.sessionId||raw.sessionId.length>256||typeof raw.receivedAt!=='number'||!Number.isSafeInteger(raw.receivedAt)||raw.receivedAt>now+1000||raw.receivedAt<0||!Array.isArray(raw.windows)||raw.windows.length>3)throw Error()
@@ -131,10 +142,10 @@ export class ClaudeBridge extends EventEmitter {
         seen.add(id);buckets.push({id,name:({five_hour:'5 ore',seven_day:'7 giorni',spend_limit:'Limite di spesa'} as Record<string,string>)[id],windows:[{kind:'primary',durationMins:id==='five_hour'?300:id==='seven_day'?10080:null,usedPercent:nullable(row?.usedPercent,id==='spend_limit'?Number.MAX_VALUE:100),resetsAt:nullable(row?.resetsAt,8.64e15)}]})
       }
       const cost=nullable(raw.cost),stale=now-raw.receivedAt>120000
-      if(this.busy||!this.state.enabled)return
+      if(this.busy||!this.state.enabled||this.config.generation!==generation)return
       this.state={...this.state,effective:!stale,sessionId:raw.sessionId,cost,receivedAt:raw.receivedAt,quotas:{data:{buckets},lastSuccessAt:raw.receivedAt,refreshing:false,stale,error:null}}
     }catch(error) {
-      if(this.busy||!this.state.enabled)return
+      if(this.busy||!this.state.enabled||this.config.generation!==generation)return
       if(!absent(error)){this.state.quotas={...this.state.quotas,error:'invalid',stale:!!this.state.receivedAt};this.state.effective=false}
       if(this.state.receivedAt!==null&&now-this.state.receivedAt>120000){this.state.quotas={...this.state.quotas,stale:true};this.state.effective=false}
     }finally{this.reading=false;if(before!==JSON.stringify(this.state))this.publish()}

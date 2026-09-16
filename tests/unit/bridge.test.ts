@@ -4,7 +4,8 @@ import {mkdtemp,readFile,writeFile,mkdir,access} from 'node:fs/promises'
 import {join,resolve} from 'node:path'
 import {tmpdir} from 'node:os'
 import {spawn} from 'node:child_process'
-import {ClaudeBridge} from '../../src/main/agents/bridge'
+import {ClaudeBridge,updateBridgeSettings} from '../../src/main/agents/bridge'
+import fs from 'node:fs/promises'
 
 const helper=resolve('out/native/Localino.StatusLine.exe')
 const payload=(id='session-A')=>({session_id:id,cwd:'PRIVATE-SENTINEL',transcript_path:'SECRET',context_window:{total_input_tokens:999999},cost:{total_cost_usd:0},rate_limits:{five_hour:{used_percentage:0,resets_at:1},seven_day:{used_percentage:40,resets_at:1800000000},spend_limit:{used_percentage:125,resets_at:null}}})
@@ -92,4 +93,30 @@ test('PowerShell previous command preserves bytes; missing quotas stay absent an
       assert.equal(JSON.parse(await readFile(resumed.configPath,'utf8')).enabled,false);await assert.rejects(access(join(dir,'snapshot.json')))
     }finally{resumed.dispose()}
   }finally{bridge.dispose()}
+})
+
+test('settings compare and update is indivisible: stale expectation and concurrent transactions preserve user keys',async()=>{
+  const {bridge,settings}=await setup()
+  try{
+    const expected=await readFile(settings,'utf8'),edited=JSON.stringify({theme:'edited',newUserSetting:true})
+    await writeFile(settings,edited)
+    await assert.rejects(updateBridgeSettings(helper,settings,expected,{type:'command',command:'bridge'}),/modificate contemporaneamente/)
+    assert.equal(await readFile(settings,'utf8'),edited)
+    const results=await Promise.allSettled(Array.from({length:8},(_,i)=>updateBridgeSettings(helper,settings,edited,{type:'command',command:`transaction-${i}`})))
+    assert.equal(results.filter(r=>r.status==='fulfilled').length,1)
+    const final=JSON.parse(await readFile(settings,'utf8'));assert.equal(final.theme,'edited');assert.equal(final.newUserSetting,true);assert.match(final.statusLine.command,/^transaction-/)
+  }finally{bridge.dispose()}
+})
+
+test('a pending snapshot cannot cross disable and re-enable generations',async()=>{
+  const {bridge,dir}=await setup();bridge.dispose()
+  const originalRead=fs.readFile;let release=()=>{},capturedResolve=()=>{};const captured=new Promise<void>(r=>capturedResolve=r)
+  try{
+    await bridge.setEnabled(true);const cache=join(dir,'snapshot.json')
+    await writeFile(cache,JSON.stringify({sessionId:'old-generation',receivedAt:Date.now(),cost:1,windows:[]}))
+    let delayed=false
+    fs.readFile=async function(path,...args){const result=await (originalRead as (...values:unknown[])=>Promise<string|Buffer>)(path,...args);if(String(path)===cache&&!delayed){delayed=true;capturedResolve();await new Promise<void>(r=>release=r)}return result} as typeof fs.readFile
+    const pending=bridge.refresh();await captured;await bridge.setEnabled(false);await bridge.setEnabled(true);release();await pending
+    assert.equal(bridge.state.sessionId,null);assert.equal(bridge.state.cost,null);assert.equal(bridge.state.effective,false)
+  }finally{release();fs.readFile=originalRead;bridge.dispose()}
 })

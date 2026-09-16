@@ -68,6 +68,7 @@ internal static class StatusLineHelper {
     }
   }
   static int Main(string[] args) {
+    if(args.Length==1&&args[0]=="--settings-cas")return SettingsTransaction.Run();
     if(args.Length!=1)return 1;
     try {
       var config=Read(args[0]);
