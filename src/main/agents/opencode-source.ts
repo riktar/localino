@@ -3,7 +3,7 @@ import { isAbsolute, join } from 'node:path'
 
 export async function openCodeSource(dataDir:string, configured=process.env.OPENCODE_DB):Promise<string> {
   if(configured) {
-    if(configured===':memory:')throw Error('OpenCode usa un database in memoria: seleziona un archivio salvato.')
+    if(configured===':memory:')throw Error('OpenCode uses an in-memory database. Choose a saved archive.')
     return isAbsolute(configured)?configured:join(dataDir,configured)
   }
   let candidates:string[]=[]
