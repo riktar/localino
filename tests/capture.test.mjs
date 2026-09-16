@@ -174,3 +174,35 @@ test('native foreground helper validates the target process and reports actual W
     assert.ok(page)
   }finally {await closeTestApp(app)}
 })
+
+
+test('F-007-02: exit requested during a failed autosave keeps recovery open and retry saves once',async()=>{
+ const setup=await prepare()
+ const compile=spawnSync(join(process.env.WINDIR,'Microsoft.NET/Framework64/v4.0.30319/csc.exe'),['/nologo','/target:exe',`/out:${setup.executable}`,'/reference:System.Web.Extensions.dll',resolve('tests/fixtures/capture-helper.cs')],{windowsHide:true,encoding:'utf8'})
+ assert.equal(compile.status,0,compile.stdout)
+ const app=await electron.launch({args:[setup.application,`--user-data-dir=${setup.profile}`],env})
+ try {
+  const page=await mainPage(app)
+  await waitInPage(page,async()=>(await window.localino.getCaptureStatus()).status==='ready')
+  await app.evaluate(()=>{
+   const fs=process.getBuiltinModule('fs/promises');const original=fs.writeFile
+   fs.writeFile=(path,...args)=>String(path).includes('notes.json.')?new Promise((_,reject)=>{globalThis.releaseSyntheticWrite=()=>{fs.writeFile=original;reject(Error('synthetic disk full'))}}):original(path,...args)
+  })
+  await page.evaluate(()=>window.localino.requestCapture())
+  const deadline=Date.now()+5000
+  while(!await app.evaluate(()=>typeof globalThis.releaseSyntheticWrite==='function')){assert.ok(Date.now()<deadline);await new Promise(resolve=>setTimeout(resolve,20))}
+  await app.evaluate(({app})=>app.quit())
+  const opening=app.waitForEvent('window')
+  await app.evaluate(()=>globalThis.releaseSyntheticWrite())
+  const recovery=await opening
+  const editor=recovery.getByRole('textbox',{name:'Testo da salvare'})
+  await recovery.getByRole('status').filter({hasText:'Salvataggio non riuscito'}).waitFor()
+  assert.equal(await editor.inputValue(),'Prova Localino 🌱\nSeconda riga è 漢字')
+  assert.equal(app.process().exitCode,null)
+  assert.equal((await page.evaluate(()=>window.localino.getNotes())).notes.length,0)
+  await editor.press('Control+Enter')
+  await waitInPage(recovery,async()=>(await window.localino.getCaptureDraft())===null)
+  assert.equal((await page.evaluate(()=>window.localino.getNotes())).notes.length,1)
+  assert.equal(app.process().exitCode,null)
+ }finally {await closeTestApp(app)}
+})

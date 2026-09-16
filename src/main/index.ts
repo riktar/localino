@@ -128,7 +128,8 @@ async function saveCapturedPrompt(id: number, text: unknown): Promise<{ok:boolea
   }else{
     captureCompleting=false
     capture.saveError(result.error??'Salvataggio non riuscito. Il testo è conservato: riprova.')
-    if(quitAfterCapture){quitAfterCapture=false;app.quit()}
+    // A failed save must remain recoverable, including when exit was requested.
+    quitAfterCapture=false
   }
   return result
 }
