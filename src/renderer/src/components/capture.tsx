@@ -55,6 +55,12 @@ export function CaptureView(): React.JSX.Element {
     return off
   }, [])
   useEffect(() => { if (draft && !draft.acquiring) editor.current?.focus() }, [draft?.id, draft?.acquiring])
+  useEffect(() => {
+    if (!draft) return
+    let second = 0
+    const first = requestAnimationFrame(() => { second = requestAnimationFrame(() => { void window.localino.capturePresented(draft.id) }) })
+    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second) }
+  }, [draft?.id])
   const save = async () => {
     if (!draft || draft.acquiring || saving.current) return
     const invalid = textError(text)
@@ -71,7 +77,7 @@ export function CaptureView(): React.JSX.Element {
     if (event.key === 'Enter' && event.ctrlKey && !event.altKey && !event.shiftKey) { event.preventDefault(); void save() }
   }}>
     <header><h1 className="text-2xl font-semibold">Cattura selezione</h1><p className="mt-1 text-sm text-muted-foreground">Salva un prompt nella tua Clipboard locale.</p></header>
-    <p role="status" className="text-sm">{draft?.message ?? 'Preparazione cattura…'}{draft?.elapsedMs !== undefined && <span className="block text-xs text-muted-foreground">Acquisizione: {draft.elapsedMs} ms</span>}</p>
+    <p role="status" className="text-sm">{draft?.message ?? 'Preparazione cattura…'}{draft?.elapsedMs !== undefined && <span className="block text-xs text-muted-foreground">Acquisizione: {draft.elapsedMs} ms</span>}{draft?.visibleMs !== undefined && <span className="block text-xs text-muted-foreground">Presentazione: {draft.visibleMs} ms dal rilevamento</span>}</p>
     <label htmlFor="capture-text" className="text-sm font-medium">Testo da salvare</label>
     <textarea id="capture-text" ref={editor} value={text} readOnly={!draft || draft.acquiring || busy} onChange={e => setText(e.target.value)} className="min-h-40 flex-1 resize-y rounded-lg border bg-background p-3 text-sm" spellCheck={false} />
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}

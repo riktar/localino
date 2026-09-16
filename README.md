@@ -130,3 +130,5 @@ Git per sprint: base e destinazione `main`, branch `sprint/{id}`, una PR al term
 ### Limiti delle prove automatiche della cattura
 
 I test della macchina a stati eseguono il codice C# del rilevatore; il test di protocollo avvia e ferma il vero helper senza simulare un gesto OS. Gli smoke della bozza usano un helper fixture in una copia isolata dell’app: dimostrano UI, IPC, persistenza, errori e protezione della bozza, non l’acquisizione nelle app esterne. La verifica nativa finale richiede selezioni sintetiche reali in Chromium, VS Code con accessibilitySupport=on e Windows Terminal non elevati, dieci catture per applicazione con tempi e confronto esatto.
+
+La bozza mostra i tempi di acquisizione e presentazione. Il secondo misura fino alla conferma del renderer dopo due frame e alla visibilità della finestra, includendo IPC e caricamento. Per doppio Shift parte dal rilevamento nativo; per la shortcut alternativa parte dalla ricezione del comando nel helper (non misura il tratto precedente della scorciatoia Electron). È una misura software, non la latenza fisica del display. Non viene salvata in una cronologia.

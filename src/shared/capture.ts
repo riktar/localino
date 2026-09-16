@@ -9,6 +9,7 @@ export interface CaptureDraft {
   acquiring: boolean
   message: string
   elapsedMs?: number
+  visibleMs?: number
 }
 export const captureHelp = 'In VS Code imposta Editor: Accessibility Support (editor.accessibilitySupport) su on. Localino non modifica le impostazioni delle altre app.'
 export function captureMessage(reason: string): string {

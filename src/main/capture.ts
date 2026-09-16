@@ -17,6 +17,7 @@ export class Capture extends EventEmitter {
   private startup: ReturnType<typeof setTimeout> | undefined
   private queue: Promise<unknown> = Promise.resolve()
   private preferencesError = false
+  private visibleSent = false
   private saving = false
   get isSaving(): boolean { return this.saving }
   constructor(private file: string, private executable: string, private launch: Launcher = () => spawn(executable, [], { windowsHide: true, stdio: 'pipe' })) { super() }
@@ -39,6 +40,10 @@ export class Capture extends EventEmitter {
   start(): void {
     if (this.preferencesError || this.state.status === 'suspended') return
     this.stop()
+    if (this.draft?.acquiring) {
+      this.draft = { ...this.draft, acquiring: false, text: '', message: 'Lettura interrotta dal riavvio del componente. Puoi scrivere o incollare il testo.' }
+      this.emit('draft', this.draft)
+    }
     this.state = { enabled: this.state.enabled, status: 'starting' }; this.status()
     let child: ChildProcessWithoutNullStreams
     try { child = this.launch() } catch { this.fail(); return }
@@ -76,11 +81,17 @@ export class Capture extends EventEmitter {
       if (!Number.isSafeInteger(msg.id)) throw Error('protocol')
       if (this.draft) { this.send('finish'); this.emit('raise'); return }
       this.origin = typeof msg.origin === 'string' && /^[0-9]{1,18}$/.test(msg.origin) && Number.isSafeInteger(msg.pid) && Number(msg.pid) > 0 ? {handle:msg.origin,pid:Number(msg.pid)} : null
+      this.visibleSent = false
       this.nativeId = msg.id as number
       this.draft = { id: ++this.sequence, text: '', acquiring: true, message: 'Lettura della selezione…' }
       this.emit('draft', this.draft)
       this.timer = setTimeout(() => { if (this.draft?.acquiring) this.fail('timeout') }, 1600)
       return
+    }
+    if (msg.type === 'timing') {
+      if (!this.draft || msg.id !== this.nativeId) return
+      if (typeof msg.ms !== 'number' || !Number.isFinite(msg.ms) || msg.ms < 0) throw Error('protocol')
+      this.draft = { ...this.draft, visibleMs: msg.ms }; this.emit('timing', this.draft); return
     }
     if (msg.type === 'result') {
       if (!this.draft?.acquiring || msg.id !== this.nativeId) return
@@ -91,6 +102,11 @@ export class Capture extends EventEmitter {
       return
     }
     throw Error('protocol')
+  }
+  presented(id: number): void {
+    if (this.draft?.id === id && this.nativeId !== null && !this.visibleSent) {
+      this.visibleSent = true; this.send(`visible:${this.nativeId}`)
+    }
   }
   request(): void {
     if (this.draft) { this.emit('raise'); return }

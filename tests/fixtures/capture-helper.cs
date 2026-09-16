@@ -17,6 +17,7 @@ class Fixture {
         bool empty=File.Exists(mode)&&File.ReadAllText(mode)=="empty";
         send(new {type="result",id=id,text=empty?"":"Prova Localino \ud83c\udf31\nSeconda riga \u00e8 \u6f22\u5b57",reason=empty?"empty":"ok",ms=5});
       }
+      else if(line.StartsWith("visible:"))send(new {type="timing",id=id,ms=42});
       else if(line=="finish"||line=="cancel")active=false;
       else if(line=="quit")return;
     }

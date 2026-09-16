@@ -34,6 +34,8 @@ internal sealed class CaptureHelper : Form {
   uint originProcess;
   bool enabled, active;
   int sequence;
+  long activeStartedAt;
+  bool presented;
   Process worker;
   CaptureHelper() {
     callback = OnKey;
@@ -62,32 +64,32 @@ internal sealed class CaptureHelper : Form {
       int msg=message.ToInt32();bool down=msg==0x100||msg==0x104;
       if(down||msg==0x101||msg==0x105) {
         int key=Marshal.ReadInt32(data),flags=Marshal.ReadInt32(data,8);
-        if(gesture.Feed(key,down,clock.ElapsedMilliseconds,Modifier(),(flags&0x12)!=0)) BeginInvoke(new Action(BeginCapture));
+        if(gesture.Feed(key,down,clock.ElapsedMilliseconds,Modifier(),(flags&0x12)!=0)) {long triggeredAt=clock.ElapsedMilliseconds;BeginInvoke(new Action(()=>BeginCapture(triggeredAt)));}
       }
     }
     return CallNextHookEx(hook,code,message,data);
   }
-  async void BeginCapture() {
+  void BeginCapture() { BeginCapture(clock.ElapsedMilliseconds); }
+  async void BeginCapture(long startedAt) {
     gesture.Reset();
     if(active){Send(new {type="raise"});return;}
-    active=true;int id=++sequence;
+    active=true;int id=++sequence;activeStartedAt=startedAt;presented=false;
     origin=GetForegroundWindow();GetWindowThreadProcessId(origin,out originProcess);
     Send(new {type="begin",id=id,origin=origin.ToInt64().ToString(),pid=originProcess});
-    var elapsed=Stopwatch.StartNew();
     Process running=null;
     try {
       worker=new Process {StartInfo=new ProcessStartInfo(Application.ExecutablePath,"--read " + origin.ToInt64()) {UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true}};
       worker.Start();running=worker;
       var read=running.StandardOutput.ReadToEndAsync();
-      if(await Task.WhenAny(read,Task.Delay(1300))!=read){StopWorker(running);if(active&&sequence==id)Send(new {type="result",id=id,text="",reason="timeout",ms=elapsed.ElapsedMilliseconds});return;}
+      if(await Task.WhenAny(read,Task.Delay(1300))!=read){StopWorker(running);if(active&&sequence==id)Send(new {type="result",id=id,text="",reason="timeout",ms=clock.ElapsedMilliseconds-startedAt});return;}
       string output=await read;
       if(!active||sequence!=id)return;
       // A worker returns one base64 UTF-8 string or one fixed error code.
       string text="",reason=output.Trim();
       if(output.StartsWith("text:")){text=Encoding.UTF8.GetString(Convert.FromBase64String(output.Substring(5)));reason=text.Length==0?"empty":"ok";}
       if(text.Length>100000){text="";reason="limit";}
-      Send(new {type="result",id=id,text=text,reason=reason,ms=elapsed.ElapsedMilliseconds});
-    }catch{if(active&&sequence==id)Send(new {type="result",id=id,text="",reason="unavailable",ms=elapsed.ElapsedMilliseconds});}
+      Send(new {type="result",id=id,text=text,reason=reason,ms=clock.ElapsedMilliseconds-startedAt});
+    }catch{if(active&&sequence==id)Send(new {type="result",id=id,text="",reason="unavailable",ms=clock.ElapsedMilliseconds-startedAt});}
     finally {StopWorker(running);}
   }
   void StopWorker(Process expected){if(expected!=null&&worker==expected)StopWorker();}
@@ -103,6 +105,7 @@ internal sealed class CaptureHelper : Form {
     else if(command=="disable")Enable(false);
     else if(command=="capture")BeginCapture();
     else if(command=="finish")Finish(false);
+    else if(command.StartsWith("visible:")) {int id;if(active&&!presented&&int.TryParse(command.Substring(8),out id)&&id==sequence){presented=true;Send(new {type="timing",id=id,ms=clock.ElapsedMilliseconds-activeStartedAt});}}
     else if(command=="cancel")Finish(true);
     else if(command=="quit"){Finish(false);Enable(false);Application.ExitThread();}
   }

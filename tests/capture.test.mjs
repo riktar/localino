@@ -52,6 +52,7 @@ test('capture UI with protocol fixture: exact text, protected draft, save retry,
     await draftPage.waitForFunction(() => !document.querySelector('textarea').readOnly)
     const text = 'Prova Localino 🌱\nSeconda riga è 漢字'
     assert.equal(await editor.inputValue(), text)
+    await draftPage.getByRole('status').filter({hasText:'Presentazione: 42 ms'}).waitFor()
     await editor.fill(text + '\nModifica protetta')
     await page.evaluate(() => window.localino.requestCapture())
     assert.equal(await editor.inputValue(), text + '\nModifica protetta')

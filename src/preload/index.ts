@@ -7,6 +7,7 @@ const api: LocalinoApi = {
   setCaptureEnabled:value=>ipcRenderer.invoke('localino:capture-enable',value),
   retryCapture:()=>ipcRenderer.invoke('localino:capture-retry'),
   getCaptureDraft:()=>ipcRenderer.invoke('localino:capture-draft'),
+  capturePresented:id=>ipcRenderer.invoke('localino:capture-presented',id),
   cancelCapture:id=>ipcRenderer.invoke('localino:capture-cancel',id),
   saveCapture:(id,text)=>ipcRenderer.invoke('localino:capture-save',{id,text}),
   onCaptureStatus:listener=>{

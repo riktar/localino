@@ -91,6 +91,7 @@ async function presentCapture(): Promise<void> {
 capture.on('draft',()=>{void presentCapture()})
 capture.on('raise',()=>{void presentCapture()})
 capture.on('finished',()=>captureWindow?.hide())
+capture.on('timing',draft=>captureWindow?.webContents.send('localino:capture-draft',draft))
 capture.on('status',state=>broadcast('localino:capture-status',state))
 
 function updateUsageActivity(): void { usage.setActive(destination === 'consumi' && !!dashboard?.isVisible() && !dashboard.isMinimized()) }
@@ -236,6 +237,11 @@ if (!app.requestSingleInstanceLock()) {
     handle('localino:capture-enable',(_owner,value)=>capture.setEnabled(value))
     handle('localino:capture-retry',()=>capture.start())
     handle('localino:capture-draft',owner=>{if(owner!==captureWindow)throw Error('Access denied');return capture.draft})
+    handle('localino:capture-presented',(owner,id)=>{
+      if(owner!==captureWindow||typeof id!=='number')throw Error('Access denied')
+      if(owner.isVisible())capture.presented(id)
+      else owner.once('show',()=>capture.presented(id))
+    })
     handle('localino:capture-cancel',(owner,id)=>{
       if(owner!==captureWindow||typeof id!=='number')throw Error('Access denied')
       if(capture.draft?.id===id&&!capture.isSaving){owner.hide();capture.finish(id,true)}

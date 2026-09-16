@@ -123,3 +123,30 @@ test('STORY-006 shortcut migration preserves user preferences and handles collis
     store.dispose()
   }
 })
+
+
+test('F-007-01: retry during acquisition resolves the pending draft and later native output cannot overwrite it', async () => {
+  const {service,child,children}=await fixture()
+  try {
+    child.message({type:'begin',id:1});const id=service.draft!.id
+    service.start();assert.equal(child.killed,true)
+    assert.equal(service.draft!.id,id);assert.equal(service.draft!.acquiring,false);assert.match(service.draft!.message,/riavvio/)
+    children[1].message({type:'ready'});children[1].message({type:'status',enabled:true,error:''})
+    child.message({type:'result',id:1,text:'obsolete',reason:'ok',ms:1})
+    assert.equal(service.draft!.text,'')
+    assert.equal((await service.save(id,'Recovered draft',async()=>({ok:true}))).ok,true)
+    assert.equal(service.draft,null)
+  } finally {service.dispose()}
+})
+
+test('presentation timing is session-scoped, sent once and never overwrites draft text',async()=>{
+  const {service,child}=await fixture()
+  try {
+    child.message({type:'begin',id:1});const id=service.draft!.id
+    service.presented(id+1);assert.equal(child.commands.includes('visible:1'),false)
+    service.presented(id);service.presented(id);assert.equal(child.commands.filter(c=>c==='visible:1').length,1)
+    child.message({type:'timing',id:1,ms:90});assert.equal(service.draft!.visibleMs,90)
+    child.message({type:'result',id:1,text:'synthetic',reason:'ok',ms:100});assert.equal(service.draft!.visibleMs,90)
+    child.message({type:'timing',id:0,ms:1000});assert.equal(service.draft!.visibleMs,90);assert.equal(service.draft!.text,'synthetic')
+  } finally {service.dispose()}
+})
