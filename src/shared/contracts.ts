@@ -33,6 +33,11 @@ export interface ResourceState<T> {
 }
 
 export interface LocalinoApi {
+  getBridge: () => Promise<import('./agents').BridgeState>
+  setBridgeEnabled: (enabled:boolean) => Promise<import('./agents').AgentResult>
+  refreshBridge: () => Promise<void>
+  diagnoseBridge: () => Promise<string>
+  onBridge: (listener:(state:import('./agents').BridgeState)=>void) => () => void
   getAgents: () => Promise<import('./agents').AgentsState>
   onAgents: (listener: (state: import('./agents').AgentsState) => void) => () => void
   selectAgent: (id: import('./agents').AgentId) => Promise<import('./agents').AgentResult>

@@ -2,6 +2,15 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { ConnectionState, LocalinoApi, Quotas, ResourceState, Usage } from '../shared/contracts'
 
 const api: LocalinoApi = {
+  getBridge:()=>ipcRenderer.invoke('localino:bridge'),
+  setBridgeEnabled:enabled=>ipcRenderer.invoke('localino:bridge-enable',enabled),
+  refreshBridge:()=>ipcRenderer.invoke('localino:bridge-refresh'),
+  diagnoseBridge:()=>ipcRenderer.invoke('localino:bridge-diagnose'),
+  onBridge:listener=>{
+    const callback=(_event:Electron.IpcRendererEvent,state:import('../shared/agents').BridgeState)=>listener(state)
+    ipcRenderer.on('localino:bridge-changed',callback)
+    return ()=>ipcRenderer.removeListener('localino:bridge-changed',callback)
+  },
   getAgents: () => ipcRenderer.invoke('localino:agents'),
   selectAgent: id => ipcRenderer.invoke('localino:select-agent', id),
   recoverPreferences: target => ipcRenderer.invoke('localino:recover-preferences', target),

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { agentCapabilities, agentLabels, type AgentPeriod, type HistoryState, type LocalAgentId } from '../../../shared/agents'
 import { useCommands } from './commands'
 import { Button } from './ui/button'
+import { ClaudeBridgeCard,useBridge } from './claude-bridge'
 
 export function useHistory(id: LocalAgentId): HistoryState | null {
   const [state,setState]=useState<HistoryState|null>(null)
@@ -18,6 +19,7 @@ const errors={missing:'La sorgente non esiste. Seleziona la fonte corretta.',den
 
 export function LocalHistory({id}:{id:LocalAgentId}): React.JSX.Element {
   const state=useHistory(id), capability=agentCapabilities[id]
+  const bridge=useBridge()
   const [error,setError]=useState<string>(),[table,setTable]=useState(false)
   const action=async(operation:Promise<{ok:boolean;error?:string}>)=>{setError(undefined);try{const result=await operation;setError(result.error)}catch{setError('Operazione non riuscita.')}}
   const connect=()=>action(window.localino.connectAgent(id)),choose=()=>action(window.localino.chooseAgentSource(id)),disconnect=()=>action(window.localino.disconnectAgent(id))
@@ -26,7 +28,7 @@ export function LocalHistory({id}:{id:LocalAgentId}): React.JSX.Element {
   useCommands({
     connect:{label:`Collega ${agentLabels[id]}`,run:connect,disabled:state?.enabled?'Fonte già collegata.':undefined},choose:{label:`Seleziona fonte ${agentLabels[id]}`,run:choose},disconnect:{run:disconnect,disabled:!state?.enabled?'Fonte già scollegata.':undefined},
     reread:{run:()=>{},disabled:`${agentLabels[id]} legge uno storico locale, senza account Codex.`},
-    quotas:{run:()=>{},disabled:id==='claude'?'Quote disponibili soltanto tramite il bridge Claude opzionale.':`${agentLabels[id]} non espone quote account universali.`},
+    quotas:{label:id==='claude'?'Rileggi quote Claude dalla cache':undefined,run:()=>{if(id==='claude')void window.localino.refreshBridge()},disabled:id==='claude'?(bridge?.enabled?undefined:'Attiva il bridge Claude opzionale per ricevere quote.'): `${agentLabels[id]} non espone quote account universali.`},
     usage:{run:refresh,disabled:unavailable},period7:{run:()=>period('7'),disabled:unavailable},period30:{run:()=>period('30'),disabled:unavailable},periodAll:{run:()=>period('all'),disabled:unavailable},
     table:{run:()=>setTable(value=>!value),disabled:capability.daily?unavailable:'Questa fonte non fornisce una serie giornaliera.'},
   })
@@ -35,6 +37,7 @@ export function LocalHistory({id}:{id:LocalAgentId}): React.JSX.Element {
   const maxInput=Math.max(1,...(data?.days.map(day=>day.input??0)??[]))
   return <main className="mx-auto max-w-5xl space-y-5 p-6" data-agent={id} data-history-updated-at={state?.lastSuccessAt??''}>
     <header className="space-y-2"><h1 className="text-2xl font-semibold">Consumi {agentLabels[id]}</h1><p className="text-sm text-muted-foreground">Storico locale · File conservati su questo PC</p></header>
+    {id==='claude'&&<ClaudeBridgeCard state={bridge}/>}
     <div className="flex flex-wrap gap-2">
       {!state?.enabled?<Button onClick={()=>void connect()}>Collega {agentLabels[id]}</Button>:<Button variant="outline" onClick={()=>void disconnect()}>Scollega da Localino</Button>}
       <Button variant="outline" onClick={()=>void choose()}>Seleziona {id==='opencode'?'database':'cartella'}</Button>
@@ -48,7 +51,7 @@ export function LocalHistory({id}:{id:LocalAgentId}): React.JSX.Element {
     {data&&<>
       <p className="text-sm">{data.semantics==='events'?'Giorni di calendario nel fuso locale, incluso oggi.':`Sessioni aggiornate ${data.period==='all'?'in tutti i dati disponibili':`negli ultimi ${data.period} giorni`} · consumo complessivo delle sessioni. Finestra mobile di 24 ore per giorno. Non indica quando i token sono stati consumati.`}</p>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3" data-history-summary>{metrics.map(([label,value])=><div key={label} className="rounded-xl border bg-card p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="break-words text-lg font-semibold">{number(value)}</p></div>)}</div>
-      <p className="text-sm">Sessioni con dati: {data.sessions} · Record conteggiati: {data.records} · Record o file esclusi/ambigui: {data.issues}</p>
+      <p className="text-sm">Sessioni con dati: {data.sessions} · Record conteggiati: {data.records} · Problemi rilevati: {data.issues}</p>
       {id==='claude'&&<p className="text-xs text-muted-foreground">Le sessioni includono quelle con copie delle risposte. I token delle copie sono conteggiati una sola volta.</p>}
       {!data.records&&!data.issues&&<p>Nessun consumo registrato nel periodo.</p>}
       <p className="text-sm">Costo storico: {capability.costs&&data.totals.cost!==null?`${data.totals.cost.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})} USD (stima della fonte, non fattura)`:'Non disponibile'}</p>

@@ -18,6 +18,7 @@ import { homedir } from 'node:os'
 import { AgentPreferences } from './agents/preferences'
 import { HistoryResource } from './agents/history-resource'
 import { openCodeSource } from './agents/opencode-source'
+import { ClaudeBridge } from './agents/bridge'
 import { workerReader } from './agents/worker-reader'
 import { agentIds, agentLabels, agentCapabilities, isAgentId, isLocalAgentId, isAgentPeriod, type AgentId, type AgentResult, type LocalAgentId } from '../shared/agents'
 
@@ -26,6 +27,7 @@ if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPa
 const codexPreferences = new FilePreferences(join(app.getPath('userData'), 'connection.json'))
 const connection = new Connection(codexPreferences)
 const agents = new AgentPreferences(join(app.getPath('userData'), 'agents.json'))
+const bridge = new ClaudeBridge(join(app.getPath('userData'),'claude-bridge'),join(process.env.CLAUDE_CONFIG_DIR||join(homedir(),'.claude'),'settings.json'),app.isPackaged?join(process.resourcesPath,'native','Localino.StatusLine.exe'):join(__dirname,'..','native','Localino.StatusLine.exe'),[join(process.env.ProgramFiles||'C:\\Program Files','ClaudeCode','managed-settings.json')])
 const histories = Object.fromEntries(['claude', 'pi', 'opencode'].map(id => [id, new HistoryResource(id as LocalAgentId, workerReader(id as LocalAgentId))])) as Record<LocalAgentId, HistoryResource>
 const defaultSources: Record<LocalAgentId, string> = {
   claude: join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects'), pi: join(process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'), 'sessions'),
@@ -218,6 +220,7 @@ function updateTray(): void {
       {label:'Scorciatoie',click:()=>{void showMain('shortcuts')}},
       ...(!agentCapabilities[selected].history?[{label:'Lettore in preparazione',enabled:false}]:[]),
       {label:'Aggiorna statistiche',enabled:agentCapabilities[selected].history&&state.enabled&&!state.refreshing,click:()=>{if(agentCapabilities[selected].history)void histories[selected].refresh()}},
+      ...(selected==='claude'?[{label:bridge.state.enabled?bridge.state.effective?'Bridge Claude: payload ricevuto':'Bridge Claude: in attesa o obsoleto':'Bridge Claude disattivato',enabled:false},{label:'Rileggi quote Claude dalla cache',enabled:bridge.state.enabled,click:()=>{void bridge.refresh()}}]:[]),
       {type:'separator'}, {label:'Esci',click:()=>app.quit()},
     ]))
     return
@@ -273,6 +276,7 @@ if (!app.requestSingleInstanceLock()) {
     quotas.dispose()
     usage.dispose()
     Object.values(histories).forEach(resource=>resource.dispose())
+    bridge.dispose()
     void connection.shutdown().finally(() => { quitReady = true; app.quit() })
   })
   app.on('window-all-closed', () => { if (quitting) app.quit() })
@@ -384,6 +388,13 @@ if (!app.requestSingleInstanceLock()) {
     handle('localino:agents', () => agents.state)
     handle('localino:select-agent', (_owner,id) => { if(!isAgentId(id))throw Error('Agente non valido'); return selectAgent(id) })
     const localId = (id:unknown):LocalAgentId => { if(!isLocalAgentId(id))throw Error('Agente non valido');return id }
+    handle('localino:bridge',()=>bridge.state)
+    handle('localino:bridge-enable',(_owner,enabled)=>{if(typeof enabled!=='boolean')throw Error('Valore non valido');return bridge.setEnabled(enabled)})
+    handle('localino:bridge-refresh',()=>bridge.refresh())
+    handle('localino:bridge-diagnose',async(owner)=>{
+      const choice=await dialog.showOpenDialog(owner,{title:'Controlla override Claude nel progetto (nessuna modifica)',properties:['openDirectory']})
+      return bridge.diagnose(choice.canceled?undefined:choice.filePaths[0])
+    })
     handle('localino:history',(_owner,id)=>histories[localId(id)].state)
     handle('localino:refresh-history',(_owner,value)=>{const id=localId(value);if(!agentCapabilities[id].history)throw Error('Lettore non disponibile');return histories[id].refresh()})
     handle('localino:agent-period',(_owner,value)=>{
@@ -418,6 +429,8 @@ if (!app.requestSingleInstanceLock()) {
       }catch{return {ok:false,error:'Ripristino non riuscito. Il file precedente è conservato.'}}
     })
     agents.on('change',state=>{broadcast('localino:agents-changed',state);updateUsageActivity();updateTray()})
+    bridge.on('change',state=>{broadcast('localino:bridge-changed',state);updateTray()})
+    await bridge.start()
     for(const id of Object.keys(histories) as LocalAgentId[]){
       histories[id].on('change',state=>{broadcast('localino:history-changed',state);updateTray()})
       histories[id].configure(agents.state.sources[id])

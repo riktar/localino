@@ -11,3 +11,6 @@ const result = spawnSync(join(framework, 'csc.exe'), ['/nologo', '/target:exe', 
   '/reference:System.Windows.Forms.dll', '/reference:System.Web.Extensions.dll', resolve('native/ShiftGesture.cs'), resolve('native/CaptureHelper.cs')], { stdio: 'inherit', windowsHide: true })
 if (result.error) throw result.error
 if (result.status !== 0) process.exit(result.status || 1)
+const bridge = spawnSync(join(framework, 'csc.exe'), ['/nologo', '/target:exe', '/platform:x64', '/optimize+', `/out:${resolve('out/native/Localino.StatusLine.exe')}`, '/reference:System.Web.Extensions.dll', resolve('native/StatusLineHelper.cs')], { stdio: 'inherit', windowsHide: true })
+if (bridge.error) throw bridge.error
+if (bridge.status !== 0) process.exit(bridge.status || 1)
