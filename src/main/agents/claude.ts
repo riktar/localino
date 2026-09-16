@@ -13,10 +13,21 @@ export async function readClaude(root: string, period: AgentPeriod, now = Date.n
   for (const file of scan.files) {
     const fileIssues = await readJsonl(file, row => {
       rows++
-      if (typeof row.type === 'string' && metadata.has(row.type)) { recognized++; return }
+      if (typeof row.type === 'string' && metadata.has(row.type)) {
+        const envelope = identifier(row.uuid) && identifier(row.sessionId) && timestamp(row.timestamp) !== null
+        const summary = row.type === 'summary' && identifier(row.leafUuid) && typeof row.summary === 'string'
+        const snapshot = row.type === 'file-history-snapshot' && identifier(row.messageId) && timestamp(object(row.snapshot)?.timestamp) !== null
+        const names: Record<string,string> = {'custom-title':'customTitle',tag:'tag','agent-name':'agentName','agent-color':'agentColor','ai-title':'aiTitle','last-prompt':'lastPrompt'}
+        const named = names[row.type] && identifier(row.sessionId) && typeof row[names[row.type]] === 'string'
+        const user = row.type !== 'user' || object(row.message)?.role === 'user'
+        const payload = row.type === 'user' ? user : row.type === 'system' ? typeof row.subtype === 'string' : row.type === 'progress' ? !!object(row.data) : false
+        if ((envelope && payload) || summary || snapshot || named) recognized++
+        else issues++
+        return
+      }
       if (row.type !== 'assistant') { issues++; return }
-      recognized++
       const message = object(row.message), usage = object(message?.usage)
+      if (message?.role === 'assistant' && usage) recognized++
       const id = identifier(message?.id), session = identifier(row.sessionId), time = timestamp(row.timestamp)
       if (!usage || !id || !session || time === null || message?.role !== 'assistant' || row.isApiErrorMessage === true) { issues++; return }
       if (ambiguous.has(id)) return
@@ -36,6 +47,7 @@ export async function readClaude(root: string, period: AgentPeriod, now = Date.n
           ambiguous.add(id); events.delete(id); return
         }
         previous.time = Math.min(previous.time, time)
+        previous.sessions = [...new Set([...(previous.sessions ?? [previous.session]), session])]
       }
     })
     issues += fileIssues

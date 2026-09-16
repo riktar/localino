@@ -49,6 +49,7 @@ export function LocalHistory({id}:{id:LocalAgentId}): React.JSX.Element {
       <p className="text-sm">{data.semantics==='events'?'Giorni di calendario nel fuso locale, incluso oggi.':'Totali di tutte le attività delle sessioni aggiornate nel periodo; finestra mobile di 24 ore per giorno. Non indica quando i token sono stati consumati.'}</p>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3" data-history-summary>{metrics.map(([label,value])=><div key={label} className="rounded-xl border bg-card p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="break-words text-lg font-semibold">{number(value)}</p></div>)}</div>
       <p className="text-sm">Sessioni con dati: {data.sessions} · Record conteggiati: {data.records} · Record o file esclusi/ambigui: {data.issues}</p>
+      {id==='claude'&&<p className="text-xs text-muted-foreground">Le sessioni includono quelle con copie delle risposte. I token delle copie sono conteggiati una sola volta.</p>}
       {!data.records&&!data.issues&&<p>Nessun consumo registrato nel periodo.</p>}
       <p className="text-sm">Costo storico: {capability.costs&&data.totals.cost!==null?`${data.totals.cost.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})} USD (stima della fonte, non fattura)`:'Non disponibile'}</p>
       {data.limitations?.map(note=><p key={note} className="text-xs text-muted-foreground">{note}</p>)}

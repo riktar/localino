@@ -1,6 +1,6 @@
 import type { AgentPeriod, HistoryData, TokenMetrics } from '../../shared/agents'
 
-export interface UsageEvent { id: string; session: string; time: number; metrics: TokenMetrics }
+export interface UsageEvent { id: string; session: string; sessions?: string[]; time: number; metrics: TokenMetrics }
 const keys = ['input', 'output', 'cacheRead', 'cacheWrite', 'reasoning', 'total', 'cost'] as const
 export const blankMetrics = (): TokenMetrics => ({ input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null, cost: null })
 export function sum(values: (number | null)[], integral = true): number | null {
@@ -23,7 +23,7 @@ export function aggregate(events: UsageEvent[], period: AgentPeriod, issues: num
   for (const event of selected) { const day = dayKey(event.time); const group = groups.get(day) ?? []; group.push(event); groups.set(day, group) }
   return {
     totals, days: [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([date, group]) => ({ date, tokens: sum(group.map(e => e.metrics.total)), input: sum(group.map(e => e.metrics.input)), cost: sum(group.map(e => e.metrics.cost), false) })),
-    sessions: new Set(selected.map(event => event.session)).size, records: selected.length, issues, partial: issues > 0,
+    sessions: new Set(selected.flatMap(event => event.sessions ?? [event.session])).size, records: selected.length, issues, partial: issues > 0,
     sampledAt: selected.length ? selected.reduce((latest, event) => Math.max(latest, event.time), 0) : null, period, semantics: 'events',
   }
 }

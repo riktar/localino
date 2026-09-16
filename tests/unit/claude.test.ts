@@ -14,7 +14,7 @@ test('Claude latest contract: streamed copies and forks count original input/cac
   const file=join(root,'session.jsonl');await writeFile(file,text)
   const data=await readClaude(root,'all',now)
   assert.deepEqual(data.totals,{input:107,output:null,cacheRead:20,cacheWrite:33,reasoning:null,total:null,cost:null})
-  assert.equal(data.records,2);assert.equal(data.sessions,2);assert.equal(data.issues,0);assert.equal(data.partial,true)
+  assert.equal(data.records,2);assert.equal(data.sessions,3);assert.equal(data.issues,0);assert.equal(data.partial,true)
   assert.equal(data.days.reduce((total,day)=>total+(day.input??0),0),107)
   assert.equal(await readFile(file,'utf8'),text)
   await mkdir(join(root,'subagents'));await rename(file,join(root,'subagents','renamed.jsonl'))
@@ -56,4 +56,21 @@ test('ambiguous identities excluded; equal independent responses retained; links
   await symlink(outside,join(root,'linked'),'junction')
   const data=await readClaude(root,'all',now)
   assert.equal(data.records,1);assert.equal(data.totals.input,100);assert.equal(data.issues,2)
+})
+
+test('session count is invariant under fork file ordering; familiar types cannot validate an unknown envelope',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'localino-claude-fork-order-'))
+  const [sample]=JSON.parse(await readFile(resolve('tests/fixtures/claude-history.json'),'utf8'))
+  const copied={...sample,sessionId:'fork'},fresh={...sample,sessionId:'fork',message:{...sample.message,id:'fresh'}}
+  await writeFile(join(root,'a-fork.jsonl'),[copied,fresh].map(row=>JSON.stringify(row)).join('\n'))
+  await writeFile(join(root,'b-original.jsonl'),JSON.stringify(sample))
+  const before=await readClaude(root,'all',now)
+  await rename(join(root,'a-fork.jsonl'),join(root,'z-fork.jsonl'))
+  const after=await readClaude(root,'all',now)
+  assert.equal(before.sessions,2);assert.equal(after.sessions,2);assert.deepEqual(before.totals,after.totals)
+  await unlink(join(root,'z-fork.jsonl'))
+  for(const row of [{type:'user',unrecognized_schema:{version:99}},{type:'assistant',message:{futureUsage:99}}]){
+    await writeFile(join(root,'b-original.jsonl'),JSON.stringify(row))
+    await assert.rejects(readClaude(root,'all',now),{kind:'unsupported'})
+  }
 })
