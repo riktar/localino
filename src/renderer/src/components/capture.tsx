@@ -24,18 +24,17 @@ export function CaptureSettings(): React.JSX.Element {
     catch { setError('Modifica non riuscita.') }
     finally { setBusy(false) }
   }
-  return <section aria-labelledby="capture-settings-title" className="space-y-3 rounded-xl border bg-card p-4">
-    <h2 id="capture-settings-title" className="font-semibold">Cattura della selezione</h2>
-    <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={state.enabled} disabled={busy} onChange={e => void update(e.target.checked)} />Abilita doppio Shift</label>
-    <p className="text-sm text-muted-foreground">Premi e rilascia Shift due volte entro 350 ms, senza altri tasti. L’alternativa globale predefinita è Ctrl+Alt+P, configurabile sotto. Il testo selezionato viene salvato automaticamente e mostrato in Clipboard, in primo piano.</p>
-    <p className="text-sm text-muted-foreground">{captureHelp}</p>
-    <p role="status" className="text-sm">{state.status === 'ready' ? 'Componente di cattura disponibile.' : state.status === 'starting' ? 'Avvio cattura…' : state.status === 'suspended' ? 'Cattura sospesa.' : state.error}</p>
-    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    <Button variant="outline" disabled={state.status === 'starting' || state.status === 'suspended'} onClick={() => void window.localino.retryCapture()}>Riprova componente di cattura</Button>
+  return <section aria-label="Capture settings" className="space-y-3">
+    <label className="flex items-center gap-3 text-sm"><input type="checkbox" checked={state.enabled} disabled={busy} onChange={e=>void update(e.target.checked)}/>Double Shift</label>
+    <p role="status" className="text-xs">{state.status==='ready'?'Ready':state.status==='starting'?'Starting…':state.status==='suspended'?'Suspended':state.error}</p>
+    {error&&<p role="alert" className="text-sm text-destructive">{error}</p>}
+    {state.status==='error'&&<Button size="sm" variant="outline" onClick={()=>void window.localino.retryCapture()}>Retry capture</Button>}
+    {window.localino.platform==='darwin'&&<Button size="sm" variant="outline" onClick={()=>void window.localino.requestCapturePermissions()}>Allow permissions</Button>}
+    <details className="text-xs"><summary className="cursor-pointer">Help</summary><div className="mt-2 space-y-2"><p>Press and release Shift twice within 350 ms, without other keys. Readable selections save automatically.</p><p>{captureHelp}</p></div></details>
   </section>
 }
 
-export function CaptureView({guard}:{guard:React.MutableRefObject<LeaveGuard|null>}): React.JSX.Element {
+export function CaptureEditor({guard}:{guard:React.MutableRefObject<LeaveGuard|null>}): React.JSX.Element {
   const {ask,dialog}=useConfirm()
   const [draft, setDraft] = useState<CaptureDraft | null>(null)
   const [text, setText] = useState('')
@@ -89,15 +88,15 @@ export function CaptureView({guard}:{guard:React.MutableRefObject<LeaveGuard|nul
   return <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4" onKeyDown={event => {
     if (document.querySelector('dialog[open]') || event.repeat || event.nativeEvent.isComposing || event.keyCode === 229) return
     if (event.key === 'Escape') { event.preventDefault(); cancel() }
-    if (event.key === 'Enter' && event.ctrlKey && !event.altKey && !event.shiftKey) { event.preventDefault(); void save() }
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey) { event.preventDefault(); void save() }
   }}>
-    <header><h1 className="text-2xl font-semibold">Cattura selezione</h1><p className="mt-1 text-sm text-muted-foreground">Salva un prompt nella tua Clipboard locale.</p></header>
-    <p role="status" className="text-sm">{draft?.message ?? 'Preparazione cattura…'}{draft?.elapsedMs !== undefined && <span className="block text-xs text-muted-foreground">Acquisizione: {draft.elapsedMs} ms</span>}{draft?.visibleMs !== undefined && <span className="block text-xs text-muted-foreground">Presentazione: {draft.visibleMs} ms dal rilevamento</span>}</p>
-    <label htmlFor="capture-text" className="text-sm font-medium">Testo da salvare</label>
+    <h2 className="text-sm font-semibold">Capture</h2>
+    <p role="status" className="text-sm">{draft?.message??'Preparing…'}</p>
+    <label htmlFor="capture-text" className="text-sm font-medium">Capture text</label>
     <textarea id="capture-text" ref={editor} value={text} readOnly={!draft || draft.acquiring || busy} onChange={e => setText(e.target.value)} className="min-h-40 flex-1 resize-y rounded-lg border bg-background p-3 text-sm" spellCheck={false} />
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    <p className="text-xs text-muted-foreground">{captureHelp}</p>
-    <footer className="flex flex-wrap gap-3"><Button disabled={!draft || draft.acquiring || busy} onClick={() => void save()}>{busy ? 'Salvataggio…' : 'Salva prompt'} <kbd>Ctrl+Invio</kbd></Button><Button variant="outline" disabled={busy || !draft} onClick={cancel}>Annulla <kbd>Esc</kbd></Button></footer>
+    <details className="text-xs"><summary>Help</summary><p>{captureHelp}</p><p>Acquisition: {draft?.elapsedMs??'—'} ms · Presentation: {draft?.visibleMs??'—'} ms</p></details>
+    <footer className="flex flex-wrap gap-3"><Button disabled={!draft || draft.acquiring || busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</Button><Button variant="outline" disabled={busy || !draft} onClick={cancel}>Cancel</Button></footer>
     {dialog}
   </main>
 }

@@ -6,7 +6,7 @@ import { Button } from './ui/button'
 import { AgentCommands, AgentDashboard } from './agents'
 import { Clipboard, type LeaveGuard } from './clipboard'
 import { CommandProvider, useCommandRegistry, useCommands } from './commands'
-import { CaptureView } from './capture'
+import { CaptureEditor } from './capture'
 import type { CaptureDraft, CapturedNote } from '../../../shared/capture'
 import type { Destination } from '../../../shared/navigation'
 
@@ -68,7 +68,7 @@ function PanelContent(): React.JSX.Element {
       </section>
       <div hidden={destination!=='settings'} className="panel-settings">{destination==='settings'&&<PanelSettings/>}</div>
     </div>
-    {recovering&&<CaptureView guard={captureGuard}/>}
+    {recovering&&<CaptureEditor guard={captureGuard}/>}
   </div>
 }
 export function UsageWindow(): React.JSX.Element {

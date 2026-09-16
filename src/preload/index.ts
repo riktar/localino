@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { ConnectionState, LocalinoApi, Quotas, ResourceState, Usage } from '../shared/contracts'
 
 const api: LocalinoApi = {
+  platform: process.platform as 'win32'|'darwin',
+  requestCapturePermissions:()=>ipcRenderer.invoke('localino:capture-permissions'),
   getBridge:()=>ipcRenderer.invoke('localino:bridge'),
   setBridgeEnabled:enabled=>ipcRenderer.invoke('localino:bridge-enable',enabled),
   refreshBridge:()=>ipcRenderer.invoke('localino:bridge-refresh'),
@@ -51,7 +53,7 @@ const api: LocalinoApi = {
     return ()=>{ipcRenderer.removeListener('localino:capture-status',callback)}
   },
   onCaptureDraft:listener=>{
-    const callback=(_event:Electron.IpcRendererEvent,draft:import('../shared/capture').CaptureDraft)=>listener(draft)
+    const callback=(_event:Electron.IpcRendererEvent,draft:import('../shared/capture').CaptureDraft|null)=>listener(draft)
     ipcRenderer.on('localino:capture-draft',callback)
     return ()=>{ipcRenderer.removeListener('localino:capture-draft',callback)}
   },

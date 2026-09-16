@@ -60,7 +60,7 @@ test('save errors keep draft; native failure never imports stale text; cancel re
     assert.equal(service.finish(id, true), true); assert.equal(child.commands.at(-1), 'cancel')
     child.message({ type: 'begin', id: 3 }); child.message({ type: 'result', id: 3, text: 'stale', reason: 'empty', ms: 3 })
     assert.equal(service.draft!.text, '')
-    assert.match(service.draft!.message, /Nessuna selezione/)
+    assert.match(service.draft!.message, /No readable selection/)
     child.message({ type: 'result', id: 1, text: 'old', reason: 'ok', ms: 1 }); assert.equal(service.draft!.text, '')
   } finally { service.dispose() }
 })
@@ -100,7 +100,7 @@ test('bounded acquisition timeout and malformed output degrade to an editable em
     child.message({ type: 'begin', id: 1 })
     await new Promise(resolve => setTimeout(resolve, 1700))
     assert.equal(child.killed, true); assert.equal(service.state.status, 'error'); assert.equal(service.draft!.acquiring, false)
-    assert.match(service.draft!.message, /scaduta/)
+    assert.match(service.draft!.message, /timed out/)
     service.finish(service.draft!.id, false); service.request(); assert.equal(service.draft!.text, '')
   } finally { service.dispose() }
   const second = await fixture()

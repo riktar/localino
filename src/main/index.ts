@@ -30,7 +30,7 @@ if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPa
 const codexPreferences = new FilePreferences(join(app.getPath('userData'), 'connection.json'))
 const connection = new Connection(codexPreferences)
 const agents = new AgentPreferences(join(app.getPath('userData'), 'agents.json'))
-const bridge = new ClaudeBridge(join(app.getPath('userData'),'claude-bridge'),join(process.env.CLAUDE_CONFIG_DIR||join(homedir(),'.claude'),'settings.json'),app.isPackaged?join(process.resourcesPath,'native',nativeHelper('StatusLine')):join(__dirname,'..','native',nativeHelper('StatusLine')),[join(process.env.ProgramFiles||'C:\\Program Files','ClaudeCode','managed-settings.json')])
+const bridge = new ClaudeBridge(join(app.getPath('userData'),'claude-bridge'),join(process.env.CLAUDE_CONFIG_DIR||join(homedir(),'.claude'),'settings.json'),app.isPackaged?join(process.resourcesPath,'native',nativeHelper('StatusLine')):join(__dirname,'..','native',nativeHelper('StatusLine')),[process.platform==='darwin'?'/Library/Application Support/ClaudeCode/managed-settings.json':join(process.env.ProgramFiles||'C:\\Program Files','ClaudeCode','managed-settings.json')])
 const histories = Object.fromEntries(['claude', 'pi', 'opencode'].map(id => [id, new HistoryResource(id as LocalAgentId, workerReader(id as LocalAgentId))])) as Record<LocalAgentId, HistoryResource>
 const defaultSources: Record<LocalAgentId, string> = {
   claude: join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects'), pi: join(process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'), 'sessions'),
@@ -69,11 +69,11 @@ const shortcuts = new Shortcuts(join(app.getPath('userData'),'shortcuts.json'),g
   if(id==='consumi')void showMain('usage')
   if(id==='capture')capture.request()
   const selected = ({selectCodex:'codex', selectClaude:'claude', selectPi:'pi', selectOpenCode:'opencode'} as Record<string, AgentId>)[id]
-  if(selected)void selectAgent(selected)
+  if(selected){void selectAgent(selected);showPanel()}
 })
 
 async function selectAgent(id: AgentId): Promise<AgentResult> {
-  try { agents.select(id); showPanel(); return {ok:true} }
+  try { agents.select(id); return {ok:true} }
   catch (error) { return {ok:false,error:error instanceof Error ? error.message : 'Could not select agent.'} }
 }
 
@@ -151,7 +151,7 @@ capture.on('draft',()=>{void presentCapture()})
 capture.on('raise',()=>{void presentCapture()})
 capture.on('finished',()=>{panel?.webContents.send('localino:capture-draft',null)})
 capture.on('timing',draft=>{
-  panel?.webContents.send('localino:capture-draft',draft)
+  if(!captureCompleting)panel?.webContents.send('localino:capture-draft',draft)
   if(capturedNote && capturedNote.captureId===draft.id){capturedNote={...capturedNote,visibleMs:draft.visibleMs};panel?.webContents.send('localino:note-captured',capturedNote);presentationDone?.()}
 })
 capture.on('status',state=>broadcast('localino:capture-status',state))
@@ -313,6 +313,7 @@ if (!app.requestSingleInstanceLock()) {
     handle('localino:capture-request',()=>capture.request())
     handle('localino:capture-enable',(_owner,value)=>capture.setEnabled(value))
     handle('localino:capture-retry',()=>capture.start())
+    handle('localino:capture-permissions',()=>{if(process.platform==='darwin')capture.permissions()})
     handle('localino:capture-draft',owner=>{if(owner!==panel)throw Error('Access denied');return capture.draft})
     handle('localino:capture-presented',(owner,id)=>{
       if(owner!==panel||typeof id!=='number')throw Error('Access denied')

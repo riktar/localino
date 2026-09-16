@@ -72,7 +72,7 @@ export class Capture extends EventEmitter {
     if (msg.type === 'ready') { clearTimeout(this.startup); this.send(this.state.enabled ? 'enable' : 'disable'); return }
     if (msg.type === 'status') {
       if (typeof msg.enabled !== 'boolean') throw Error('protocol')
-      this.state = { enabled: this.state.enabled, status: msg.error ? 'error' : 'ready', ...(msg.error ? { error: 'Rilevamento doppio Shift non disponibile. Riprova da Scorciatoie.' } : {}) }
+      this.state = { enabled: this.state.enabled, status: msg.error ? 'error' : 'ready', ...(msg.error ? { error: captureMessage(typeof msg.reason==='string'?msg.reason:'unavailable') } : {}) }
       this.status(); return
     }
     if (msg.type === 'error') { this.fail(); return }
@@ -109,6 +109,7 @@ export class Capture extends EventEmitter {
       this.visibleSent = true; this.send(`visible:${this.nativeId}`)
     }
   }
+  permissions(): void { this.send('permissions') }
   request(): void {
     if (this.draft) { this.emit('raise'); return }
     if (this.state.status === 'ready') this.send('capture')

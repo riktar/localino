@@ -11,14 +11,17 @@ export interface CaptureDraft {
   elapsedMs?: number
   visibleMs?: number
 }
-export const captureHelp = 'In VS Code imposta Editor: Accessibility Support (editor.accessibilitySupport) su on. Localino non modifica le impostazioni delle altre app.'
-export function captureMessage(reason: string): string {
-  if (reason === 'ok') return 'Selezione acquisita. Salvataggio automatico…'
-  if (reason === 'timeout') return 'Lettura della selezione scaduta. Puoi scrivere o incollare il testo.'
-  if (reason === 'limit') return 'La selezione supera 100.000 caratteri. Nessun testo è stato troncato: incolla una selezione più breve.'
-  if (reason === 'changed') return 'La finestra di origine è cambiata durante la lettura. Puoi incollare il testo.'
-  if (reason === 'empty') return 'Nessuna selezione leggibile. Puoi scrivere o incollare il testo.'
-  return 'Componente di cattura non disponibile. Puoi scrivere o incollare il testo e riprovare da Scorciatoie.'
+export const captureHelp = 'In VS Code set Editor: Accessibility Support (editor.accessibilitySupport) to on. On macOS allow Accessibility and Input Monitoring in System Settings. Localino never changes other apps’ settings.'
+export function captureMessage(reason:string):string {
+  if(reason==='ok')return 'Saving selection…'
+  if(reason==='timeout')return 'Selection timed out. Paste or type the text.'
+  if(reason==='limit')return 'Selection exceeds 100,000 characters. Use a shorter selection.'
+  if(reason==='changed')return 'The source app changed. Paste the text.'
+  if(reason==='empty')return 'No readable selection. Paste or type the text.'
+  if(reason==='permissions')return 'Allow Accessibility in System Settings, then retry.'
+  if(reason==='input-monitoring')return 'Allow Input Monitoring in System Settings, then retry.'
+  if(reason==='protected')return 'Protected fields cannot be captured.'
+  return 'Capture unavailable. Paste text or retry in Settings.'
 }
 
 export interface CapturedNote { sequence: number; noteId: string; captureId: number; elapsedMs?: number; visibleMs?: number; focusFailed?: boolean }

@@ -58,6 +58,8 @@ export interface LocalinoApi {
   requestCapture: () => Promise<void>
   setCaptureEnabled: (value:boolean) => Promise<{ok:boolean;error?:string}>
   retryCapture: () => Promise<void>
+  requestCapturePermissions: () => Promise<void>
+  platform: 'win32' | 'darwin'
   getCaptureDraft: () => Promise<import('./capture').CaptureDraft|null>
   onCaptureDraft: (listener:(draft:import('./capture').CaptureDraft|null)=>void)=>()=>void
   capturePresented: (id:number) => Promise<void>
