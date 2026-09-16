@@ -40,7 +40,7 @@ export async function readOpenCode(path:string, period:AgentPeriod, now=Date.now
       totals[key]=values.length?sum(values.map(value=>value[key]),key!=='cost'):issues?null:0
       if(values.length&&totals[key]===null&&values.every(value=>value[key]!==null))issues++
     }
-    return {totals,days:[],sessions:values.length,records:values.length,issues,partial:issues>0,sampledAt:latest,period,semantics:'updated_sessions',limitations:['Contatori nativi delle sessioni OpenCode, inclusi reasoning e cache separati. Messaggi e parti copiati nei fork non vengono sommati.', 'Costi USD riportati da OpenCode, non fattura. Sessioni eliminate o presenti in altri database non sono incluse.']}
+    return {totals,days:[],sessions:values.length,records:values.length,issues,partial:issues>0,sampledAt:latest,period,semantics:'updated_sessions',limitations:['Native OpenCode session counters, with separate reasoning and cache. Copied fork messages and parts are not added again.', 'USD costs reported by OpenCode, not invoices. Deleted sessions and other databases are excluded.']}
   } catch(error) {
     if(error instanceof HistoryFailure)throw error
     const code=(error as {errcode?:number}).errcode

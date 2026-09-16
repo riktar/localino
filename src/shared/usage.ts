@@ -51,9 +51,9 @@ export function usagePeriod(usage: Usage, period: Period, today = localDate()) {
   if (end) gap(cursor,stamp(end))
   return { start,end,days,rows,expected,covered:days.length,total,mean:total===null?null:total/days.length,peak,partial:days.length<expected||usage.issues>0,overflow:days.length>0&&total===null }
 }
-export const numberLabel = (value: number | null): string => value === null ? 'Non disponibile' : value.toLocaleString('it-IT',{maximumFractionDigits:2})
+export const numberLabel = (value: number | null): string => value === null ? 'Unavailable' : value.toLocaleString('en-US',{maximumFractionDigits:2})
 export function durationSeconds(value: number | null): string {
-  if (value === null) return 'Non disponibile'
+  if (value === null) return 'Unavailable'
   const days = Math.floor(value/86400); const hours = Math.floor(value%86400/3600); const minutes = Math.floor(value%3600/60)
-  return [days ? `${days} g` : '', hours ? `${hours} h` : '', minutes ? `${minutes} min` : '', `${value%60} s`].filter(Boolean).join(' ')
+  return [days ? `${days} d` : '', hours ? `${hours} h` : '', minutes ? `${minutes} min` : '', `${value%60} s`].filter(Boolean).join(' ')
 }

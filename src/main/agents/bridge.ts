@@ -15,9 +15,9 @@ const exists=async(path:string)=>{try{await access(path);return true}catch{retur
 export async function updateBridgeSettings(helper:string,path:string,expected:string,statusLine:unknown):Promise<void> {
   await new Promise<void>((resolve,reject)=>{
     const child=spawn(helper,['--settings-cas'],{windowsHide:true,stdio:['pipe','ignore','ignore']})
-    const timer=setTimeout(()=>{child.kill();reject(Error('Aggiornamento impostazioni scaduto; nessuna transazione incompleta viene applicata.'))},5000)
-    child.on('error',()=>{clearTimeout(timer);reject(Error('Helper impostazioni non disponibile.'))})
-    child.on('close',code=>{clearTimeout(timer);if(code===0)resolve();else reject(Error(code===2?'Impostazioni modificate contemporaneamente: nessuna sovrascrittura, riprova.':'Aggiornamento atomico non disponibile: verifica permessi, file occupato e volume NTFS locale. Nessuna modifica parziale applicata.'))})
+    const timer=setTimeout(()=>{child.kill();reject(Error('Settings update timed out. No incomplete transaction applied.'))},5000)
+    child.on('error',()=>{clearTimeout(timer);reject(Error('Settings helper unavailable.'))})
+    child.on('close',code=>{clearTimeout(timer);if(code===0)resolve();else reject(Error(code===2?'Settings changed concurrently. Nothing overwritten; retry.':'Atomic update unavailable. Check permissions and a local NTFS volume. No partial changes applied.'))})
     child.stdin.on('error',()=>{})
     child.stdin.end(JSON.stringify({path,expectedHash:createHash('sha256').update(expected,'utf8').digest('hex'),remove:statusLine===undefined,statusLine:statusLine??null}))
   })
@@ -29,8 +29,8 @@ async function atomic(path:string,value:unknown):Promise<void> {
 }
 async function document(path:string,missing=false):Promise<{text:string;value:Record<string,unknown>}> {
   let text:string
-  try{text=await readFile(path,'utf8')}catch(error){if(missing&&absent(error))return {text:'',value:{}};throw Error('File non accessibile.')}
-  try{const value=object(JSON.parse(text.replace(/^\uFEFF/,'')));if(!value)throw Error();return {text,value}}catch{throw Error('JSON non valido: correggi il file prima di riprovare.')}
+  try{text=await readFile(path,'utf8')}catch(error){if(missing&&absent(error))return {text:'',value:{}};throw Error('File inaccessible.')}
+  try{const value=object(JSON.parse(text.replace(/^\uFEFF/,'')));if(!value)throw Error();return {text,value}}catch{throw Error('Invalid JSON. Repair the file before retrying.')}
 }
 export function bridgeCommand(helper:string,config:string):string {
   // Encoded PowerShell is accepted by both official Windows dispatch shells.
@@ -40,7 +40,7 @@ export function bridgeCommand(helper:string,config:string):string {
 }
 async function previousShell():Promise<{shell:string;shellKind:'bash'|'powershell'}> {
   const configured=process.env.CLAUDE_CODE_GIT_BASH_PATH
-  if(configured) {if(!isAbsolute(configured)||!await exists(configured))throw Error('CLAUDE_CODE_GIT_BASH_PATH non valido.');return {shell:configured,shellKind:'bash'}}
+  if(configured) {if(!isAbsolute(configured)||!await exists(configured))throw Error('Invalid CLAUDE_CODE_GIT_BASH_PATH.');return {shell:configured,shellKind:'bash'}}
   for(const dir of (process.env.PATH??'').split(delimiter).filter(p=>isAbsolute(p))) {
     if(await exists(join(dir,'git.exe')))for(const path of [join(dir,'bash.exe'),join(dir,'..','bin','bash.exe')])if(await exists(path))return {shell:path,shellKind:'bash'}
   }
@@ -64,7 +64,7 @@ export class ClaudeBridge extends EventEmitter {
     try {
       if(await exists(this.configPath)) {
         const value=(await document(this.configPath)).value as unknown as Config
-        if(typeof value.enabled!=='boolean'||typeof value.generation!=='string'||value.settingsPath!==this.state.settingsPath||value.cachePath!==join(this.directory,'snapshot.json')||!object(value.installed))throw Error('Configurazione bridge non valida. Ripristino automatico sospeso.')
+        if(typeof value.enabled!=='boolean'||typeof value.generation!=='string'||value.settingsPath!==this.state.settingsPath||value.cachePath!==join(this.directory,'snapshot.json')||!object(value.installed))throw Error('Invalid bridge configuration. Automatic recovery paused.')
         this.config=value;this.state.enabled=value.enabled
       }
     }catch(error){this.state.error=(error as Error).message}
@@ -77,12 +77,12 @@ export class ClaudeBridge extends EventEmitter {
     const paths=[...this.managedPaths,...(project?[join(project,'.claude','settings.json'),join(project,'.claude','settings.local.json')]:[])]
     const overrides:string[]=[]
     for(const path of paths)if(await exists(path)) {
-      try{if(Object.hasOwn((await document(path)).value,'statusLine'))overrides.push(path)}catch{overrides.push(`${path} (non leggibile o non valido)`)}
+      try{if(Object.hasOwn((await document(path)).value,'statusLine'))overrides.push(path)}catch{overrides.push(`${path} (unreadable or invalid)`)}
     }
-    return overrides.length?`Override rilevato: ${overrides.join('; ')}. Localino non lo modifica. Verifica la fonte effettiva con /status in Claude.`:'Nessun override nei file esaminati. Policy remote, flag di avvio e altri progetti possono prevalere: verifica /status in Claude. Il collegamento Ã¨ confermato solo quando arriva un payload.'
+    return overrides.length?`Override found: ${overrides.join('; ')}. Localino keeps it unchanged. Check /status in Claude.`:'No override in checked files. Remote policy, flags or other projects can override this; check /status in Claude. A received payload confirms the bridge.'
   }
   async setEnabled(enabled:boolean):Promise<{ok:boolean;error?:string}> {
-    if(this.busy)return {ok:false,error:'Operazione bridge in corso.'}
+    if(this.busy)return {ok:false,error:'Bridge operation in progress.'}
     this.busy=true;let gate:Awaited<ReturnType<typeof open>>|undefined
     try {
       if(this.state.error&&!this.config&&await exists(this.configPath))throw Error(this.state.error)
@@ -92,23 +92,23 @@ export class ClaudeBridge extends EventEmitter {
       if(!enabled&&this.config){this.config.enabled=false;this.config.generation=randomUUID();await atomic(this.configPath,this.config);this.state.enabled=false;this.clear();await unlink(this.config.cachePath).catch(error=>{if(!absent(error))throw error})}
       const settings=await document(this.state.settingsPath,true)
       if(enabled) {
-        for(const path of this.managedPaths)if(await exists(path)&&Object.hasOwn((await document(path)).value,'statusLine'))throw Error(`Una policy gestita imposta statusLine in ${path}. Localino non la sovrascrive.`)
+        for(const path of this.managedPaths)if(await exists(path)&&Object.hasOwn((await document(path)).value,'statusLine'))throw Error(`Managed policy sets statusLine in ${path}. Localino keeps it unchanged.`)
         if(this.config&&equal(settings.value.statusLine,this.config.installed)) {
           if(!this.config.enabled){await unlink(this.config.cachePath).catch(error=>{if(!absent(error))throw error});const next={...this.config,generation:randomUUID(),enabled:true};await atomic(this.configPath,next);this.config=next;this.state.enabled=true;this.state.error=null;this.clear()}
           return {ok:true}
         }
         if(this.config?.enabled) {
-          if(!equal(settings.value.statusLine,this.config.installed))throw Error('statusLine Ã¨ stata modificata dopo il collegamento. Disattiva il bridge prima di configurarlo di nuovo.')
+          if(!equal(settings.value.statusLine,this.config.installed))throw Error('statusLine changed after connection. Disable the bridge before configuring it again.')
           return {ok:true}
         }
         const previous=settings.value.statusLine
-        if(previous!==undefined&&(!object(previous)||object(previous)?.type!=='command'||typeof object(previous)?.command!=='string'))throw Error('statusLine precedente non supportata: nessuna modifica effettuata.')
+        if(previous!==undefined&&(!object(previous)||object(previous)?.type!=='command'||typeof object(previous)?.command!=='string'))throw Error('Previous statusLine unsupported. Nothing changed.')
         const helper=join(this.directory,'Localino.StatusLine.exe')
         await copyFile(this.helperSource,helper)
         const installed={...(object(previous)??{}),type:'command',command:bridgeCommand(helper,this.configPath)}
         const config:Config={enabled:false,generation:randomUUID(),settingsPath:this.state.settingsPath,cachePath:join(this.directory,'snapshot.json'),hadPrevious:previous!==undefined,previous:previous??null,installed,...await previousShell()}
         await atomic(this.configPath,config);this.config=config
-        if((await document(this.state.settingsPath,true)).text!==settings.text)throw Error('Impostazioni cambiate durante il collegamento: riprova. Nessuna sovrascrittura effettuata.')
+        if((await document(this.state.settingsPath,true)).text!==settings.text)throw Error('Settings changed while connecting. Nothing overwritten; retry.')
         await updateBridgeSettings(this.helperSource,this.state.settingsPath,settings.text,installed)
         await unlink(config.cachePath).catch(error=>{if(!absent(error))throw error})
         const next={...config,enabled:true};await atomic(this.configPath,next);this.config=next;this.state.enabled=true;this.state.error=null;this.clear()
@@ -118,14 +118,14 @@ export class ClaudeBridge extends EventEmitter {
         config.enabled=false;await atomic(this.configPath,config);this.state.enabled=false;this.clear();await unlink(config.cachePath).catch(error=>{if(!absent(error))throw error})
         if(!equal(settings.value.statusLine,config.installed)) {
           if(equal(settings.value.statusLine,config.hadPrevious?config.previous:undefined)){this.state.error=null;return {ok:true}}
-          throw Error('Raccolta disattivata. statusLine Ã¨ stata modificata: conservata la modifica utente, senza ripristinarla. Il backup della sola statusLine resta disponibile nella cartella bridge di Localino.')
+          throw Error('Collection disabled. Your changed statusLine was preserved. Its previous value remains in the Localino bridge folder.')
         }
         const restored={...settings.value};if(config.hadPrevious)restored.statusLine=config.previous;else delete restored.statusLine
-        if((await document(this.state.settingsPath,true)).text!==settings.text)throw Error('Raccolta disattivata, impostazioni cambiate durante il ripristino: riprova.')
+        if((await document(this.state.settingsPath,true)).text!==settings.text)throw Error('Collection disabled. Settings changed during recovery; retry.')
         await updateBridgeSettings(this.helperSource,this.state.settingsPath,settings.text,restored.statusLine);this.state.error=null
       }
       return {ok:true}
-    }catch(error){this.state.error=error instanceof Error?error.message:'Operazione bridge non riuscita.';return {ok:false,error:this.state.error}}
+    }catch(error){this.state.error=error instanceof Error?error.message:'Bridge operation failed.';return {ok:false,error:this.state.error}}
     finally{await gate?.close();this.busy=false;this.publish()}
   }
   async refresh(now=Date.now()):Promise<void> {
@@ -139,7 +139,7 @@ export class ClaudeBridge extends EventEmitter {
       for(const item of raw.windows) {
         const row=object(item),id=row?.id
         if(typeof id!=='string'||!['five_hour','seven_day','spend_limit'].includes(id)||seen.has(id))throw Error()
-        seen.add(id);buckets.push({id,name:({five_hour:'5 ore',seven_day:'7 giorni',spend_limit:'Limite di spesa'} as Record<string,string>)[id],windows:[{kind:'primary',durationMins:id==='five_hour'?300:id==='seven_day'?10080:null,usedPercent:nullable(row?.usedPercent,id==='spend_limit'?Number.MAX_VALUE:100),resetsAt:nullable(row?.resetsAt,8.64e15)}]})
+        seen.add(id);buckets.push({id,name:({five_hour:'5 hours',seven_day:'7 days',spend_limit:'Spend limit'} as Record<string,string>)[id],windows:[{kind:'primary',durationMins:id==='five_hour'?300:id==='seven_day'?10080:null,usedPercent:nullable(row?.usedPercent,id==='spend_limit'?Number.MAX_VALUE:100),resetsAt:nullable(row?.resetsAt,8.64e15)}]})
       }
       const cost=nullable(raw.cost),stale=now-raw.receivedAt>120000
       if(this.busy||!this.state.enabled||this.config.generation!==generation)return

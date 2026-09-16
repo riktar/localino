@@ -36,7 +36,7 @@ test('empty series, numeric overflow and exact duration are explicit',()=>{
   assert.equal(usagePeriod(empty,'all').expected,0);assert.equal(usagePeriod(empty,'all').total,null)
   const large=normalizeUsage({summary:{},dailyUsageBuckets:[{startDate:'2026-01-01',tokens:Number.MAX_SAFE_INTEGER},{startDate:'2026-01-02',tokens:1}]})
   assert.equal(usagePeriod(large,'all').overflow,true);assert.equal(usagePeriod(large,'all').total,null)
-  assert.equal(durationSeconds(90061),'1 g 1 h 1 min 1 s');assert.equal(durationSeconds(0),'0 s')
+  assert.equal(durationSeconds(90061),'1 d 1 h 1 min 1 s');assert.equal(durationSeconds(0),'0 s')
   assert.equal(localDate(new Date(2026,0,1,23,59)),'2026-01-01')
 })
 test('credit balances have no invented currency and zero reset count is retained',()=>{

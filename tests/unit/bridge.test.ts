@@ -65,12 +65,12 @@ test('restart, user conflict, managed/project overrides and invalid settings do 
       assert.equal(restored.state.enabled,true)
       const value=JSON.parse(await readFile(settings,'utf8'));value.statusLine={type:'command',command:'user changed'};value.extra='keep'
       await writeFile(settings,JSON.stringify(value));const result=await restored.setEnabled(false)
-      assert.equal(result.ok,false);assert.match(result.error!,/conservata la modifica utente/);assert.equal(restored.state.enabled,false);assert.deepEqual(JSON.parse(await readFile(settings,'utf8')),value)
+      assert.equal(result.ok,false);assert.match(result.error!,/changed statusLine was preserved/);assert.equal(restored.state.enabled,false);assert.deepEqual(JSON.parse(await readFile(settings,'utf8')),value)
       await mkdir(join(root,'.claude'));await writeFile(join(root,'.claude','settings.local.json'),JSON.stringify({statusLine:{type:'command',command:'project'}}))
-      assert.match(await restored.diagnose(root),/Override rilevato/)
+      assert.match(await restored.diagnose(root),/Override found/)
     }finally{restored.dispose()}
     const managed=join(root,'managed.json');await writeFile(managed,JSON.stringify({statusLine:{command:'managed'}}))
-    const policy=new ClaudeBridge(join(root,'managed-bridge'),settings,helper,[managed]);assert.equal((await policy.setEnabled(true)).ok,false);assert.match(policy.state.error!,/policy gestita/)
+    const policy=new ClaudeBridge(join(root,'managed-bridge'),settings,helper,[managed]);assert.equal((await policy.setEnabled(true)).ok,false);assert.match(policy.state.error!,/Managed policy/)
     await writeFile(settings,'invalid JSON');const invalid=new ClaudeBridge(join(root,'invalid-bridge'),settings,helper);assert.equal((await invalid.setEnabled(true)).ok,false);assert.equal(await readFile(settings,'utf8'),'invalid JSON')
   }finally{bridge.dispose()}
 })
@@ -100,7 +100,7 @@ test('settings compare and update is indivisible: stale expectation and concurre
   try{
     const expected=await readFile(settings,'utf8'),edited=JSON.stringify({theme:'edited',newUserSetting:true})
     await writeFile(settings,edited)
-    await assert.rejects(updateBridgeSettings(helper,settings,expected,{type:'command',command:'bridge'}),/modificate contemporaneamente/)
+    await assert.rejects(updateBridgeSettings(helper,settings,expected,{type:'command',command:'bridge'}),/changed concurrently/)
     assert.equal(await readFile(settings,'utf8'),edited)
     const results=await Promise.allSettled(Array.from({length:8},(_,i)=>updateBridgeSettings(helper,settings,edited,{type:'command',command:`transaction-${i}`})))
     assert.equal(results.filter(r=>r.status==='fulfilled').length,1)

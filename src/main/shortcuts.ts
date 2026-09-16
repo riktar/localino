@@ -37,8 +37,8 @@ export class Shortcuts extends EventEmitter {
       }
       if(bindingsError(bindings))throw Error('collision')
       this.state={bindings}
-    }catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')this.state.error=`Preferenze non leggibili. File conservato: ${this.file}`}
-    this.state.bindings=this.state.bindings.map(b=>{const active=!!b.key&&(b.scope==='local'||this.register(b.key));return {...b,active,...(b.key&&!active?{error:'Registrazione globale fallita: combinazione occupata.'}:{})}})
+    }catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')this.state.error=`Preferences unreadable. File preserved: ${this.file}`}
+    this.state.bindings=this.state.bindings.map(b=>{const active=!!b.key&&(b.scope==='local'||this.register(b.key));return {...b,active,...(b.key&&!active?{error:'Global shortcut unavailable: already in use.'}:{})}})
   }
   update(value:unknown):Promise<ShortcutResult>{
     const result=this.queue.then(()=>this.apply(value));this.queue=result.catch(()=>{});return result
@@ -46,14 +46,14 @@ export class Shortcuts extends EventEmitter {
   private async apply(value:unknown):Promise<ShortcutResult>{
     const fail=(error:string):ShortcutResult=>({ok:false,error,state:this.state})
     if(this.state.error)return fail(this.state.error)
-    if(!value||typeof value!=='object')return fail('Richiesta non valida.')
+    if(!value||typeof value!=='object')return fail('Invalid request.')
     const request=value as {reset?:unknown;id?:unknown;scope?:unknown;key?:unknown}
     let next:Binding[]
     if(request.reset===true)next=defaultBindings()
     else {
       const key=canonicalKey(request.key)
-      if(!isCommand(request.id)||!this.state.bindings.some(b=>b.id===request.id&&b.scope===request.scope))return fail('Comando o ambito non valido.')
-      if(key===null)return fail('Formato non valido. Esempio: Ctrl+Alt+L o F2.')
+      if(!isCommand(request.id)||!this.state.bindings.some(b=>b.id===request.id&&b.scope===request.scope))return fail('Invalid command or scope.')
+      if(key===null)return fail('Invalid shortcut. Use Ctrl+Alt+L, Cmd+Alt+L or F2.')
       next=this.state.bindings.map(b=>({...b,...(b.id===request.id&&b.scope===request.scope?{key}:{})}))
     }
     const invalid=bindingsError(next);if(invalid)return fail(invalid)
@@ -61,13 +61,13 @@ export class Shortcuts extends EventEmitter {
     for(const b of next.filter(b=>b.scope==='global'&&b.key)){
       if(this.registered.has(b.key))continue
       if(request.reset!==true && !(request.id===b.id&&request.scope===b.scope) && this.state.bindings.some(old=>old.id===b.id&&old.scope===b.scope&&old.key===b.key&&!old.active))continue
-      if(!this.register(b.key)){for(const key of added){this.os.unregister(key);this.registered.delete(key)}return fail(`Registrazione globale fallita (${b.key}): combinazione occupata. Binding precedente conservato.`)}
+      if(!this.register(b.key)){for(const key of added){this.os.unregister(key);this.registered.delete(key)}return fail(`Global shortcut unavailable (${b.key}): already in use. Previous binding kept.`)}
       added.push(b.key)
     }
     const temp=`${this.file}.${randomUUID()}.tmp`
     try{await writeFile(temp,JSON.stringify({version:1,bindings:next.map(({id,scope,key})=>({id,scope,key}))}),'utf8');await rename(temp,this.file)}
-    catch{await unlink(temp).catch(()=>{});for(const key of added){this.os.unregister(key);this.registered.delete(key)}return fail('Salvataggio non riuscito. Binding precedenti conservati.')}
-    this.state={bindings:next.map(({id,scope,key})=>{const active=!!key&&(scope==='local'||this.registered.has(key));return {id,scope,key,active,...(key&&!active?{error:'Registrazione globale fallita: combinazione occupata.'}:{})}})}
+    catch{await unlink(temp).catch(()=>{});for(const key of added){this.os.unregister(key);this.registered.delete(key)}return fail('Could not save. Previous bindings kept.')}
+    this.state={bindings:next.map(({id,scope,key})=>{const active=!!key&&(scope==='local'||this.registered.has(key));return {id,scope,key,active,...(key&&!active?{error:'Global shortcut unavailable: already in use.'}:{})}})}
     for(const key of this.registered){if(!next.some(b=>b.scope==='global'&&b.key===key)){this.os.unregister(key);this.registered.delete(key)}}
     this.emit('change',this.state);return {ok:true,state:this.state}
   }

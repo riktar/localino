@@ -20,7 +20,7 @@ export class AgentPreferences extends EventEmitter {
       }
       this.state = { selected: raw.selected, sources, error: null }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.state.error = 'Preferenze agenti non leggibili. Il file è conservato; puoi ripristinarle esplicitamente.'
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.state.error = 'Agent preferences unreadable. File preserved; recovery is available.'
     }
   }
   private save(next: AgentsState): void {
@@ -30,7 +30,7 @@ export class AgentPreferences extends EventEmitter {
     try {
       writeFileSync(temp, JSON.stringify({ version: 1, selected: next.selected, sources: next.sources }), { mode: 0o600 })
       renameSync(temp, this.file)
-    } catch { try { rmSync(temp, { force: true }) } catch { /* Failed temporary files are never used as preferences. */ } throw Error('Salvataggio preferenze agenti non riuscito. Le preferenze precedenti sono conservate.') }
+    } catch { try { rmSync(temp, { force: true }) } catch { /* Failed temporary files are never used as preferences. */ } throw Error('Could not save agent preferences. Previous values kept.') }
     this.state = next
     this.emit('change', this.state)
   }

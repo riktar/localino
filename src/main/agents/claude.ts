@@ -54,7 +54,7 @@ export async function readClaude(root: string, period: AgentPeriod, now = Date.n
   }
   if (rows && !recognized) throw new HistoryFailure('unsupported')
   const result = aggregate([...events.values()], period, issues, now)
-  result.limitations = ['Output e totale token non disponibili: gli eventi assistant possono contenere conteggi provvisori.', 'Copertura limitata ai file conservati localmente; nessuna quota o costo storico.']
+  result.limitations = ['Output and total tokens unavailable: assistant events may contain provisional counts.', 'Coverage limited to local files; no account quota or historical cost.']
   if (result.records) result.partial = true
   return result
 }

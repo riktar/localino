@@ -113,7 +113,7 @@ async function presentCapture(): Promise<void> {
   await foreground.focus(panel.getNativeWindowHandle(),process.pid)
 }
 async function saveCapturedPrompt(id: number, text: unknown): Promise<{ok:boolean;error?:string}> {
-  if(captureCompleting)return {ok:false,error:'Salvataggio in corso.'}
+  if(captureCompleting)return {ok:false,error:'Saving…'}
   captureCompleting=true
   let noteId: string | undefined
   const result = await capture.save(id,text,async value=>{
@@ -140,7 +140,7 @@ async function saveCapturedPrompt(id: number, text: unknown): Promise<{ok:boolea
     } catch {if(panel&&!panel.isDestroyed())panel.flashFrame(true)} finally {presentationDone=null;capture.finish(id,false);captureOrigin=null;captureCompleting=false;if(quitAfterCapture){quitAfterCapture=false;app.quit()}}
   }else{
     captureCompleting=false
-    capture.saveError(result.error??'Salvataggio non riuscito. Il testo è conservato: riprova.')
+    capture.saveError(result.error??'Could not save. Your text is safe. Retry.')
     // A failed save must remain recoverable, including when exit was requested.
     quitAfterCapture=false
   }
@@ -294,7 +294,7 @@ if (!app.requestSingleInstanceLock()) {
     handle('localino:resolve-action',async(owner,value) => {
       if (owner !== panel || !value || typeof value !== 'object') throw Error('Access denied')
       const response = value as {id:unknown;proceed:unknown}
-      if (!pendingAction || response.id !== pendingAction.id || typeof response.proceed !== 'boolean') throw Error('Richiesta scaduta')
+      if (!pendingAction || response.id !== pendingAction.id || typeof response.proceed !== 'boolean') throw Error('Request expired')
       const {action} = pendingAction; pendingAction = null
       const done=resolvePendingAction;resolvePendingAction=null
       if (!response.proceed) {done?.(false);return}
@@ -330,7 +330,7 @@ if (!app.requestSingleInstanceLock()) {
     handle('localino:capture-save',(owner,value)=>{
       if(owner!==panel||!value||typeof value!=='object')throw Error('Access denied')
       const request=value as {id:unknown;text:unknown}
-      if(typeof request.id!=='number')throw Error('Richiesta non valida')
+      if(typeof request.id!=='number')throw Error('Invalid request')
       return saveCapturedPrompt(request.id,request.text)
     })
     await capture.init()
@@ -339,7 +339,7 @@ if (!app.requestSingleInstanceLock()) {
     handle('localino:update-shortcuts',(_owner,value)=>shortcuts.update(value))
     handle('localino:panel',()=>{dashboard?.hide();showPanel()})
     handle('localino:request-command',async (_owner,id)=>{
-      if(id!=='new'&&id!=='palette')throw Error('Comando non valido')
+      if(id!=='new'&&id!=='palette')throw Error('Invalid command')
       if(await showMain('panel'))panel?.webContents.send('localino:command',id)
     })
     shortcuts.on('change',state=>broadcast('localino:shortcuts-changed',state))
@@ -356,47 +356,47 @@ if (!app.requestSingleInstanceLock()) {
     notes.on('change',state => broadcast('localino:notes-changed',state))
     handle('localino:connection', () => connection.state)
     handle('localino:agents', () => agents.state)
-    handle('localino:select-agent', (_owner,id) => { if(!isAgentId(id))throw Error('Agente non valido'); return selectAgent(id) })
-    const localId = (id:unknown):LocalAgentId => { if(!isLocalAgentId(id))throw Error('Agente non valido');return id }
+    handle('localino:select-agent', (_owner,id) => { if(!isAgentId(id))throw Error('Invalid agent'); return selectAgent(id) })
+    const localId = (id:unknown):LocalAgentId => { if(!isLocalAgentId(id))throw Error('Invalid agent');return id }
     handle('localino:bridge',()=>bridge.state)
-    handle('localino:bridge-enable',(_owner,enabled)=>{if(typeof enabled!=='boolean')throw Error('Valore non valido');return bridge.setEnabled(enabled)})
+    handle('localino:bridge-enable',(_owner,enabled)=>{if(typeof enabled!=='boolean')throw Error('Invalid value');return bridge.setEnabled(enabled)})
     handle('localino:bridge-refresh',()=>bridge.refresh())
     handle('localino:bridge-diagnose',async(owner)=>{
-      const choice=await dialog.showOpenDialog(owner,{title:'Controlla override Claude nel progetto (nessuna modifica)',properties:['openDirectory']})
+      const choice=await dialog.showOpenDialog(owner,{title:'Check Claude project overrides (read only)',properties:['openDirectory']})
       return bridge.diagnose(choice.canceled?undefined:choice.filePaths[0])
     })
     handle('localino:history',(_owner,id)=>histories[localId(id)].state)
-    handle('localino:refresh-history',(_owner,value)=>{const id=localId(value);if(!agentCapabilities[id].history)throw Error('Lettore non disponibile');return histories[id].refresh()})
+    handle('localino:refresh-history',(_owner,value)=>{const id=localId(value);if(!agentCapabilities[id].history)throw Error('Reader unavailable');return histories[id].refresh()})
     handle('localino:agent-period',(_owner,value)=>{
-      if(!value||typeof value!=='object')throw Error('Periodo non valido')
+      if(!value||typeof value!=='object')throw Error('Invalid period')
       const {id,period}=value as {id:unknown;period:unknown}
-      if(!isAgentPeriod(period))throw Error('Periodo non valido')
+      if(!isAgentPeriod(period))throw Error('Invalid period')
       histories[localId(id)].period(period)
     })
     const configureSource = (id:LocalAgentId,enabled:boolean,path:string|null):AgentResult => {
       try { agents.source(id,{enabled,path}); histories[id].configure({enabled,path}); return {ok:true} }
-      catch(error){return {ok:false,error:error instanceof Error?error.message:'Collegamento non riuscito.'}}
+      catch(error){return {ok:false,error:error instanceof Error?error.message:'Could not connect. Retry.'}}
     }
     handle('localino:connect-agent',async(_owner,value)=>{
       const id=localId(value)
       try {return configureSource(id,true,agents.state.sources[id].path??(id==='opencode'?await openCodeSource(dirname(defaultSources.opencode)):defaultSources[id]))}
-      catch(error){return {ok:false,error:error instanceof Error?error.message:'Fonte non disponibile.'}}
+      catch(error){return {ok:false,error:error instanceof Error?error.message:'Source unavailable.'}}
     })
     handle('localino:disconnect-agent',(_owner,value)=>{const id=localId(value);return configureSource(id,false,agents.state.sources[id].path)})
     handle('localino:choose-agent-source',async(owner,value)=>{
       const id=localId(value)
-      const choice=await dialog.showOpenDialog(owner,{title:`Sorgente ${agentLabels[id]}`,properties:[id==='opencode'?'openFile':'openDirectory']})
+      const choice=await dialog.showOpenDialog(owner,{title:`${agentLabels[id]} source`,properties:[id==='opencode'?'openFile':'openDirectory']})
       return choice.canceled||!choice.filePaths[0]?{ok:true}:configureSource(id,true,choice.filePaths[0])
     })
     handle('localino:recover-preferences',async(owner,target)=>{
-      if(target!=='agents'&&target!=='codex')throw Error('Preferenze non valide')
-      const result=await dialog.showMessageBox(owner,{type:'question',message:'Ripristinare le preferenze? Il file precedente sarà conservato.',buttons:['Annulla','Ripristina'],defaultId:0,cancelId:0})
+      if(target!=='agents'&&target!=='codex')throw Error('Invalid preferences')
+      const result=await dialog.showMessageBox(owner,{type:'question',message:'Recover preferences? The previous file will be preserved.',buttons:['Cancel','Recover'],defaultId:0,cancelId:0})
       if(result.response!==1)return {ok:true}
       try {
         if(target==='codex'){codexPreferences.recover();await connection.disconnect()}
         else {agents.recover();for(const id of Object.keys(histories) as LocalAgentId[])histories[id].configure(agents.state.sources[id])}
         return {ok:true}
-      }catch{return {ok:false,error:'Ripristino non riuscito. Il file precedente è conservato.'}}
+      }catch{return {ok:false,error:'Recovery failed. Previous file preserved.'}}
     })
     agents.on('change',state=>{broadcast('localino:agents-changed',state);updateUsageActivity();updateTray()})
     bridge.on('change',state=>{broadcast('localino:bridge-changed',state);updateTray()})
@@ -410,7 +410,7 @@ if (!app.requestSingleInstanceLock()) {
     handle('localino:open-dashboard', () => showMain('usage'))
     handle('localino:destination', () => destination)
     handle('localino:navigate', (_owner, value) => {
-      if (!isDestination(value)) throw new Error('Destinazione non valida')
+      if (!isDestination(value)) throw new Error('Invalid destination')
       return showMain(value)
     })
     handle('localino:usage', () => usage.state)
@@ -419,7 +419,7 @@ if (!app.requestSingleInstanceLock()) {
     handle('localino:reread', () => connection.connect())
     handle('localino:disconnect', () => connection.disconnect())
     handle('localino:choose-codex', async owner => {
-      const choice = await dialog.showOpenDialog(owner, { title: 'Seleziona Codex', properties: ['openFile'], ...(process.platform==='win32'?{filters:[{name:'Codex',extensions:['exe']}]}:{}) })
+      const choice = await dialog.showOpenDialog(owner, { title: 'Choose Codex', properties: ['openFile'], ...(process.platform==='win32'?{filters:[{name:'Codex',extensions:['exe']}]}:{}) })
       if (!choice.canceled && choice.filePaths[0]) await connection.connect(choice.filePaths[0])
     })
     connection.on('change', state => {
@@ -443,7 +443,7 @@ if (!app.requestSingleInstanceLock()) {
     showPanel(true)
     void connection.autoConnect()
   }).catch((error: unknown) => {
-    console.error('Impossibile avviare Localino', error)
+    console.error('Could not start Localino', error)
     app.exit(1)
   })
   app.on('will-quit', () => { capture.dispose();foreground.dispose();shortcuts.dispose();tray?.destroy() })

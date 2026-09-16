@@ -31,7 +31,7 @@ export class Capture extends EventEmitter {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         this.preferencesError = true
-        this.state = { enabled: false, status: 'error', error: 'Preferenze cattura non leggibili. File conservato.' }
+        this.state = { enabled: false, status: 'error', error: 'Capture preferences unreadable. File preserved.' }
         this.status(); return
       }
     }
@@ -41,7 +41,7 @@ export class Capture extends EventEmitter {
     if (this.preferencesError || this.state.status === 'suspended') return
     this.stop()
     if (this.draft?.acquiring) {
-      this.draft = { ...this.draft, acquiring: false, text: '', message: 'Lettura interrotta dal riavvio del componente. Puoi scrivere o incollare il testo.' }
+      this.draft = { ...this.draft, acquiring: false, text: '', message: 'Capture restarted. Paste or type the text.' }
       this.emit('draft', this.draft)
     }
     this.state = { enabled: this.state.enabled, status: 'starting' }; this.status()
@@ -83,7 +83,7 @@ export class Capture extends EventEmitter {
       this.origin = typeof msg.origin === 'string' && /^[0-9]{1,18}$/.test(msg.origin) && Number.isSafeInteger(msg.pid) && Number(msg.pid) > 0 ? {handle:msg.origin,pid:Number(msg.pid)} : null
       this.visibleSent = false
       this.nativeId = msg.id as number
-      this.draft = { id: ++this.sequence, text: '', acquiring: true, message: 'Lettura della selezione…' }
+      this.draft = { id: ++this.sequence, text: '', acquiring: true, message: 'Reading selection…' }
       this.emit('draft', this.draft)
       this.timer = setTimeout(() => { if (this.draft?.acquiring) this.fail('timeout') }, 1600)
       return
@@ -133,14 +133,14 @@ export class Capture extends EventEmitter {
     this.emit('finished'); return true
   }
   async save(id: number, text: unknown, persist: (text: string) => Promise<{ ok: boolean; error?: string }>, complete = true): Promise<{ ok: boolean; error?: string }> {
-    if (!this.draft || this.draft.id !== id || this.draft.acquiring || this.saving || typeof text !== 'string') return { ok: false, error: 'Cattura non disponibile o salvataggio in corso.' }
+    if (!this.draft || this.draft.id !== id || this.draft.acquiring || this.saving || typeof text !== 'string') return { ok: false, error: 'Capture unavailable or saving.' }
     this.saving = true
     try {
       const result = await persist(text)
       this.saving = false
       if (result.ok && complete) this.finish(id, false)
       return result
-    } catch { return { ok: false, error: 'Salvataggio non riuscito. Il testo è conservato: riprova.' } }
+    } catch { return { ok: false, error: 'Could not save. Your text is safe. Retry.' } }
     finally { this.saving = false }
   }
   saveError(error: string): void {
@@ -150,10 +150,10 @@ export class Capture extends EventEmitter {
   }
   setEnabled(value: unknown): Promise<{ ok: boolean; error?: string }> {
     const operation = this.queue.then(async () => {
-      if (typeof value !== 'boolean' || this.preferencesError) return { ok: false, error: 'Preferenze cattura non disponibili.' }
+      if (typeof value !== 'boolean' || this.preferencesError) return { ok: false, error: 'Capture preferences unavailable.' }
       const temp = `${this.file}.${randomUUID()}.tmp`
       try { await writeFile(temp, JSON.stringify({ version: 1, enabled: value }), 'utf8'); await rename(temp, this.file) }
-      catch { await unlink(temp).catch(() => {}); return { ok: false, error: 'Salvataggio non riuscito. Preferenza precedente conservata.' } }
+      catch { await unlink(temp).catch(() => {}); return { ok: false, error: 'Could not save. Previous preference kept.' } }
       this.state = { ...this.state, enabled: value }; this.status()
       if (this.child) this.send(value ? 'enable' : 'disable')
       return { ok: true }
@@ -173,7 +173,7 @@ export class Capture extends EventEmitter {
   }
   suspend(): void {
     this.stop(); this.state = { ...this.state, status: 'suspended' }; this.status()
-    if (this.draft?.acquiring) { this.draft = { ...this.draft, acquiring: false, text: '', message: 'Lettura interrotta dalla sospensione. Puoi incollare il testo.' }; this.emit('draft', this.draft) }
+    if (this.draft?.acquiring) { this.draft = { ...this.draft, acquiring: false, text: '', message: 'Capture interrupted by sleep. Paste the text.' }; this.emit('draft', this.draft) }
   }
   resume(): void { this.state.status = 'starting'; this.start() }
   dispose(): void { this.stop(); for (const child of this.restorers) child.kill(); this.restorers.clear() }

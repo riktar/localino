@@ -20,8 +20,8 @@ export function CaptureSettings(): React.JSX.Element {
   const [busy, setBusy] = useState(false)
   const update = async (enabled: boolean) => {
     setBusy(true); setError('')
-    try { const result = await window.localino.setCaptureEnabled(enabled); if (!result.ok) setError(result.error ?? 'Modifica non riuscita.') }
-    catch { setError('Modifica non riuscita.') }
+    try { const result = await window.localino.setCaptureEnabled(enabled); if (!result.ok) setError(result.error ?? 'Could not update. Retry.') }
+    catch { setError('Could not update. Retry.') }
     finally { setBusy(false) }
   }
   return <section aria-label="Capture settings" className="space-y-3">
@@ -68,8 +68,8 @@ export function CaptureEditor({guard}:{guard:React.MutableRefObject<LeaveGuard|n
     const invalid = textError(text)
     if (invalid) { setError(invalid); return }
     saving.current = true; setBusy(true); setError('')
-    try { const result = await window.localino.saveCapture(draft.id, text); if (!result.ok) setError(result.error ?? 'Salvataggio non riuscito: riprova.') }
-    catch { setError('Salvataggio non riuscito. Il testo è conservato: riprova.') }
+    try { const result = await window.localino.saveCapture(draft.id, text); if (!result.ok) setError(result.error ?? 'Could not save. Retry.') }
+    catch { setError('Could not save. Your text is safe. Retry.') }
     finally { saving.current = false; setBusy(false) }
   }
   const cancel = async () => { if (draft && !saving.current && await guard.current?.()) { await window.localino.cancelCapture(draft.id) } }

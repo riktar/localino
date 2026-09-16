@@ -8,7 +8,7 @@ export async function openCodeSource(dataDir:string, configured=process.env.OPEN
   }
   let candidates:string[]=[]
   try { candidates=(await readdir(dataDir,{withFileTypes:true})).filter(entry=>entry.isFile()&&/\.db$/i.test(entry.name)).map(entry=>entry.name) }
-  catch(error) {if((error as NodeJS.ErrnoException).code!=='ENOENT')throw Error('Cartella OpenCode non accessibile: seleziona il database.')}
-  if(candidates.length>1)throw Error('Sono presenti più database OpenCode. Seleziona esplicitamente quello da leggere.')
+  catch(error) {if((error as NodeJS.ErrnoException).code!=='ENOENT')throw Error('OpenCode folder inaccessible. Choose the database.')}
+  if(candidates.length>1)throw Error('Multiple OpenCode databases found. Choose one explicitly.')
   return join(dataDir,candidates[0]??'opencode.db')
 }

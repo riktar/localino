@@ -2,7 +2,7 @@
   "name": "localino",
   "version": "0.1.0",
   "private": true,
-  "description": "Toolkit desktop per lavorare con i coding agent",
+  "description": "A compact desktop panel for coding agents and local notes",
   "author": "Localino",
   "main": "out/main/index.js",
   "engines": {

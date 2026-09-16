@@ -1,180 +1,71 @@
 # Localino
 
-Toolkit desktop Electron per lavorare con i coding agent. Frontend React e TypeScript con shadcn/ui e Tailwind CSS.
+A compact desktop panel for coding agents and local notes. Built with Electron, React, TypeScript, Tailwind CSS and local shadcn/ui components.
 
-Localino collega l'account ChatGPT già autenticato nella CLI Codex sul PC, mostra le quote dalla barra di sistema e offre una dashboard delle statistiche disponibili. All'avvio si apre Home: dalla navigazione puoi aprire Consumi, Clipboard e Scorciatoie. La Clipboard conserva prompt e appunti solo sul PC. Le shortcut configurabili sono in corso di completamento.
+Open Localino from the Windows tray or macOS menu bar. The panel stays above ordinary windows while open. Close, minimize or Hide keeps the app running; **Quit** stops it. **Advanced usage** opens one reusable detail window; Back or its close button returns to the panel.
 
-## Selezionare un agente
+## Use the panel
 
-Il selettore **Agente** in Consumi e nel pannello condivide e conserva la scelta tra Codex, Claude Code, Pi e OpenCode. Il menu della barra e i comandi **Seleziona agente** aprono Consumi sullo stesso agente; puoi assegnare combinazioni locali o globali in Scorciatoie, senza nuovi binding imposti. Le bozze Clipboard vengono protette anche quando cambi agente.
+- Choose Codex, Claude Code, Pi or OpenCode. Switching agents does not connect them or open another screen.
+- Press **Connect** to use an existing Codex ChatGPT login or a local agent history. **Settings → Connections** contains source selection, disconnect and recovery.
+- The card shows one labeled quota window. **Details** exposes every received limit. Windows are never added together; unavailable, stale and exhausted values remain distinct. Exhausted secondary limits are flagged.
+- Use **+** to create a note. Each row has independent selection, edit, delete and complete/reopen actions. Click its text to read the full note.
+- Select notes and use the context menu or Ctrl/Cmd+C to copy newest first. **Copy all** joins exact complete texts with one LF between notes. Search/filter changes clear selection. Text fields retain native copy/paste.
+- Unsaved drafts offer **Save**, **Discard** or **Stay**. Failed saves keep the text. Escape in a confirmation means Stay.
 
-`agents.json` conserva soltanto selezione e percorsi delle fonti locali. I nuovi lettori restano disattivati finché non scegli di collegarli. Preferenze corrotte vengono conservate e richiedono un ripristino esplicito. Claude, Pi e OpenCode dispongono di lettori locali indipendenti.
+Notes live in the versioned `notes.json` under Electron's user-data directory. Unicode, whitespace and line endings are preserved; the limit is 100,000 UTF-16 code units. Empty or whitespace-only notes are rejected. Corrupt libraries are preserved and can be reloaded after repair. Notes are plain text on disk and are never sent to agents, network services, logs or telemetry.
 
-## Collegare Codex
+## Capture selected text
 
-Apri Localino, entra in **Consumi** e premi **Collega Codex**. Serve la CLI Codex nativa (latest stabile verificata: 0.154.0) con accesso ChatGPT già effettuato. Non inserire un'API key: l'abbonamento usa l'autenticazione gestita da Codex. Per accesso/installazione consulta la [documentazione Codex CLI](https://learn.chatgpt.com/docs/codex-cli).
+Select text in another app, then press and release **Shift twice within 350 ms**, without other keys. The alternative is Ctrl+Alt+P on Windows or Cmd+Alt+P on a fresh Mac profile. Configure both in Settings.
 
-Localino cerca `codex.exe` nel PATH e nell'installazione desktop OpenAI del PC. Se non lo trova, usa **Seleziona eseguibile Codex** per scegliere il binario nativo; i wrapper `.cmd` non vengono eseguiti tramite shell. CLI assente/incompatibile, account non autenticato, autenticazione API key e timeout hanno stati separati con possibilità di riprovare.
+A readable selection saves once and opens its full text in the panel. An existing manual draft stays in memory under **Resume draft**. Empty, inaccessible, changed or oversized selections open recovery; text is never truncated. Cancel is guarded and attempts to restore the source app. Software acquisition/presentation timings are in Details.
 
-**Rileggi account** ricrea la connessione e scarta i dati precedenti; usalo dopo un cambio account esterno non ancora rilevato. **Scollega da Localino** ferma il client e dimentica il collegamento, mantenendo l'accesso nella CLI. Chiudere soltanto la finestra mantiene l'app nella barra.
+Windows uses UI Automation; macOS uses Accessibility and a passive event tap. Capture reads selected text only: no simulated copy, clipboard substitution, OCR or retained key history. Protected/password controls are excluded. Workers have hard deadlines. Unsupported controls allow manual paste.
 
-Persistenza: `connection.json` nella cartella dati dell'app contiene esclusivamente preferenza di collegamento e percorso CLI. Token, email, statistiche e conversazioni non vengono scritti nel file. Le credenziali restano gestite da Codex. Il client utilizza soltanto inizializzazione e letture del protocollo App Server.
+**VS Code:** set `editor.accessibilitySupport` to `on`. **macOS:** use **Settings → Capture → Allow permissions** for Accessibility and Input Monitoring, then Retry. Localino does not change other apps' settings. Actual Mac behavior remains pending the colleague's [verification checklist](docs/mac-testing.md); Windows tests do not establish Mac support.
 
-## Quote dalla barra
+## Shortcuts
 
-Il pannello mostra tutti i limiti restituiti dal servizio, ciascuno con le proprie finestre: utilizzato, rimanente, durata e reset nel fuso locale. Il nome proviene da Codex; gli ID senza nome restano etichette neutre. Le percentuali non vengono sommate. Dati mancanti sono “Non disponibile”, distinti da zero; un superamento riguarda la singola finestra.
+Open Commands with Ctrl/Cmd+K, search, use arrow keys and Enter. Settings lets you edit, disable or reset local/global bindings. Conflicts preserve previous values.
 
-Le quote vengono rilette ogni 60 secondi, all'apertura e con **Aggiorna**. Il servizio può pubblicare i consumi in ritardo: la cadenza non garantisce quando il lavoro di altre sessioni diventa visibile. Ogni lettura riuscita aggiorna il timestamp. Errori, reset scaduti o tre minuti senza successo indicano dati non aggiornati; il retry automatico arriva fino a cinque minuti, mentre Aggiorna permette di riprovare subito. Il reset richiede nuovi dati e non azzera localmente le percentuali.
+| Action | Windows | Fresh macOS profile |
+|---|---|---|
+| Panel / usage / Clipboard | Ctrl+1 / 2 / 3 | Cmd+1 / 2 / 3 |
+| Same actions globally | Ctrl+Alt+L / U / C | Cmd+Alt+L / U / C |
+| New note / search | Ctrl+N / Ctrl+F | Cmd+N / Cmd+F |
+| Edit / copy selection / delete | F2 / Ctrl+C / Delete | F2 / Cmd+C / Delete |
+| Save editor or complete focused note | Ctrl+Enter | Cmd+Enter |
+| Settings / commands | Ctrl+, / Ctrl+K | Cmd+, / Cmd+K |
+| Hide or dismiss a dialog | Escape | Escape |
 
-Il click sull'icona apre/chiude il pannello; il menu della barra mostra stato, ultima lettura e riepilogo etichettato del limite `codex` (o primo disponibile). Il monitor continua col pannello chiuso, si sospende col PC e riprende al risveglio; Scollega ed Esci lo fermano.
+Custom and disabled bindings are preserved during migration. Imported Ctrl bindings stay Ctrl; Reset applies current platform defaults. App text and distributed documentation are English. User content and external provider labels are unchanged; English formatting keeps the local timezone and original metric calculations.
 
-## Dashboard
+## Agent data
 
-**Apri dashboard** dal pannello, **Apri Consumi** dal menu della barra e la navigazione Home riutilizzano un'unica finestra principale ridimensionabile. La seconda istanza riporta Home in primo piano; il click sull'icona conserva il pannello quote compatto. Il riepilogo cumulativo mostra token complessivi, picco giornaliero, durata del turno più lungo e serie di giorni attivi riportati da Codex. Questi dati riguardano l'account e non cambiano con il filtro.
+See [sources and metric semantics](docs/agents.md) for connection requirements, recorded fixture versions, polling, privacy, partial history and the optional Claude bridge. Local history is not an account quota; estimated costs are not invoices. Missing days are not measured zeroes.
 
-Il grafico shadcn/ui e la tabella mostrano i token giornalieri con filtri 7/30 giorni (incluso oggi nel calendario del PC) o tutto il periodo ricevuto. Le date giornaliere del servizio non subiscono conversioni di fuso. Copertura, totale, media sui giorni disponibili e picco del periodo usano soltanto dati ricevuti; i giorni mancanti restano gap, zero è un dato valido e un totale incompleto è etichettato parziale. Duplicati identici contano una volta; date/valori invalidi e date in conflitto sono esclusi e segnalati. La tabella raggruppa gli intervalli senza dati senza inventare valori.
+## Develop and verify
 
-Quote e crediti sono separati dai token: saldi e reset disponibili si mostrano solo se forniti, senza conversioni monetarie o acquisti. Crediti illimitati non significano quote illimitate.
-
-Le statistiche si aggiornano ogni 5 minuti solo con Consumi visibile (anche la riduzione a icona sospende questo polling) e con **Aggiorna statistiche**; all'apertura vengono rilette se assenti o vecchie di almeno 5 minuti. Errori e timestamp sono indipendenti dalle quote. Chiudere la dashboard mantiene il monitor nella barra. Rileggi account/Scollega svuotano entrambe le viste; nessuno storico statistico è salvato; la libreria prompt locale rimane indipendente. La dashboard funziona da 800×600 con scroll verticale e tabella accessibile da tastiera.
-
-## Clipboard locale
-
-Apri **Clipboard** dalla Home, navigazione o tray, anche senza Codex. **Nuovo prompt** apre un editor Unicode multilinea. Salva con il pulsante o Ctrl+Invio; Invio da solo crea una riga. Il testo viene conservato esattamente, fino a100000 caratteri, senza troncamento; testo vuoto o soli spazi non viene salvato.
-
-Cerca senza distinguere maiuscole/minuscole e filtra Aperti, Completati o Tutti. La lista mostra prima i prompt creati più recentemente. **Copia** copia solo il testo: incollalo nell'app destinataria; non completa il prompt. **Completa/Riapri** è reversibile. **Elimina** chiede conferma. Uscendo da una bozza modificata, anche tramite tray/chiusura finestra, puoi salvare, scartare o restare.
-
-I contenuti sono in `notes.json` nella cartella dati Localino, con formato versionato e scritture atomiche gestite da un solo store. Non sono inviati a Codex, rete, log o telemetria. Il file contiene testo in chiaro sul PC. File corrotto/formato non supportato: viene mostrato il percorso, il file resta intatto e Consumi rimane disponibile. Dopo aver recuperato il file usa **Riprova lettura**. Un errore di scrittura conserva la bozza nell'editor e non indica un salvataggio riuscito.
-
-## Catalogo e scorciatoie
-
-Apri **Comandi** o premi **Ctrl+K**. Cerca un'azione, usa le frecce e Invio; ogni comando indica il contesto e il motivo se non disponibile. Esc chiude il catalogo e restituisce il focus. Il pannello tray può aprire lo stesso catalogo nella finestra principale.
-
-| Azione | Scorciatoia predefinita |
-|---|---|
-| Home / Consumi / Clipboard, anche da un'altra app | Ctrl+Alt+L / Ctrl+Alt+U / Ctrl+Alt+C |
-| Home / Consumi / Clipboard nella finestra | Ctrl+1 / Ctrl+2 / Ctrl+3 |
-| Nuovo prompt / cerca prompt | Ctrl+N / Ctrl+F |
-| Modifica / copia / elimina nella lista | F2 / Ctrl+C / Delete |
-| Salva nell'editor; completa o riapri nella lista | Ctrl+Invio |
-| Aggiorna quote / statistiche | Ctrl+R / Ctrl+Shift+R |
-| Impostazioni scorciatoie | Ctrl+, |
-| Chiudi dialogo o riduci nella barra | Esc |
-
-Nei campi testo, le operazioni native di selezione, copia, incolla, cancellazione e annullamento sono preservate; Invio mantiene le nuove righe. Le bozze modificate richiedono Salva, Scarta o Resta anche quando si naviga o esce da tastiera.
-
-In **Scorciatoie** puoi modificare ciascun binding locale, modificare i globali, disabilitarli lasciando il campo vuoto e ripristinare i default. Le preferenze sono locali e persistono al riavvio. Un conflitto interno, un formato errato o una combinazione globale occupata sono segnalati distintamente; un aggiornamento non riuscito conserva i binding precedenti. Una combinazione occupata all'avvio non blocca le altre funzioni. **Chiudi impostazioni** torna alla sezione e al controllo di origine quando ancora disponibili.
-
-## Cattura della selezione
-
-Con Localino in esecuzione, seleziona testo in un’altra applicazione non elevata e premi/rilascia **Shift due volte entro 350 ms**, senza altri tasti. **Ctrl+Alt+P** richiama la stessa azione. In Scorciatoie puoi disabilitare il doppio Shift e cambiare/disabilitare la combinazione alternativa.
-
-La selezione valida viene salvata automaticamente come un prompt aperto. Localino porta in primo piano **Clipboard**, azzera ricerca e filtro e seleziona il nuovo elemento mostrando il testo completo: non occorre premere Salva. Durante la lettura il focus resta sull’app origine. Ripetere il gesto durante acquisizione, salvataggio o presentazione non crea duplicati; un gesto successivo crea un nuovo prompt anche se il testo è identico.
-
-Se avevi una bozza manuale modificata, rimane conservata: **Riprendi bozza** torna all’editor. I normali avvisi di salvataggio continuano a proteggerla quando navighi o esci. Solo una selezione vuota/non leggibile o un errore apre l’editor di recupero. Qui **Ctrl+Invio** salva e mostra il prompt in Clipboard; **Esc/Annulla** scarta il recupero e torna all’app origine, se disponibile. Un errore di scrittura conserva il testo e consente di riprovare.
-
-**VS Code richiede `Editor: Accessibility Support` (`editor.accessibilitySupport`) impostato su `on`.** Apri le impostazioni con Ctrl+, e cerca quel nome. Localino non modifica automaticamente le impostazioni di VS Code o di altre app. Questa condizione è stata provata con il prototipo; le prove del pacchetto finale sono registrate separatamente.
-
-Nessuna selezione, controllo non leggibile, limite di 100.000 caratteri o timeout producono un campo vuoto con spiegazione: puoi scrivere o incollare volontariamente. Il testo non viene troncato. La cattura usa Windows UI Automation e non legge né modifica gli appunti; nessuna copia simulata, cronologia tasti o appunti, lettura continua del contenuto o invio in rete. Il documento origine resta intatto. I campi password e le finestre elevate non sono supportati.
-
-Il componente nativo viene arrestato all’uscita e riavviato dopo sospensione/ripresa. Un componente mancante o non avviabile viene segnalato nella Home e in Scorciatoie: la libreria e l’inserimento manuale restano disponibili. Usa **Riprova componente di cattura** dopo aver risolto il problema. La preferenza del gesto è in `capture.json`; i binding sono in `shortcuts.json`. Le preferenze precedenti vengono conservate: se Ctrl+Alt+P era già assegnato, il nuovo binding di cattura parte disabilitato.
-
-Runtime Windows x64 con **.NET Framework 4.8**: l’eseguibile nativo è incluso in `resources/native/Localino.Capture.exe`, fuori ASAR. L’utente finale non deve installare Node, un SDK o un compilatore. La build richiede invece i reference assemblies .NET Framework 4.8 e il compilatore Windows Framework64. La lettura UIA avviene in un processo con timeout; un job Windows lega i processi figli al coordinatore, evitando worker residui anche se la lettura si blocca. Il primo piano usa un’operazione nativa separata sul solo handle della finestra Localino, con verifica del processo destinatario e di GetForegroundWindow; un watchdog nativo di 700 ms e un limite nel main di 800 ms impediscono attese indefinite. Non vengono simulati tasti né applicato un always-on-top permanente.
-
-
-## Sviluppo
-
-Richiede Node.js 22.12 o superiore e npm. Prima piattaforma verificata: Windows x64.
+Requires Node.js 22.12 or later and npm. Windows x64 builds need .NET Framework 4.8 reference assemblies and the Framework64 C# compiler. Mac builds need Xcode command line tools and macOS 13 or later ([Electron 44 requirement](https://www.electronjs.org/blog/electron-44-0)).
 
 ```sh
 npm ci
 npm run build:native
 npm run dev
-```
-
-Chiudere la finestra o usare “Riduci nella barra” mantiene Localino attivo. Fare click sull'icona per riaprirlo; dal menu dell'icona scegliere “Esci” per terminare l'app.
-
-## Verifica e build
-
-```sh
 npm run check
-npm run build:win
-npm run test:packaged
 ```
 
-`check` esegue lint, test del client/processi/IPC e dello scheduler, typecheck, build e smoke Electron in produzione e sviluppo, inclusi dati quota sintetici. `test:account` esegue una prova reale non distruttiva dell'account Codex del PC (collegamento, rilettura, riavvio, scollegamento); `test:rates` confronta quote reali, latenza risposta→renderer e polling a pannello nascosto (circa un minuto). I test reali si lanciano esplicitamente. Gli smoke usano profili separati tramite `--user-data-dir`, senza interferire con l'app dell'utente. Aprono brevemente vere finestre e salvano artefatti in `test-results/`.
+`build:common` builds TypeScript/React/Electron; `build:native` compiles host-platform helpers. Runtime users do not need Node or an SDK. Renderers are sandboxed and isolated. The preload exposes named operations with trusted main-frame sender checks. Native binaries are outside ASAR. New main/preload dependencies must be bundled or explicitly packaged.
 
-`test:dashboard` confronta cinque indicatori e i giorni con Codex reale e prova due finestre, menu, pausa/ripresa, scollegamento e riavvio. `test:dashboard:packaged` ripete il percorso sull'eseguibile Windows. I test reali salvano confronti selezionati senza email; lo screenshot dell'account viene mascherato.
+The [Mac checklist](docs/mac-testing.md) and [report](docs/mac-test-report.md) distinguish automated protocol fixtures from external-app testing. Native verification must cover permissions, focus, gestures, source changes, worker cleanup and packaged operation.
 
-`build:win` crea un archivio ZIP in `dist/` e l'app in `dist/win-unpacked/Localino.exe`. `test:packaged` verifica quell'eseguibile. Serializzare i test desktop per mantenere riproducibili le osservazioni.
+## Repository
 
-Le dipendenze frontend sono incluse nel bundle Vite; il pacchetto distribuito contiene solo `out` e il manifest, senza `node_modules`, più l’helper nativo in `resources/native`. Se si aggiungono dipendenze runtime al processo main/preload, aggiornare questa regola di packaging. La CSP consente il preamble React inline soltanto in sviluppo; in produzione gli script inline rimangono bloccati.
+- `src/main`: lifecycle, stores, IPC and read-only agent adapters.
+- `src/preload` / `src/shared`: minimal API and contracts.
+- `src/renderer`: panel, internal settings/editors and subordinate usage window.
+- `native`: Windows helpers; `native/mac`: Mac helpers.
+- `tests`: isolated unit, Electron, native protocol and package checks.
 
-L'artefatto di preparazione non è firmato e usa l'icona eseguibile predefinita Electron. Firma, installer, aggiornamenti automatici e supporto ad altre piattaforme saranno valutati prima della distribuzione pubblica.
-
-## Struttura
-
-- `src/main`: processo desktop, finestra e tray.
-- `src/preload`: API minima esposta al frontend con isolamento attivo.
-- `src/main/codex`: client App Server in sola lettura, preferenze e ciclo della connessione.
-- `src/shared/contracts.ts`: DTO e operazioni ammesse nel bridge. Il renderer non può inviare RPC o comandi arbitrari.
-- `src/renderer`: frontend React, Tailwind e componenti shadcn/ui in `src/components/ui`.
-- `native`: rilevatore Shift, lettura UI Automation e gestione del focus Windows.
-- `scripts/build-native.mjs`: compilazione del componente nativo.
-- `tests`: smoke test dell'app compilata e dell'eseguibile Windows.
-
-I componenti shadcn/ui sono sorgenti locali. Aggiungerli dalla radice con `npx shadcn@4.21.0 add nome-componente`; alias e percorso CSS sono definiti in `components.json`.
-
-## Workflow
-
-Git per sprint: base e destinazione `main`, branch `sprint/{id}`, una PR al termine della verifica integrata. Review in un contesto separato, merge eseguiti dall'utente. Stato TheOneLoop locale in `.theoneloop/`, escluso da Git per configurazione del progetto.
-
-## Riferimenti
-
-- [electron-vite](https://electron-vite.org/guide/)
-- [shadcn/ui con Vite e Tailwind](https://ui.shadcn.com/docs/installation/vite)
-- [Sicurezza Electron](https://www.electronjs.org/docs/latest/tutorial/security)
-
-### Limiti delle prove automatiche della cattura
-
-I test della macchina a stati eseguono il codice C# del rilevatore; il test di protocollo avvia e ferma il vero helper senza simulare un gesto OS. Gli smoke del salvataggio automatico e del recupero usano un helper fixture in una copia isolata dell’app: dimostrano UI, IPC, persistenza, errori e protezione della bozza, non l’acquisizione nelle app esterne. La verifica nativa finale richiede selezioni sintetiche reali in Chromium, VS Code con accessibilitySupport=on e Windows Terminal non elevati, dieci catture per applicazione con tempi e confronto esatto.
-
-Clipboard mostra i tempi dell’ultima cattura automatica; anche l’editor di recupero mostra i propri tempi. Per la cattura automatica, la presentazione attende sia due frame del renderer sia il tentativo nativo di portare la finestra in primo piano, includendo salvataggio, IPC e caricamento. Se Windows rifiuta il focus, il prompt rimane salvato e un messaggio invita ad attivare Localino dalla barra. Per doppio Shift parte dal rilevamento nativo; per la shortcut alternativa parte dalla ricezione del comando nel helper (non misura il tratto precedente della scorciatoia Electron). È una misura software, non la latenza fisica del display. Non viene salvata in una cronologia.
-
-## Cronologia Claude Code
-
-Seleziona Claude Code, quindi **Collega Claude Code** per leggere `~/.claude/projects` (o `CLAUDE_CONFIG_DIR/projects`), oppure **Seleziona cartella**. È una lettura locale volontaria: non avvia Claude, hook o login. Puoi scollegare soltanto Localino senza cambiare l’archivio. La fonte e gli istanti di tentativo, lettura riuscita ed evento sono visibili.
-
-Il lettore esamina ricorsivamente i JSONL regolari, inclusi i subagent, senza seguire collegamenti simbolici. Conta una volta ogni risposta tramite `message.id`, anche nelle copie dei fork. Il numero di sessioni include tutti gli identificatori di sessione con risposte valide nel periodo, comprese quelle che contengono copie; è distinto dal numero di risposte originali e non dipende dai nomi dei file. Input, cache letta e cache scritta rimangono separati; i subtotali cache non vengono sommati due volte. Copie discordanti sono escluse e segnalate. Il [contratto ufficiale latest](https://code.claude.com/docs/en/agent-sdk/cost-tracking) avverte che l’output delle risposte assistant può essere provvisorio: output e totale restano non disponibili, senza inventare una precisione che lo storico non garantisce. Il grafico mostra input per giorno; costo storico e quote non derivano dal contesto corrente. Le quote richiedono il bridge opzionale.
-
-7/30 giorni sono giorni di calendario locali incluso oggi, non finestre di24ore. “Tutti” copre soltanto gli archivi conservati: retention, sessioni senza persistenza e file rimossi limitano la copertura. Giorni assenti non sono zeri misurati. Le righe incomplete o invalide e le identità ambigue producono copertura parziale; un formato ignoto produce incompatibilità. Ogni refresh ricostruisce gli aggregati, gestendo append, troncamento e rotazione senza un indice persistente. Errori della stessa fonte conservano l’ultima lettura come obsoleta; cambio fonte e scollegamento la cancellano.
-
-La lettura avviene in un worker, con annullamento e limite15secondi. Si aggiorna al collegamento, all’apertura e ogni60secondi mentre la vista dell’agente è visibile; nascosta non esegue scansioni periodiche. Al renderer arrivano soltanto aggregati e metadati della fonte, mai conversazioni o credenziali. Claude Code2.1.273 / SDK0.3.273: contratto studiato e fixture controllate; consumo reale non verificato perché non è disponibile un account configurato. Lo [schema JSONL è interno e può cambiare](https://code.claude.com/docs/en/sessions).
-
-## Cronologia Pi
-
-**Collega Pi** legge `~/.pi/agent/sessions`, oppure `PI_CODING_AGENT_DIR/sessions`; **Seleziona cartella** permette una fonte alternativa. Non avvia Pi e non legge auth.json o messaggi per mostrarli. Formato latest verificato: Pi0.85.1, header sessione3; originale e fork generati anche tramite API ufficiale SessionManager, con usage sintetico e nessuna chiamata a modelli. Un account reale non è disponibile per il confronto dei consumi.
-
-Sono inclusi tutti i rami, gli assistant, l’eventuale usage dei tool, compattazioni e branch_summary. I token del contesto `retainedTail` e `tokensBefore` non sono nuova spesa. I fork sono collegati tramite parentSession, senza leggere file esterni alla cartella scelta; dopo lo spostamento di un archivio, lo UUID nei nomi ufficiali dei file permette di ritrovare il parent tra gli header presenti nella nuova radice; copie con gli stessi identificatori originali e timestamp vengono deduplicate nella famiglia di sessioni. Sessioni indipendenti possono riusare gli stessi ID brevi. Parent mancanti/ciclici, record invalidi e copie discordanti rendono la copertura parziale.
-
-Input/output/cache e totale della fonte sono distinti. Costo USD è la stima salvata da Pi, senza tariffari aggiunti e senza garanzia di fattura. Costi assenti rimangono non disponibili. Pi non fornisce quote account universali. Periodi, aggiornamento visibile, cancellazione, sorgenti e privacy seguono le regole dello storico locale descritte sopra.
-
-## Statistiche OpenCode
-
-**Collega OpenCode** rileva il database in `XDG_DATA_HOME/opencode`, oppure `~/.local/share/opencode` su Windows. Rispetta `OPENCODE_DB`; con più database richiede una scelta. **Seleziona database** consente sempre un archivio alternativo. SQLite è incluso nel runtime distribuito: non servono Node, Python o sqlite3 sul PC. Nessun server, plugin, migrazione o lettura di credenziali viene avviato. La sorgente è aperta read-only, con snapshot coerente anche in WAL; un lock viene ritentato brevemente e resta recuperabile.
-
-Il riepilogo somma soltanto i contatori nativi delle sessioni: input, output, reasoning e cache separati, costo USD riportato come stima. Messaggi e parti, anche copiati nei fork, non vengono sommati. I periodi selezionano le **sessioni aggiornate negli ultimi 7/30 giorni** e ne includono il consumo complessivo, come `opencode stats`; non sono consumi avvenuti in quei giorni e non producono una serie giornaliera. Sessioni eliminate e database non selezionati restano esclusi. Quote account universali non disponibili.
-
-Verificato il contratto OpenCode1.18.31, schema generato dalla CLI ufficiale e confronto `stats --days 7` su dati controllati; nessuna attività fatturata o account reale verificato. [Sorgente del contratto database](https://github.com/anomalyco/opencode/blob/v1.18.31/packages/core/src/database/database.ts). Supportati archivi Windows locali della release verificata; WSL, server remoti e fork personalizzati non sono rilevati automaticamente. Le letture seguono gli stessi limiti di tempo, visibilità, privacy e conservazione della cache degli altri storici locali.
-
-## Bridge Claude facoltativo
-
-In Consumi Claude, **Attiva bridge Claude** modifica soltanto `statusLine` nel file utente mostrato (`CLAUDE_CONFIG_DIR/settings.json` oppure `~/.claude/settings.json`). Prima dell’attivazione non modifica Claude. Il comando precedente riceve lo stesso stdin e conserva il proprio stdout; padding e altre opzioni sono mantenuti. Un helper Windows incluso nel ZIP viene copiato nella cartella dati Localino `claude-bridge`, con un backup della sola impostazione necessaria in `control.json`. Non viene copiato l’intero file settings, che potrebbe contenere segreti. PowerShell di Windows avvia l’helper senza finestre; il precedente comando continua a usare la shell Git Bash/PowerShell rilevata secondo il contratto Windows.
-
-**Disattiva bridge Claude** ferma la raccolta e cancella lo snapshot. Ripristina la sola statusLine precedente se corrisponde ancora alla modifica Localino. Se l’hai modificata nel frattempo, conserva la tua modifica e segnala il conflitto; il backup rimane disponibile. Non eliminare la cartella del bridge prima di averlo disattivato. Il collegamento configurato è distinto da quello confermato: serve un payload recente. **Controlla override nel progetto** esamina senza modificarli i file del progetto scelto e la policy locale nota. Policy remote/MDM, altri progetti e flag non sono verificabili globalmente da Localino: `/status` in Claude mostra le fonti attive. Una cartella non autorizzata può impedire l’esecuzione della status line.
-
-La modifica delle impostazioni usa una transazione NTFS locale: confronto della versione letta e aggiornamento avvengono insieme, senza sovrascrivere modifiche concorrenti. Su filesystem remoti/non supportati, file occupati o senza permessi l’operazione fallisce senza scritture parziali. Questa funzione dipende dalle API transazionali disponibili nel Windows verificato; non usa un ripiego meno sicuro se non sono disponibili. Una lettura della cache iniziata prima di scollegare non può ripopolare la nuova connessione.
-
-La cache contiene soltanto identificatore sessione, ricezione, finestre/reset e costo sessione eventualmente forniti. Prompt, transcript, cwd, contesto e credenziali vengono scartati. Si mostra l’ultimo payload valido, senza sommare sessioni o agenti. Quote assenti restano non disponibili; il limite di spesa può superare100%. Il costo è stimato e riguarda la sessione, distinto dallo storico e dall’abbonamento. La ricezione funziona anche in tray; dopo120secondi lo snapshot è obsoleto e un reset trascorso non azzera i valori. **Rileggi quote dalla cache** non interroga Claude: i dati nuovi dipendono dalla sua attività. L’helper funziona anche con Localino chiuso senza aprirlo; un errore della cache non interrompe il comando precedente.
-
-Contratto verificato Claude Code2.1.273/SDK0.3.273 tramite [documentazione status line](https://code.claude.com/docs/en/statusline), helper nativo e fixture controllate. Nessuna quota/account Claude reale verificata per assenza di abbonamento. Non sono usati endpoint OAuth privati o token di autenticazione.
+Git workflow: one branch per sprint, separate review and integrated verification before a PR. Merges and production acceptance are separate. Local TheOneLoop records are intentionally ignored and may be Italian.

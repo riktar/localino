@@ -58,7 +58,7 @@ test('default discovery respects explicit OPENCODE_DB and requires a choice when
   const dir=await mkdtemp(join(tmpdir(),'localino-opencode-discover-'))
   assert.equal(await openCodeSource(dir,''),join(dir,'opencode.db'))
   await writeFile(join(dir,'opencode.db'),'');await writeFile(join(dir,'opencode-beta.db'),'')
-  await assert.rejects(openCodeSource(dir,''),/più database/)
+  await assert.rejects(openCodeSource(dir,''),/Multiple OpenCode databases/)
   assert.equal(await openCodeSource(dir,'custom.db'),join(dir,'custom.db'))
   await assert.rejects(openCodeSource(dir,':memory:'),/memoria/)
 })

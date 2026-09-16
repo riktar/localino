@@ -43,9 +43,9 @@ test('invalid values remain missing instead of zero, legacy and duration/reset f
     assert.equal(window.usedPercent,null); assert.equal(window.durationMins,null); assert.equal(window.resetsAt,null)
   }
   assert.throws(()=>normalizeQuotas({unexpected:true}))
-  assert.equal(durationLabel(300),'5 ore'); assert.equal(durationLabel(10080),'7 giorni')
-  assert.equal(countdown(0,1),'Reset da verificare'); assert.equal(countdown(60000,0),'tra 1 min')
-  assert.equal(countdown(3600000,0),'tra 1 h 0 min')
+  assert.equal(durationLabel(300),'5 hours'); assert.equal(durationLabel(10080),'7 days')
+  assert.equal(countdown(0,1),'Reset needs verification'); assert.equal(countdown(60000,0),'in 1 min')
+  assert.equal(countdown(3600000,0),'in 1 h 0 min')
 })
 test('60s polling, coalesced refresh, suspend/resume, disconnect and stale response isolation', async () => {
   const {source,clock,resource}=setup()
@@ -112,6 +112,6 @@ test('resources have independent error and request state; full read replaces par
   await resource.refresh()
   assert.equal(resource.state.data?.buckets.length,2)
   assert.equal(resource.state.data?.buckets[0].windows.length,0)
-  assert.match(quotaSummary(resource.state),/^codex: finestre non disponibili/)
+  assert.match(quotaSummary(resource.state),/^codex: no windows available/)
   resource.dispose(); other.dispose()
 })

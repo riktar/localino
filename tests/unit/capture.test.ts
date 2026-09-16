@@ -130,7 +130,7 @@ test('F-007-01: retry during acquisition resolves the pending draft and later na
   try {
     child.message({type:'begin',id:1});const id=service.draft!.id
     service.start();assert.equal(child.killed,true)
-    assert.equal(service.draft!.id,id);assert.equal(service.draft!.acquiring,false);assert.match(service.draft!.message,/riavvio/)
+    assert.equal(service.draft!.id,id);assert.equal(service.draft!.acquiring,false);assert.match(service.draft!.message,/restarted/)
     children[1].message({type:'ready'});children[1].message({type:'status',enabled:true,error:''})
     child.message({type:'result',id:1,text:'obsolete',reason:'ok',ms:1})
     assert.equal(service.draft!.text,'')

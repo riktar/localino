@@ -115,6 +115,6 @@ export async function readPi(root: string, period: AgentPeriod, now = Date.now()
   }
   const result = aggregate([...events.values()],period,issues,now)
   if (!result.records && !issues) result.totals.cost = 0
-  result.limitations = ['Sono inclusi tutti i rami con usage salvato, i tool e i riassunti. Il contesto conservato dalla compattazione non è nuova spesa.', 'Sessioni conteggiate anche quando contengono copie; risposte deduplicate nella famiglia originale. Costi USD forniti da Pi, non fattura.']
+  result.limitations = ['Includes all branches with saved usage, tools and summaries. Compacted context is not new spending.', 'Sessions include copies; responses are deduplicated within the original family. USD costs are Pi estimates, not invoices.']
   return result
 }

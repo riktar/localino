@@ -35,7 +35,7 @@ export class NotesStore extends EventEmitter {
       this.error = null
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') { this.notes = []; this.error = null }
-      else this.error = `Impossibile leggere la libreria: file non accessibile, corrotto o formato non supportato. Il file non sarà sovrascritto. Percorso: ${this.path}`
+      else this.error = `Library unreadable or unsupported. File preserved. Path: ${this.path}`
     }
   }
   get(): Promise<NotesState> { return this.serial(async () => { await this.load(); return this.snapshot() }) }
@@ -44,9 +44,9 @@ export class NotesStore extends EventEmitter {
     return this.serial(async () => {
       await this.load()
       if (this.error) return { ok: false, error: this.error }
-      if (!value || typeof value !== 'object') return { ok: false, error: 'Operazione non valida.' }
+      if (!value || typeof value !== 'object') return { ok: false, error: 'Invalid operation.' }
       const action = value as NoteMutation
-      if (!['create','update','complete','delete'].includes(action.kind)) return { ok:false,error:'Operazione non valida.' }
+      if (!['create','update','complete','delete'].includes(action.kind)) return { ok:false,error:'Invalid operation.' }
       const next = this.notes.map(n => ({...n}))
       const now = Math.max(Date.now(), ...next.slice(0,1).map(n=>n.createdAt+1))
       if (action.kind === 'create' || action.kind === 'update') {
@@ -56,15 +56,15 @@ export class NotesStore extends EventEmitter {
       if (action.kind === 'create') next.unshift({id:randomUUID(),text:action.text,createdAt:now,updatedAt:now,completed:false})
       else {
         const index = next.findIndex(n => n.id === action.id)
-        if (index < 0) return {ok:false,error:'Il prompt non è più disponibile. Ricarica la libreria.'}
+        if (index < 0) return {ok:false,error:'Note no longer available. Reload the library.'}
         const note = next[index]
         if (action.kind === 'delete') next.splice(index,1)
         else {
           if (action.kind === 'update') {
-            if (action.expectedUpdatedAt !== note.updatedAt) return {ok:false,error:'Il prompt è stato modificato altrove. La tua bozza è conservata: copiala prima di ricaricare.'}
+            if (action.expectedUpdatedAt !== note.updatedAt) return {ok:false,error:'Note changed elsewhere. Copy your draft before reloading.'}
             note.text = action.text
           } else {
-            if (typeof action.completed !== 'boolean') return {ok:false,error:'Stato non valido.'}
+            if (typeof action.completed !== 'boolean') return {ok:false,error:'Invalid state.'}
             note.completed = action.completed
           }
           note.updatedAt = Math.max(now,note.updatedAt+1)
@@ -77,7 +77,7 @@ export class NotesStore extends EventEmitter {
         await rename(temporary,this.path)
       } catch {
         await unlink(temporary).catch(()=>{})
-        return {ok:false,error:`Salvataggio non riuscito. La bozza è conservata. Controlla spazio e permessi: ${this.path}`}
+        return {ok:false,error:`Could not save. Draft kept. Check space and permissions: ${this.path}`}
       }
       this.notes = next
       const state = this.snapshot(); this.emit('change',state)

@@ -4,8 +4,8 @@ export interface NotesState { notes: Note[]; error: string | null; path: string 
 export type NoteMutation = { kind: 'create'; text: string } | { kind: 'update'; id: string; expectedUpdatedAt: number; text: string } | { kind: 'complete'; id: string; completed: boolean } | { kind: 'delete'; id: string }
 export type NoteResult = { ok: true; state: NotesState } | { ok: false; error: string }
 export function textError(text: unknown): string | null {
-  if (typeof text !== 'string') return 'Il prompt deve essere testo.'
-  if (!text.trim()) return 'Scrivi almeno un carattere diverso da uno spazio.'
-  if (text.length > NOTE_LIMIT) return `Il limite è ${NOTE_LIMIT.toLocaleString('it-IT')} caratteri. Il testo non è stato troncato.`
+  if (typeof text !== 'string') return 'Note must be text.'
+  if (!text.trim()) return 'Enter some text.'
+  if (text.length > NOTE_LIMIT) return `Limit: ${NOTE_LIMIT.toLocaleString('en-US')} characters. Text has not been truncated.`
   return null
 }
