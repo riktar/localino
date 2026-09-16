@@ -1,11 +1,13 @@
 import { parentPort, workerData } from 'node:worker_threads'
 import { readClaude } from './claude'
+import { readPi } from './pi'
 import { HistoryFailure } from './history-resource'
 
 void (async () => {
   try {
-    if (workerData.id !== 'claude') throw new HistoryFailure('unsupported')
-    parentPort!.postMessage({ data: await readClaude(workerData.path, workerData.period) })
+    const reader = workerData.id === 'claude' ? readClaude : workerData.id === 'pi' ? readPi : null
+    if (!reader) throw new HistoryFailure('unsupported')
+    parentPort!.postMessage({ data: await reader(workerData.path, workerData.period) })
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
     const kind = error instanceof HistoryFailure ? error.kind : code === 'ENOENT' || code === 'ENOTDIR' ? 'missing' : code === 'EACCES' || code === 'EPERM' ? 'denied' : 'unavailable'

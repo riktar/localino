@@ -25,9 +25,9 @@ if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPa
 const codexPreferences = new FilePreferences(join(app.getPath('userData'), 'connection.json'))
 const connection = new Connection(codexPreferences)
 const agents = new AgentPreferences(join(app.getPath('userData'), 'agents.json'))
-const histories = Object.fromEntries(['claude', 'pi', 'opencode'].map(id => [id, new HistoryResource(id as LocalAgentId, id === 'claude' ? workerReader(id) : async () => { throw new HistoryFailure('unsupported') })])) as Record<LocalAgentId, HistoryResource>
+const histories = Object.fromEntries(['claude', 'pi', 'opencode'].map(id => [id, new HistoryResource(id as LocalAgentId, id !== 'opencode' ? workerReader(id as LocalAgentId) : async () => { throw new HistoryFailure('unsupported') })])) as Record<LocalAgentId, HistoryResource>
 const defaultSources: Record<LocalAgentId, string> = {
-  claude: join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects'), pi: join(homedir(), '.pi', 'agent', 'sessions'),
+  claude: join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects'), pi: join(process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'), 'sessions'),
   opencode: join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'opencode', 'opencode.db'),
 }
 const notes = new NotesStore(join(app.getPath('userData'),'notes.json'))

@@ -8,7 +8,7 @@ Localino collega l'account ChatGPT già autenticato nella CLI Codex sul PC, most
 
 Il selettore **Agente** in Consumi e nel pannello condivide e conserva la scelta tra Codex, Claude Code, Pi e OpenCode. Il menu della barra e i comandi **Seleziona ?** aprono Consumi sullo stesso agente; puoi assegnare combinazioni locali o globali in Scorciatoie, senza nuovi binding imposti. Le bozze Clipboard vengono protette anche quando cambi agente.
 
-`agents.json` conserva soltanto selezione e percorsi delle fonti locali. I nuovi lettori restano disattivati finch? non scegli di collegarli. Preferenze corrotte vengono conservate e richiedono un ripristino esplicito. Claude dispone del lettore locale; Pi e OpenCode sono completati nelle successive story dello sprint.
+`agents.json` conserva soltanto selezione e percorsi delle fonti locali. I nuovi lettori restano disattivati finch? non scegli di collegarli. Preferenze corrotte vengono conservate e richiedono un ripristino esplicito. Claude e Pi dispongono del lettore locale; OpenCode ? completato nella successiva story dello sprint.
 
 ## Collegare Codex
 
@@ -150,3 +150,11 @@ Il lettore esamina ricorsivamente i JSONL regolari, inclusi i subagent, senza se
 7/30 giorni sono giorni di calendario locali incluso oggi, non finestre di24ore. ?Tutti? copre soltanto gli archivi conservati: retention, sessioni senza persistenza e file rimossi limitano la copertura. Giorni assenti non sono zeri misurati. Le righe incomplete o invalide e le identit? ambigue producono copertura parziale; un formato ignoto produce incompatibilit?. Ogni refresh ricostruisce gli aggregati, gestendo append, troncamento e rotazione senza un indice persistente. Errori della stessa fonte conservano l?ultima lettura come obsoleta; cambio fonte e scollegamento la cancellano.
 
 La lettura avviene in un worker, con annullamento e limite15secondi. Si aggiorna al collegamento, all?apertura e ogni60secondi mentre la vista dell?agente ? visibile; nascosta non esegue scansioni periodiche. Al renderer arrivano soltanto aggregati e metadati della fonte, mai conversazioni o credenziali. Claude Code2.1.273 / SDK0.3.273: contratto studiato e fixture controllate; consumo reale non verificato perch? non ? disponibile un account configurato. Lo [schema JSONL ? interno e pu? cambiare](https://code.claude.com/docs/en/sessions).
+
+## Cronologia Pi
+
+**Collega Pi** legge `~/.pi/agent/sessions`, oppure `PI_CODING_AGENT_DIR/sessions`; **Seleziona cartella** permette una fonte alternativa. Non avvia Pi e non legge auth.json o messaggi per mostrarli. Formato latest verificato: Pi0.85.1, header sessione3; originale e fork generati anche tramite API ufficiale SessionManager, con usage sintetico e nessuna chiamata a modelli. Un account reale non ? disponibile per il confronto dei consumi.
+
+Sono inclusi tutti i rami, gli assistant, l?eventuale usage dei tool, compattazioni e branch_summary. I token del contesto `retainedTail` e `tokensBefore` non sono nuova spesa. I fork sono collegati tramite parentSession, senza leggere file esterni alla cartella scelta; copie con gli stessi identificatori originali e timestamp vengono deduplicate nella famiglia di sessioni. Sessioni indipendenti possono riusare gli stessi ID brevi. Parent mancanti/ciclici, record invalidi e copie discordanti rendono la copertura parziale.
+
+Input/output/cache e totale della fonte sono distinti. Costo USD ? la stima salvata da Pi, senza tariffari aggiunti e senza garanzia di fattura. Costi assenti rimangono non disponibili. Pi non fornisce quote account universali. Periodi, aggiornamento visibile, cancellazione, sorgenti e privacy seguono le regole dello storico locale descritte sopra.

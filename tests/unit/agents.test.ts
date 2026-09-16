@@ -46,3 +46,16 @@ test('local resources opt in, coalesce, preserve failed same-source data, cancel
     slow.configure({enabled:false,path:'new'});assert.equal(slow.state.data,null)
   }finally{slow.dispose()}
 })
+
+test('local read timeout aborts at15seconds and preserves the last confirmed same-source snapshot',async context=>{
+  context.mock.timers.enable({apis:['setTimeout']})
+  let pending=false,signal:AbortSignal|undefined
+  const resource=new HistoryResource('pi',async(_path,_period,current)=>{signal=current;if(pending)return new Promise<HistoryData>(()=>{});return data},{now:()=>10,every:()=>()=>{}})
+  try{
+    resource.configure({enabled:true,path:'source'});await resource.refresh();pending=true
+    const flight=resource.refresh();await Promise.resolve();context.mock.timers.tick(14999)
+    assert.equal(signal?.aborted,false);assert.equal(resource.state.refreshing,true)
+    context.mock.timers.tick(1);await flight
+    assert.equal(signal?.aborted,true);assert.equal(resource.state.error,'timeout');assert.equal(resource.state.data,data);assert.equal(resource.state.stale,true)
+  }finally{resource.dispose();context.mock.timers.reset()}
+})
