@@ -18,7 +18,7 @@ export const agentCapabilities: Record<AgentId, AgentCapabilities> = {
   codex: { scope: 'account', history: true, daily: true, costs: false, quotas: true },
   claude: { scope: 'local_history', history: true, daily: true, costs: false, quotas: false },
   pi: { scope: 'local_history', history: true, daily: true, costs: true, quotas: false },
-  opencode: { scope: 'local_history', history: false, daily: false, costs: true, quotas: false },
+  opencode: { scope: 'local_history', history: true, daily: false, costs: true, quotas: false },
 }
 export interface TokenMetrics { input: number | null; output: number | null; cacheRead: number | null; cacheWrite: number | null; reasoning: number | null; total: number | null; cost: number | null }
 export interface HistoryData {

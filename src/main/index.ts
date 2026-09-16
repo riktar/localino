@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, Tray } from 'electron'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { Connection } from './codex/connection'
 import { FilePreferences } from './codex/preferences'
@@ -16,7 +16,8 @@ import { Foreground } from './foreground'
 import type { CapturedNote } from '../shared/capture'
 import { homedir } from 'node:os'
 import { AgentPreferences } from './agents/preferences'
-import { HistoryResource, HistoryFailure } from './agents/history-resource'
+import { HistoryResource } from './agents/history-resource'
+import { openCodeSource } from './agents/opencode-source'
 import { workerReader } from './agents/worker-reader'
 import { agentIds, agentLabels, agentCapabilities, isAgentId, isLocalAgentId, isAgentPeriod, type AgentId, type AgentResult, type LocalAgentId } from '../shared/agents'
 
@@ -25,7 +26,7 @@ if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPa
 const codexPreferences = new FilePreferences(join(app.getPath('userData'), 'connection.json'))
 const connection = new Connection(codexPreferences)
 const agents = new AgentPreferences(join(app.getPath('userData'), 'agents.json'))
-const histories = Object.fromEntries(['claude', 'pi', 'opencode'].map(id => [id, new HistoryResource(id as LocalAgentId, id !== 'opencode' ? workerReader(id as LocalAgentId) : async () => { throw new HistoryFailure('unsupported') })])) as Record<LocalAgentId, HistoryResource>
+const histories = Object.fromEntries(['claude', 'pi', 'opencode'].map(id => [id, new HistoryResource(id as LocalAgentId, workerReader(id as LocalAgentId))])) as Record<LocalAgentId, HistoryResource>
 const defaultSources: Record<LocalAgentId, string> = {
   claude: join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects'), pi: join(process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'), 'sessions'),
   opencode: join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'opencode', 'opencode.db'),
@@ -395,7 +396,11 @@ if (!app.requestSingleInstanceLock()) {
       try { agents.source(id,{enabled,path}); histories[id].configure({enabled,path}); return {ok:true} }
       catch(error){return {ok:false,error:error instanceof Error?error.message:'Collegamento non riuscito.'}}
     }
-    handle('localino:connect-agent',(_owner,value)=>{const id=localId(value);return configureSource(id,true,agents.state.sources[id].path??defaultSources[id])})
+    handle('localino:connect-agent',async(_owner,value)=>{
+      const id=localId(value)
+      try {return configureSource(id,true,agents.state.sources[id].path??(id==='opencode'?await openCodeSource(dirname(defaultSources.opencode)):defaultSources[id]))}
+      catch(error){return {ok:false,error:error instanceof Error?error.message:'Fonte non disponibile.'}}
+    })
     handle('localino:disconnect-agent',(_owner,value)=>{const id=localId(value);return configureSource(id,false,agents.state.sources[id].path)})
     handle('localino:choose-agent-source',async(owner,value)=>{
       const id=localId(value)

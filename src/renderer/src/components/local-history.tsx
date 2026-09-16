@@ -14,7 +14,7 @@ export function useHistory(id: LocalAgentId): HistoryState | null {
   return state?.agent===id?state:null
 }
 const number=(value:number|null|undefined)=>value===null||value===undefined?'Non disponibile':value.toLocaleString('it-IT')
-const errors={missing:'La sorgente non esiste. Seleziona la cartella corretta.',denied:'Accesso alla sorgente negato.',invalid:'Archivio non leggibile.',unsupported:'Formato non supportato: la fonte potrebbe essere cambiata.',busy:'Archivio occupato: riprova.',timeout:'Lettura interrotta dopo 15 secondi. Puoi riprovare o cambiare fonte.',unavailable:'Lettura non riuscita: riprova.'}
+const errors={missing:'La sorgente non esiste. Seleziona la fonte corretta.',denied:'Accesso alla sorgente negato.',invalid:'Archivio danneggiato o non leggibile.',unsupported:'Formato non supportato: la fonte potrebbe essere cambiata.',busy:'Archivio occupato: riprova.',timeout:'Lettura interrotta dopo 15 secondi. Puoi riprovare o cambiare fonte.',unavailable:'Lettura non riuscita: riprova.'}
 
 export function LocalHistory({id}:{id:LocalAgentId}): React.JSX.Element {
   const state=useHistory(id), capability=agentCapabilities[id]
@@ -46,7 +46,7 @@ export function LocalHistory({id}:{id:LocalAgentId}): React.JSX.Element {
     <p role="status" className="text-sm">{!state?.enabled?'Collega volontariamente la fonte per leggerla.':state.refreshing?'Lettura in corso…':state.stale?'Dati non aggiornati: ultima lettura conservata.':data?.partial?'Copertura parziale.':data?'Lettura completata.':'Nessuna lettura riuscita.'}</p>
     {state?.enabled&&<label className="block text-sm">Periodo <select aria-label="Periodo" className="ml-2 rounded-md border bg-background p-2" value={state.period} onChange={event=>void period(event.target.value as AgentPeriod)}><option value="7">Ultimi 7 giorni</option><option value="30">Ultimi 30 giorni</option><option value="all">Tutti i dati disponibili</option></select></label>}
     {data&&<>
-      <p className="text-sm">{data.semantics==='events'?'Giorni di calendario nel fuso locale, incluso oggi.':'Totali di tutte le attività delle sessioni aggiornate nel periodo; finestra mobile di 24 ore per giorno. Non indica quando i token sono stati consumati.'}</p>
+      <p className="text-sm">{data.semantics==='events'?'Giorni di calendario nel fuso locale, incluso oggi.':`Sessioni aggiornate ${data.period==='all'?'in tutti i dati disponibili':`negli ultimi ${data.period} giorni`} · consumo complessivo delle sessioni. Finestra mobile di 24 ore per giorno. Non indica quando i token sono stati consumati.`}</p>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3" data-history-summary>{metrics.map(([label,value])=><div key={label} className="rounded-xl border bg-card p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="break-words text-lg font-semibold">{number(value)}</p></div>)}</div>
       <p className="text-sm">Sessioni con dati: {data.sessions} · Record conteggiati: {data.records} · Record o file esclusi/ambigui: {data.issues}</p>
       {id==='claude'&&<p className="text-xs text-muted-foreground">Le sessioni includono quelle con copie delle risposte. I token delle copie sono conteggiati una sola volta.</p>}
