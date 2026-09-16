@@ -81,7 +81,7 @@ test('Real dashboard and packaged lifecycle: source comparison, shared views, hi
     await panel.getByRole('button',{name:'Connect',exact:true}).waitFor()
     assert.equal((await page.evaluate(()=>window.localino.getUsage())).data,null)
     assert.deepEqual(JSON.parse(await readFile(join(profile,'connection.json'),'utf8')),{enabled:false,cliPath:null})
-    await writeFile(`test-results/dashboard-${packaged?'packaged':'real'}.json`,JSON.stringify({observedAt:new Date().toISOString(),packaged,daysCompared:state.data!.days.length,summaryFieldsCompared:5,issues:state.data!.issues,minimumSize:[800,600],sharedLifecycle:true,nativeMenuCommand:'actual MenuItem callback; physical tray mechanism confirmed separately'},null,2))
+    await writeFile(`test-results/dashboard-${packaged?'packaged':'real'}.json`,JSON.stringify({observedAt:new Date().toISOString(),packaged,daysCompared:state.data!.days.length,summaryFieldsCompared:5,issues:state.data!.issues,minimumSize:[800,600],sharedLifecycle:true,entryPoint:'central panel openDashboard IPC; physical tray click not measured'},null,2))
     await app.close();app=await launch()
     const restarted=await compactPage(app);await restarted.getByRole('button',{name:'Connect',exact:true}).waitFor()
     assert.equal((await restarted.evaluate(()=>window.localino.getUsage())).data,null)
