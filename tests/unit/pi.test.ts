@@ -60,6 +60,8 @@ test('numeric contradictions, negative cost, aggregate overflow and internal par
   const large=message('11111111',null,Number.MAX_SAFE_INTEGER,0,0,0)
   await write(file,[header('A'),large,{...large,id:'22222222',message:{...large.message,usage:{...large.message.usage,input:1,totalTokens:1,cost:{total:0}}}}])
   let data=await readPi(root,'all',now);assert.equal(data.totals.input,null);assert.equal(data.totals.total,null);assert.equal(data.partial,true);assert.ok(data.issues>0)
+  await write(file,[header('A'),{...large,message:{...large.message,usage:{...large.message.usage,output:1,totalTokens:1}}}])
+  data=await readPi(root,'all',now);assert.equal(data.totals.total,null);assert.equal(data.partial,true);assert.ok(data.issues>0)
   const invalid=message('11111111','22222222',1,0,0,0);invalid.message.usage.totalTokens=99;invalid.message.usage.cost.total=-1
   await write(file,[header('A'),invalid,message('22222222','11111111',0,0,0,0)])
   data=await readPi(root,'all',now);assert.equal(data.totals.total,null);assert.equal(data.totals.cost,null);assert.equal(data.partial,true);assert.ok(data.issues>=3)

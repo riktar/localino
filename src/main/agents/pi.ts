@@ -41,6 +41,7 @@ export async function readPi(root: string, period: AgentPeriod, now = Date.now()
       const metrics = { ...blankMetrics(), input: count(usage.input), output: count(usage.output), cacheRead: count(usage.cacheRead), cacheWrite: count(usage.cacheWrite), cost: money(object(usage.cost)?.total) }
       metrics.total = usage.totalTokens === undefined ? sum([metrics.input, metrics.output, metrics.cacheRead, metrics.cacheWrite]) : count(usage.totalTokens)
       const computed = sum([metrics.input, metrics.output, metrics.cacheRead, metrics.cacheWrite])
+      if (computed === null && [metrics.input, metrics.output, metrics.cacheRead, metrics.cacheWrite].every(value => value !== null)) { metrics.total = null; issues++ }
       if (metrics.total !== null && computed !== null && metrics.total !== computed) { metrics.total = null; issues++ }
       if (usage.cost !== undefined && (!object(usage.cost) || (object(usage.cost)?.total !== undefined && metrics.cost === null))) issues++
       if ([metrics.input, metrics.output, metrics.cacheRead, metrics.cacheWrite, metrics.total].some(value => value === null)) issues++
