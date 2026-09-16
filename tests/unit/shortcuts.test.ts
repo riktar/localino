@@ -27,7 +27,7 @@ test('global conflict rollback, persistence, disable, callbacks and disposal',as
  const callbacks=new Map<string,()=>void>();const invoked:string[]=[];const occupied=new Set(['Ctrl+Alt+O'])
  const os={register:(key:string,fn:()=>void)=>{if(occupied.has(key)||callbacks.has(key))return false;callbacks.set(key,fn);return true},unregister:(key:string)=>{callbacks.delete(key)}}
  const store=new Shortcuts(file,os,id=>invoked.push(id));await store.init()
- assert.equal(callbacks.size,3)
+ assert.equal(callbacks.size,4)
  assert.equal((await store.update({id:'home',scope:'global',key:'Ctrl+Alt+O'})).ok,false)
  assert.ok(callbacks.has('Ctrl+Alt+L'));callbacks.get('Ctrl+Alt+L')!();assert.deepEqual(invoked,['home'])
  assert.equal((await store.update({id:'home',scope:'global',key:'Ctrl+Alt+H'})).ok,true)
@@ -42,7 +42,7 @@ test('startup occupied key isolated; bad files preserved; failed write restores 
  const folder=await mkdtemp(join(tmpdir(),'localino-keys-errors-'));const file=join(folder,'shortcuts.json')
  const keys=new Set<string>();const os={register:(k:string)=>{if(k==='Ctrl+Alt+L')return false;keys.add(k);return true},unregister:(k:string)=>{keys.delete(k)}}
  const store=new Shortcuts(file,os,()=>{});await store.init()
- assert.equal(store.state.bindings.find(b=>b.scope==='global'&&b.id==='home')!.active,false);assert.equal(keys.size,2)
+ assert.equal(store.state.bindings.find(b=>b.scope==='global'&&b.id==='home')!.active,false);assert.equal(keys.size,3)
  await mkdir(file)
  const result=await store.update({id:'clipboard',scope:'global',key:'Ctrl+Alt+H'})
  assert.equal(result.ok,false);assert.ok(keys.has('Ctrl+Alt+C'));assert.equal(keys.has('Ctrl+Alt+H'),false)

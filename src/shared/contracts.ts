@@ -33,6 +33,16 @@ export interface ResourceState<T> {
 }
 
 export interface LocalinoApi {
+  getCaptureStatus: () => Promise<import('./capture').CaptureStatus>
+  onCaptureStatus: (listener:(state:import('./capture').CaptureStatus)=>void)=>()=>void
+  requestCapture: () => Promise<void>
+  setCaptureEnabled: (value:boolean) => Promise<{ok:boolean;error?:string}>
+  retryCapture: () => Promise<void>
+  getCaptureDraft: () => Promise<import('./capture').CaptureDraft|null>
+  onCaptureDraft: (listener:(draft:import('./capture').CaptureDraft)=>void)=>()=>void
+  cancelCapture: (id:number) => Promise<void>
+  saveCapture: (id:number,text:string) => Promise<{ok:boolean;error?:string}>
+
   getShortcuts: () => Promise<import('./commands').ShortcutState>
   updateShortcuts: (value: unknown) => Promise<import('./commands').ShortcutResult>
   onShortcuts: (listener:(state:import('./commands').ShortcutState)=>void)=>()=>void

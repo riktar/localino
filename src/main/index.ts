@@ -11,6 +11,7 @@ import { destinationLabels, isDestination, type Destination } from '../shared/na
 import { NotesStore } from './notes'
 import type { ActionRequest, WindowAction } from '../shared/actions'
 import { Shortcuts } from './shortcuts'
+import { Capture } from './capture'
 
 const customData = app.commandLine.getSwitchValue('user-data-dir')
 if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPath('userData', resolve(customData)) }
@@ -21,6 +22,9 @@ connection.on('ratesChanged', () => void quotas.refresh())
 const usage = new Resource(connection, { method: 'account/usage/read', normalize: normalizeUsage, interval: 300_000, staleAfter: 300_000 })
 usage.setActive(false)
 
+const capture = new Capture(join(app.getPath('userData'),'capture.json'), app.isPackaged ? join(process.resourcesPath,'native/Localino.Capture.exe') : join(__dirname,'../native/Localino.Capture.exe'))
+let captureWindow: BrowserWindow | null = null
+let captureLoading: Promise<void> | null = null
 let panel: BrowserWindow | null = null
 let dashboard: BrowserWindow | null = null
 let destination: Destination = 'home'
@@ -32,6 +36,7 @@ let actionSequence = 0
 let pendingAction: ActionRequest | null = null
 const shortcuts = new Shortcuts(join(app.getPath('userData'),'shortcuts.json'),globalShortcut,id=>{
   if(id==='home'||id==='consumi'||id==='clipboard')void showMain(id)
+  if(id==='capture')capture.request()
 })
 
 function requestGuard(action: WindowAction): void {
@@ -48,7 +53,7 @@ function hideWindow(window: BrowserWindow): void {
   else window.hide()
 }
 
-const ownedWindows = (): BrowserWindow[] => [panel,dashboard].filter((w): w is BrowserWindow => w !== null && !w.isDestroyed())
+const ownedWindows = (): BrowserWindow[] => [panel,dashboard,captureWindow].filter((w): w is BrowserWindow => w !== null && !w.isDestroyed())
 function broadcast(channel: string, value: unknown): void { for (const window of ownedWindows()) window.webContents.send(channel,value) }
 function secureWindow(window: BrowserWindow): void {
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -56,13 +61,38 @@ function secureWindow(window: BrowserWindow): void {
   window.webContents.session.setPermissionRequestHandler((_contents,_permission,callback) => callback(false))
   window.webContents.session.setPermissionCheckHandler(() => false)
 }
-async function loadWindow(window: BrowserWindow, dashboardView = false): Promise<void> {
+async function loadWindow(window: BrowserWindow, dashboardView: boolean | 'capture' = false): Promise<void> {
   if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
     const url = new URL(process.env.ELECTRON_RENDERER_URL)
-    if (dashboardView) url.searchParams.set('view','main')
+    if (dashboardView) url.searchParams.set('view',dashboardView === 'capture' ? 'capture' : 'main')
     await window.loadURL(url.toString())
-  } else await window.loadFile(join(__dirname,'../renderer/index.html'), dashboardView ? { query: { view:'main' } } : {})
+  } else await window.loadFile(join(__dirname,'../renderer/index.html'), dashboardView ? { query: { view:dashboardView === 'capture' ? 'capture' : 'main' } } : {})
 }
+async function presentCapture(): Promise<void> {
+  if (!capture.draft) return
+  if (!captureWindow || captureWindow.isDestroyed()) {
+    captureWindow = new BrowserWindow({width:760,height:580,minWidth:580,minHeight:460,title:'Localino — Cattura selezione',show:false,autoHideMenuBar:true,backgroundColor:'#faf9f6',
+      webPreferences:{preload:join(__dirname,'../preload/index.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}})
+    const window = captureWindow
+    secureWindow(window)
+    window.on('page-title-updated',event=>event.preventDefault())
+    window.on('close',event=>{if(!quitting){event.preventDefault();if(capture.draft && !capture.isSaving){window.hide();capture.finish(capture.draft.id,true)}}})
+    window.on('closed',()=>{captureWindow=null})
+    captureLoading = loadWindow(window,'capture').finally(()=>{captureLoading=null})
+  }
+  await captureLoading
+  if (!capture.draft || !captureWindow || captureWindow.isDestroyed()) return
+  captureWindow.webContents.send('localino:capture-draft',capture.draft)
+  if(captureWindow.isMinimized())captureWindow.restore()
+  // Keep origin focused until acquisition finishes, including the timeout path.
+  if(capture.draft.acquiring)captureWindow.showInactive()
+  else {captureWindow.show();captureWindow.focus()}
+}
+capture.on('draft',()=>{void presentCapture()})
+capture.on('raise',()=>{void presentCapture()})
+capture.on('finished',()=>captureWindow?.hide())
+capture.on('status',state=>broadcast('localino:capture-status',state))
+
 function updateUsageActivity(): void { usage.setActive(destination === 'consumi' && !!dashboard?.isVisible() && !dashboard.isMinimized()) }
 async function showMain(next: Destination = 'home'): Promise<void> {
   if (unsaved && next !== destination) { requestGuard({kind:'navigate',destination:next}); return }
@@ -110,6 +140,7 @@ function updateTray(): void {
     { label: 'Apri Home', click: () => { void showMain('home') } },
     { label: 'Apri Consumi', click: () => { void showMain('consumi') } },
     { label: 'Apri Clipboard', click: () => { void showMain('clipboard') } },
+    { label: 'Cattura selezione', click: () => capture.request() },
     { label: 'Scorciatoie', click: () => { void showMain('shortcuts') } },
     { label: 'Aggiorna quote', enabled: connected, click: () => void quotas.refresh() },
     { type: 'separator' },
@@ -138,9 +169,11 @@ if (!app.requestSingleInstanceLock()) {
   app.on('before-quit', (event) => {
     if (quitReady) return
     event.preventDefault()
+    if (capture.isSaving) { void presentCapture(); return }
     if (unsaved && !quitting) { requestGuard({kind:'quit'}); return }
     if (quitting) return
     quitting = true
+    capture.dispose()
     shortcuts.dispose()
     quotas.dispose()
     usage.dispose()
@@ -198,6 +231,22 @@ if (!app.requestSingleInstanceLock()) {
       if (action.kind === 'hide') owner.hide()
       else app.quit()
     })
+    handle('localino:capture-status',()=>capture.state)
+    handle('localino:capture-request',()=>capture.request())
+    handle('localino:capture-enable',(_owner,value)=>capture.setEnabled(value))
+    handle('localino:capture-retry',()=>capture.start())
+    handle('localino:capture-draft',owner=>{if(owner!==captureWindow)throw Error('Access denied');return capture.draft})
+    handle('localino:capture-cancel',(owner,id)=>{
+      if(owner!==captureWindow||typeof id!=='number')throw Error('Access denied')
+      if(capture.draft?.id===id&&!capture.isSaving){owner.hide();capture.finish(id,true)}
+    })
+    handle('localino:capture-save',(owner,value)=>{
+      if(owner!==captureWindow||!value||typeof value!=='object')throw Error('Access denied')
+      const request=value as {id:unknown;text:unknown}
+      if(typeof request.id!=='number')throw Error('Richiesta non valida')
+      return capture.save(request.id,request.text,text=>notes.mutate({kind:'create',text}))
+    })
+    await capture.init()
     handle('localino:quit',() => app.quit())
     handle('localino:shortcuts',()=>shortcuts.state)
     handle('localino:update-shortcuts',(_owner,value)=>shortcuts.update(value))
@@ -251,8 +300,8 @@ if (!app.requestSingleInstanceLock()) {
       updateTray()
     })
     usage.on('change', state => broadcast('localino:usage-changed',state))
-    powerMonitor.on('suspend', () => { quotas.suspend(); usage.suspend() })
-    powerMonitor.on('resume', () => { quotas.resume(); usage.resume() })
+    powerMonitor.on('suspend', () => { capture.suspend(); quotas.suspend(); usage.suspend() })
+    powerMonitor.on('resume', () => { capture.resume(); quotas.resume(); usage.resume() })
     tray = new Tray(createTrayIcon())
     updateTray()
     tray.on('click', () => panel?.isVisible() ? panel.hide() : showPanel())
@@ -263,5 +312,5 @@ if (!app.requestSingleInstanceLock()) {
     console.error('Impossibile avviare Localino', error)
     app.exit(1)
   })
-  app.on('will-quit', () => { shortcuts.dispose();tray?.destroy() })
+  app.on('will-quit', () => { capture.dispose();shortcuts.dispose();tray?.destroy() })
 }

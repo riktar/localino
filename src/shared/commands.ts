@@ -31,7 +31,7 @@ export const commands = [
   {id:'quit',label:'Esci da Localino',area:'App',local:''},
   {id:'resetBindings',label:'Ripristina scorciatoie predefinite',area:'Scorciatoie',local:''},
   {id:'closeSettings',label:'Chiudi impostazioni scorciatoie',area:'Scorciatoie',local:''},
-  {id:'capture',label:'Cattura selezione esterna',area:'App',local:''},
+  {id:'capture',label:'Cattura selezione esterna',area:'App',local:'',global:'Ctrl+Alt+P'},
 ] as const
 export type CommandId = typeof commands[number]['id']
 export type Scope = 'local'|'global'

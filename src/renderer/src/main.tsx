@@ -8,6 +8,7 @@ import { useQuotas } from '@/hooks/use-quotas'
 import { QuotaCard } from '@/components/quota-card'
 import { Shell } from '@/components/shell'
 import { CommandProvider,useCommands } from '@/components/commands'
+import { CaptureView } from '@/components/capture'
 import './styles.css'
 
 function App(): React.JSX.Element {
@@ -16,6 +17,7 @@ function App(): React.JSX.Element {
   const unavailable=state.status!=='connected'?'Collega prima Codex.':undefined
   useCommands({
     home:{run:()=>window.localino.navigate('home')},consumi:{run:()=>window.localino.navigate('consumi')},clipboard:{run:()=>window.localino.navigate('clipboard')},shortcuts:{run:()=>window.localino.navigate('shortcuts')},
+    capture:{run:()=>window.localino.requestCapture()},
     palette:{run:()=>window.localino.requestCommand('palette')},new:{run:()=>window.localino.requestCommand('new')},hide:{run:()=>window.localino.hide()},quit:{run:()=>window.localino.quit()},
     connect:{run:()=>window.localino.connect(),disabled:state.status==='connected'||state.status==='connecting'?'Account già collegato o collegamento in corso.':undefined},
     reread:{run:()=>window.localino.rereadAccount(),disabled:unavailable},choose:{run:()=>window.localino.chooseCodex(),disabled:state.status==='connecting'?'Collegamento in corso.':undefined},
@@ -50,5 +52,5 @@ function App(): React.JSX.Element {
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>{new URLSearchParams(location.search).get('view') === 'main' ? <Shell /> : <CommandProvider><App /></CommandProvider>}</React.StrictMode>,
+  <React.StrictMode>{new URLSearchParams(location.search).get('view') === 'capture' ? <CaptureView/> : new URLSearchParams(location.search).get('view') === 'main' ? <Shell /> : <CommandProvider><App /></CommandProvider>}</React.StrictMode>,
 )

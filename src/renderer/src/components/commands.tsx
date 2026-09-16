@@ -1,6 +1,7 @@
 import { createContext,useCallback,useContext,useEffect,useRef,useState,type ReactNode } from 'react'
 import { commands,defaultBindings,keyFromEvent,type CommandId,type ShortcutState } from '../../../shared/commands'
 import { Button } from './ui/button'
+import { CaptureSettings } from './capture'
 
 export interface CommandAction {run:()=>unknown;disabled?:string}
 type Actions=Partial<Record<CommandId,CommandAction>>
@@ -62,7 +63,8 @@ export function ShortcutSettings():React.JSX.Element {
   return <main className="mx-auto max-w-5xl space-y-5 p-6"><header><h1 className="text-3xl font-semibold">Scorciatoie</h1><p className="mt-2 text-sm text-muted-foreground">Le combinazioni globali funzionano mentre Localino è in esecuzione. Lascia vuoto per disabilitare. Formati: Ctrl+Alt+L, Ctrl+Shift+R, F2, Ctrl+Comma.</p><p className="mt-2 text-sm text-muted-foreground">Nei campi testo, copia, incolla, selezione e cancellazione mantengono il comportamento normale. Invio inserisce una nuova riga.</p></header>
     {(error||state.error)&&<p role="alert" className="break-words text-sm text-destructive">{error||state.error}</p>}<p role="status" className="text-sm">{message}</p>
     <div className="flex gap-3"><Button variant="outline" disabled={busy} onClick={()=>void apply({reset:true})}>Ripristina default</Button><Button variant="ghost" onClick={()=>registry.run('closeSettings')}>Chiudi impostazioni</Button></div>
-    <div className="space-y-3">{state.bindings.filter(b=>b.id!=='capture').map(b=><BindingRow key={`${b.id}:${b.scope}:${b.key}`} binding={b} busy={busy} save={key=>apply({id:b.id,scope:b.scope,key})}/>)}</div>
+    <CaptureSettings/>
+    <div className="space-y-3">{state.bindings.map(b=><BindingRow key={`${b.id}:${b.scope}:${b.key}`} binding={b} busy={busy} save={key=>apply({id:b.id,scope:b.scope,key})}/>)}</div>
   </main>
 }
 function BindingRow({binding:b,busy,save}:{binding:ShortcutState['bindings'][number];busy:boolean;save:(key:string)=>Promise<void>}):React.JSX.Element {

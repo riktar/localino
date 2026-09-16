@@ -57,9 +57,22 @@ Apri **Comandi** o premi **Ctrl+K**. Cerca un'azione, usa le frecce e Invio; ogn
 
 Nei campi testo, le operazioni native di selezione, copia, incolla, cancellazione e annullamento sono preservate; Invio mantiene le nuove righe. Le bozze modificate richiedono Salva, Scarta o Resta anche quando si naviga o esce da tastiera.
 
-In **Scorciatoie** puoi modificare ciascun binding locale, modificare i tre globali, disabilitarli lasciando il campo vuoto e ripristinare i default. Le preferenze sono locali e persistono al riavvio. Un conflitto interno, un formato errato o una combinazione globale occupata sono segnalati distintamente; un aggiornamento non riuscito conserva i binding precedenti. Una combinazione occupata all'avvio non blocca le altre funzioni. **Chiudi impostazioni** torna alla sezione e al controllo di origine quando ancora disponibili.
+In **Scorciatoie** puoi modificare ciascun binding locale, modificare i globali, disabilitarli lasciando il campo vuoto e ripristinare i default. Le preferenze sono locali e persistono al riavvio. Un conflitto interno, un formato errato o una combinazione globale occupata sono segnalati distintamente; un aggiornamento non riuscito conserva i binding precedenti. Una combinazione occupata all'avvio non blocca le altre funzioni. **Chiudi impostazioni** torna alla sezione e al controllo di origine quando ancora disponibili.
 
-La cattura esterna è indicata come non disponibile finché la funzione nativa non è completata; non è attivata da questo catalogo.
+## Cattura della selezione
+
+Con Localino in esecuzione, seleziona testo in un’altra applicazione non elevata e premi/rilascia **Shift due volte entro 350 ms**, senza altri tasti. **Ctrl+Alt+P** richiama la stessa azione. In Scorciatoie puoi disabilitare il doppio Shift e cambiare/disabilitare la combinazione alternativa.
+
+La finestra di cattura compare senza togliere il focus all’origine durante la lettura. Quando la lettura termina puoi modificare il testo, premere **Ctrl+Invio** per creare un solo prompt aperto in Clipboard, oppure **Esc/Annulla** per scartare e tornare all’app origine, se ancora disponibile. Ripetere il gesto riporta alla stessa bozza senza sovrascrivere le modifiche. Invio mantiene le nuove righe. Un errore di salvataggio mantiene la bozza e permette di riprovare.
+
+**VS Code richiede `Editor: Accessibility Support` (`editor.accessibilitySupport`) impostato su `on`.** Apri le impostazioni con Ctrl+, e cerca quel nome. Localino non modifica automaticamente le impostazioni di VS Code o di altre app. Questa condizione è stata provata con il prototipo; le prove del pacchetto finale sono registrate separatamente.
+
+Nessuna selezione, controllo non leggibile, limite di 100.000 caratteri o timeout producono un campo vuoto con spiegazione: puoi scrivere o incollare volontariamente. Il testo non viene troncato. La cattura usa Windows UI Automation e non legge né modifica gli appunti; nessuna copia simulata, cronologia tasti o appunti, lettura continua del contenuto o invio in rete. Il documento origine resta intatto. I campi password e le finestre elevate non sono supportati.
+
+Il componente nativo viene arrestato all’uscita e riavviato dopo sospensione/ripresa. Un componente mancante o non avviabile viene segnalato nella Home e in Scorciatoie: la libreria e l’inserimento manuale restano disponibili. Usa **Riprova componente di cattura** dopo aver risolto il problema. La preferenza del gesto è in `capture.json`; i binding sono in `shortcuts.json`. Le preferenze precedenti vengono conservate: se Ctrl+Alt+P era già assegnato, il nuovo binding di cattura parte disabilitato.
+
+Runtime Windows x64 con **.NET Framework 4.8**: l’eseguibile nativo è incluso in `resources/native/Localino.Capture.exe`, fuori ASAR. L’utente finale non deve installare Node, un SDK o un compilatore. La build richiede invece i reference assemblies .NET Framework 4.8 e il compilatore Windows Framework64. La lettura UIA avviene in un processo con timeout; un job Windows lega i processi figli al coordinatore, evitando worker residui anche se la lettura si blocca.
+
 
 ## Sviluppo
 
@@ -67,6 +80,7 @@ Richiede Node.js 22.12 o superiore e npm. Prima piattaforma verificata: Windows 
 
 ```sh
 npm ci
+npm run build:native
 npm run dev
 ```
 
@@ -86,7 +100,7 @@ npm run test:packaged
 
 `build:win` crea un archivio ZIP in `dist/` e l'app in `dist/win-unpacked/Localino.exe`. `test:packaged` verifica quell'eseguibile. Serializzare i test desktop per mantenere riproducibili le osservazioni.
 
-Le dipendenze frontend sono incluse nel bundle Vite; il pacchetto distribuito contiene solo `out` e il manifest, senza `node_modules`. Se si aggiungono dipendenze runtime al processo main/preload, aggiornare questa regola di packaging. La CSP consente il preamble React inline soltanto in sviluppo; in produzione gli script inline rimangono bloccati.
+Le dipendenze frontend sono incluse nel bundle Vite; il pacchetto distribuito contiene solo `out` e il manifest, senza `node_modules`, più l’helper nativo in `resources/native`. Se si aggiungono dipendenze runtime al processo main/preload, aggiornare questa regola di packaging. La CSP consente il preamble React inline soltanto in sviluppo; in produzione gli script inline rimangono bloccati.
 
 L'artefatto di preparazione non è firmato e usa l'icona eseguibile predefinita Electron. Firma, installer, aggiornamenti automatici e supporto ad altre piattaforme saranno valutati prima della distribuzione pubblica.
 
@@ -97,6 +111,8 @@ L'artefatto di preparazione non è firmato e usa l'icona eseguibile predefinita 
 - `src/main/codex`: client App Server in sola lettura, preferenze e ciclo della connessione.
 - `src/shared/contracts.ts`: DTO e operazioni ammesse nel bridge. Il renderer non può inviare RPC o comandi arbitrari.
 - `src/renderer`: frontend React, Tailwind e componenti shadcn/ui in `src/components/ui`.
+- `native`: rilevatore Shift, lettura UI Automation e gestione del focus Windows.
+- `scripts/build-native.mjs`: compilazione del componente nativo.
 - `tests`: smoke test dell'app compilata e dell'eseguibile Windows.
 
 I componenti shadcn/ui sono sorgenti locali. Aggiungerli dalla radice con `npx shadcn@4.21.0 add nome-componente`; alias e percorso CSS sono definiti in `components.json`.
@@ -110,3 +126,7 @@ Git per sprint: base e destinazione `main`, branch `sprint/{id}`, una PR al term
 - [electron-vite](https://electron-vite.org/guide/)
 - [shadcn/ui con Vite e Tailwind](https://ui.shadcn.com/docs/installation/vite)
 - [Sicurezza Electron](https://www.electronjs.org/docs/latest/tutorial/security)
+
+### Limiti delle prove automatiche della cattura
+
+I test della macchina a stati eseguono il codice C# del rilevatore; il test di protocollo avvia e ferma il vero helper senza simulare un gesto OS. Gli smoke della bozza usano un helper fixture in una copia isolata dell’app: dimostrano UI, IPC, persistenza, errori e protezione della bozza, non l’acquisizione nelle app esterne. La verifica nativa finale richiede selezioni sintetiche reali in Chromium, VS Code con accessibilitySupport=on e Windows Terminal non elevati, dieci catture per applicazione con tempi e confronto esatto.

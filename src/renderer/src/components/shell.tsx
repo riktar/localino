@@ -6,6 +6,7 @@ import { Dashboard } from './dashboard'
 import { Clipboard, type LeaveGuard } from './clipboard'
 import { destinations, destinationLabels, type Destination } from '../../../shared/navigation'
 import { CommandProvider,ShortcutSettings,useCommandRegistry,useCommands } from './commands'
+import { useCaptureStatus } from './capture'
 import type { NotesState } from '../../../shared/notes'
 
 export function Shell(): React.JSX.Element {
@@ -13,6 +14,7 @@ export function Shell(): React.JSX.Element {
 }
 function ShellContent(): React.JSX.Element {
   const registry=useCommandRegistry()!
+  const captureStatus=useCaptureStatus()
   const [destination, setDestination] = useState<Destination>('home')
   const content = useRef<HTMLDivElement>(null)
   const guard = useRef<LeaveGuard|null>(null)
@@ -44,7 +46,7 @@ function ShellContent(): React.JSX.Element {
   useCommands({
     home:{run:()=>navigate('home')},consumi:{run:()=>navigate('consumi')},clipboard:{run:()=>navigate('clipboard')},shortcuts:{run:()=>navigate('shortcuts')},
     palette:{run:registry.open},hide:{run:()=>window.localino.hide()},quit:{run:()=>window.localino.quit()},panel:{run:()=>window.localino.openPanel()},
-    capture:{run:()=>{},disabled:'Cattura disponibile dopo il completamento della funzione nativa.'},
+    capture:{run:()=>window.localino.requestCapture()},
   })
   // A command may request the Clipboard editor from any destination. The mounted
   // Clipboard consumes the request only after the existing navigation guard permits it.
@@ -60,6 +62,7 @@ function ShellContent(): React.JSX.Element {
       </nav>
     </header>
     {registry.state.bindings.some(b=>b.error)&&<p role="alert" className="px-6 py-2 text-sm text-destructive">Una o più scorciatoie globali non sono disponibili. Apri Scorciatoie per cambiare la combinazione.</p>}
+    {captureStatus.status==='error'&&<p role="alert" className="px-6 py-2 text-sm text-destructive">{captureStatus.error} La libreria Clipboard resta disponibile.</p>}
     <div ref={content} tabIndex={-1} className="outline-none" data-destination={destination}>
       {destination === 'consumi' ? <Dashboard /> : destination === 'clipboard' ? <Clipboard guard={guard} newRequest={newRequest} consumeNew={()=>setNewRequest(0)} onBusy={setClipboardBusy} /> : destination==='shortcuts' ? <ShortcutSettings/> : <main className="mx-auto max-w-5xl space-y-8 p-6 lg:p-10">
         {destination === 'home' ? <>

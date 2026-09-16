@@ -13,16 +13,17 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "build": "npm run typecheck && electron-vite build",
+    "build": "npm run typecheck && electron-vite build && npm run build:native",
     "build:win": "npm run build && electron-builder --win --x64 --publish never",
-    "test": "npm run test:unit && npm run build && node --test --test-concurrency=1 tests/desktop.test.mjs tests/development.test.mjs tests/quotas-ui.test.mjs tests/dashboard.test.mjs tests/navigation.test.mjs tests/clipboard.test.mjs tests/shortcuts.test.mjs",
+    "test": "npm run test:unit && npm run build && node --test --test-concurrency=1 tests/desktop.test.mjs tests/development.test.mjs tests/quotas-ui.test.mjs tests/dashboard.test.mjs tests/navigation.test.mjs tests/clipboard.test.mjs tests/shortcuts.test.mjs tests/capture.test.mjs",
     "test:packaged": "node --test tests/packaged.test.mjs",
     "check": "npm run lint && npm test",
     "test:unit": "node --import tsx --test --test-concurrency=1 tests/unit/*.test.ts",
     "test:dashboard": "npm run build && node --import tsx --test tests/dashboard-live.test.ts",
     "test:dashboard:packaged": "node --import tsx --test tests/dashboard-packaged.test.ts",
     "test:rates": "npm run build && node --import tsx --test tests/rates-live.test.ts",
-    "test:account": "npm run build && node --import tsx --test tests/account-live.test.ts"
+    "test:account": "npm run build && node --import tsx --test tests/account-live.test.ts",
+    "build:native": "node scripts/build-native.mjs"
   },
   "build": {
     "appId": "app.localino.desktop",
@@ -33,7 +34,8 @@
     "files": [
       "out/**/*",
       "package.json",
-      "!node_modules/**/*"
+      "!node_modules/**/*",
+      "!out/native/**/*"
     ],
     "asar": true,
     "win": {
@@ -42,7 +44,16 @@
       ],
       "signAndEditExecutable": false
     },
-    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "extraResources": [
+      {
+        "from": "out/native",
+        "to": "native",
+        "filter": [
+          "*.exe"
+        ]
+      }
+    ]
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

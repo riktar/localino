@@ -2,6 +2,23 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { ConnectionState, LocalinoApi, Quotas, ResourceState, Usage } from '../shared/contracts'
 
 const api: LocalinoApi = {
+  getCaptureStatus:()=>ipcRenderer.invoke('localino:capture-status'),
+  requestCapture:()=>ipcRenderer.invoke('localino:capture-request'),
+  setCaptureEnabled:value=>ipcRenderer.invoke('localino:capture-enable',value),
+  retryCapture:()=>ipcRenderer.invoke('localino:capture-retry'),
+  getCaptureDraft:()=>ipcRenderer.invoke('localino:capture-draft'),
+  cancelCapture:id=>ipcRenderer.invoke('localino:capture-cancel',id),
+  saveCapture:(id,text)=>ipcRenderer.invoke('localino:capture-save',{id,text}),
+  onCaptureStatus:listener=>{
+    const callback=(_event:Electron.IpcRendererEvent,state:import('../shared/capture').CaptureStatus)=>listener(state)
+    ipcRenderer.on('localino:capture-status',callback)
+    return ()=>{ipcRenderer.removeListener('localino:capture-status',callback)}
+  },
+  onCaptureDraft:listener=>{
+    const callback=(_event:Electron.IpcRendererEvent,draft:import('../shared/capture').CaptureDraft)=>listener(draft)
+    ipcRenderer.on('localino:capture-draft',callback)
+    return ()=>{ipcRenderer.removeListener('localino:capture-draft',callback)}
+  },
   getShortcuts:()=>ipcRenderer.invoke('localino:shortcuts'),
   updateShortcuts:value=>ipcRenderer.invoke('localino:update-shortcuts',value),
   openPanel:()=>ipcRenderer.invoke('localino:panel'),
