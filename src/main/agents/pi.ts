@@ -1,4 +1,4 @@
-import { dirname, resolve } from 'node:path'
+import { basename, dirname, resolve } from 'node:path'
 import type { AgentPeriod, HistoryData } from '../../shared/agents'
 import { aggregate, blankMetrics, sum, type UsageEvent } from './aggregate'
 import { count, identifier, jsonlFiles, money, object, readJsonl, timestamp } from './jsonl'
@@ -25,6 +25,7 @@ export async function readPi(root: string, period: AgentPeriod, now = Date.now()
       if (unsupported || !header) return
       const id = identifier(row.id), time = timestamp(row.timestamp), parent = row.parentId === null ? null : identifier(row.parentId)
       if (!id || time === null || (row.parentId !== null && !parent)) { issues++; return }
+      if (header.links.has(id) && header.links.get(id) !== parent) issues++
       header.links.set(id, parent)
       const message = object(row.message)
       const role = message?.role
@@ -39,6 +40,9 @@ export async function readPi(root: string, period: AgentPeriod, now = Date.now()
       if (!usage) { if (assistant || summary) issues++; return }
       const metrics = { ...blankMetrics(), input: count(usage.input), output: count(usage.output), cacheRead: count(usage.cacheRead), cacheWrite: count(usage.cacheWrite), cost: money(object(usage.cost)?.total) }
       metrics.total = usage.totalTokens === undefined ? sum([metrics.input, metrics.output, metrics.cacheRead, metrics.cacheWrite]) : count(usage.totalTokens)
+      const computed = sum([metrics.input, metrics.output, metrics.cacheRead, metrics.cacheWrite])
+      if (metrics.total !== null && computed !== null && metrics.total !== computed) { metrics.total = null; issues++ }
+      if (usage.cost !== undefined && (!object(usage.cost) || (object(usage.cost)?.total !== undefined && metrics.cost === null))) issues++
       if ([metrics.input, metrics.output, metrics.cacheRead, metrics.cacheWrite, metrics.total].some(value => value === null)) issues++
       if ([metrics.input, metrics.output, metrics.total, metrics.cost].every(value => value === null)) return
       // retainedTail, tokensBefore and message content are deliberately never projected.
@@ -48,11 +52,29 @@ export async function readPi(root: string, period: AgentPeriod, now = Date.now()
     const parsed = header as SessionFile | null
     if (parsed) {
       for (const parent of parsed.links.values()) if (parent && !parsed.links.has(parent)) issues++
+      const checked = new Set<string>()
+      for (const entry of parsed.links.keys()) {
+        const branch = new Set<string>(); let cursor:string|null=entry
+        while (cursor && parsed.links.has(cursor) && !checked.has(cursor)) {
+          if (branch.has(cursor)) { issues++; break }
+          branch.add(cursor);cursor=parsed.links.get(cursor)??null
+        }
+        for (const id of branch) checked.add(id)
+      }
       files.push(parsed)
     }
   }
   if (scan.files.length && !files.length) throw new HistoryFailure('unsupported')
   const byPath = new Map(files.map(file => [file.path, file]))
+  const byId = new Map(files.map(file => [file.id.toLowerCase(),file]))
+  for (const file of files) if (file.parent && !byPath.has(file.parent)) {
+    // Pi's native filenames encode the stable session UUID. A moved archive
+    // can retain absolute parentSession paths; resolve only to enumerated
+    // headers with that UUID, never by opening the former/outside path.
+    const id = basename(file.parent).match(/_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i)?.[1]
+    const relocated = id ? byId.get(id.toLowerCase()) : undefined
+    if (relocated) file.parent = relocated.path
+  }
   const parents = new Map<string,string>()
   function find(id: string): string {
     if (!parents.has(id)) parents.set(id,id)

@@ -44,3 +44,23 @@ test('Pi clones, missing/cyclic parent sessions, conflicts and unsupported versi
   await write(a,[{...header('A'),version:99}]);await write(b,[{type:'future'}])
   await assert.rejects(readPi(root,'all',now),{kind:'unsupported'})
 })
+
+test('relocated native absolute parents preserve dedup without reading the former root',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'localino-pi-relocated-'))
+  const id='01999999-1111-7111-8111-111111111111',name=`2026-09-16T10-00-00Z_${id}.jsonl`
+  const original=message('11111111',null)
+  await write(join(root,name),[header(id),original])
+  await write(join(root,'fork.jsonl'),[header('F',join(root,'does-not-exist',name)),original,message('22222222','11111111')])
+  const data=await readPi(root,'all',now)
+  assert.equal(data.records,2);assert.equal(data.totals.total,34);assert.equal(data.issues,0)
+})
+
+test('numeric contradictions, negative cost, aggregate overflow and internal parent cycles never look complete',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'localino-pi-invalid-')),file=join(root,'a.jsonl')
+  const large=message('11111111',null,Number.MAX_SAFE_INTEGER,0,0,0)
+  await write(file,[header('A'),large,{...large,id:'22222222',message:{...large.message,usage:{...large.message.usage,input:1,totalTokens:1,cost:{total:0}}}}])
+  let data=await readPi(root,'all',now);assert.equal(data.totals.input,null);assert.equal(data.totals.total,null);assert.equal(data.partial,true);assert.ok(data.issues>0)
+  const invalid=message('11111111','22222222',1,0,0,0);invalid.message.usage.totalTokens=99;invalid.message.usage.cost.total=-1
+  await write(file,[header('A'),invalid,message('22222222','11111111',0,0,0,0)])
+  data=await readPi(root,'all',now);assert.equal(data.totals.total,null);assert.equal(data.totals.cost,null);assert.equal(data.partial,true);assert.ok(data.issues>=3)
+})

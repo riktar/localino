@@ -19,6 +19,7 @@ export function aggregate(events: UsageEvent[], period: AgentPeriod, issues: num
   const selected = events.filter(event => (period === 'all' || event.time >= first.getTime()) && event.time < end.getTime())
   const totals = blankMetrics()
   for (const key of keys) totals[key] = selected.length ? sum(selected.map(event => event.metrics[key]), key !== 'cost') : (issues || key === 'reasoning' || key === 'cost' ? null : 0)
+  for (const key of keys) if (selected.length && totals[key] === null && selected.every(event => event.metrics[key] !== null)) issues++
   const groups = new Map<string, UsageEvent[]>()
   for (const event of selected) { const day = dayKey(event.time); const group = groups.get(day) ?? []; group.push(event); groups.set(day, group) }
   return {
