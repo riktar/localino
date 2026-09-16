@@ -72,7 +72,10 @@ export function Clipboard({captured,guard,newRequest=0,consumeNew=()=>{},active=
     notesOpen:{run:()=>changeFilter('open'),disabled:unavailable},notesCompleted:{run:()=>changeFilter('completed'),disabled:unavailable},notesAll:{run:()=>changeFilter('all'),disabled:unavailable},
   })
   const openMenu=(id?:string)=>{if(id&&!selected.includes(id))setSelected([id]);if(id||selected.length)setMenu(true)}
-  return <main className="clipboard" data-clipboard>
+  return <main className="clipboard" data-clipboard onCopy={event=>{
+    if(!active||editing||detail||!selected.length||(event.target as HTMLElement).closest('input:not([type=checkbox]):not([type=radio]),textarea,select,[contenteditable=true]'))return
+    event.preventDefault();void copy()
+  }}>
     <header className="flex shrink-0 items-center gap-1"><h2 className="mr-auto text-sm font-semibold">Clipboard</h2>
       <Button size="icon" variant="ghost" aria-label="Search and filter" title="Search and filter" onClick={()=>{setSearch(value=>!value);requestAnimationFrame(()=>searchInput.current?.focus())}}><Search/></Button>
       <Button size="icon" variant="ghost" aria-label="Selection actions" title="Selection actions" disabled={!selected.length||editing} onClick={()=>openMenu()}><Ellipsis/></Button>

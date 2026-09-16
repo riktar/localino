@@ -20,6 +20,11 @@ test('compact clipboard multiselect, exact copy, guards, context keyboard and se
     await rows.nth(0).click({button:'right'})
     await page.getByRole('menuitem',{name:'Copy all (2)',exact:true}).click()
     assert.equal(await app.evaluate(({clipboard})=>clipboard.readText()),texts[1]+'\n'+texts[0])
+    await rows.nth(0).getByRole('checkbox').focus()
+    await app.evaluate(async({BrowserWindow,clipboard})=>{await clipboard.writeText('native-copy-sentinel');BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('view=main')).webContents.copy()})
+    const copyDeadline=Date.now()+2000
+    while(Date.now()<copyDeadline&&await app.evaluate(({clipboard})=>clipboard.readText())!==texts[1]+'\n'+texts[0])await new Promise(r=>setTimeout(r,20))
+    assert.equal(await app.evaluate(({clipboard})=>clipboard.readText()),texts[1]+'\n'+texts[0],'Native Edit > Copy must copy the selected group')
     const before=await app.evaluate(({clipboard})=>clipboard.readText())
     assert.equal((await page.evaluate(()=>window.localino.copyNotes(['missing']))).ok,false)
     assert.equal(await app.evaluate(({clipboard})=>clipboard.readText()),before)
