@@ -19,7 +19,7 @@ export function useCommands(actions:Actions):void {
 }
 export function CommandProvider({children}:{children:ReactNode}):React.JSX.Element {
   const [actions,setActions]=useState<Actions>({})
-  const [state,setState]=useState<ShortcutState>({bindings:defaultBindings()})
+  const [state,setState]=useState<ShortcutState>({bindings:defaultBindings(window.localino.platform)})
   const [palette,setPalette]=useState(false)
   const register=useCallback((entries:Actions)=>{setActions(prev=>({...prev,...entries}));return ()=>setActions(prev=>{const next={...prev};for(const key of Object.keys(entries) as CommandId[])delete next[key];return next})},[])
   const run=useCallback((id:CommandId)=>{const action=actions[id];if(action&&!action.disabled)void action.run()},[actions])
@@ -32,8 +32,8 @@ export function CommandProvider({children}:{children:ReactNode}):React.JSX.Eleme
       if(target.closest('[data-binding]'))return
       const key=keyFromEvent(event);if(!key)return
       const editing=!!target.closest('input:not([type=checkbox]):not([type=radio]):not([type=button]),textarea,select,[contenteditable=true]')
-      if(editing && (/^Ctrl\+(A|C|V|X|Z|Y)$/.test(key)||['Delete','Backspace','Enter','Tab'].includes(key)))return
-      if(editing && (/^(Arrow(Left|Right|Up|Down)|Home|End|PageUp|PageDown|Backspace|Delete)$/.test(event.key)||key==='Ctrl+Space'||(!event.ctrlKey&&!event.altKey&&event.key.length===1)))return
+      if(editing && (/^(Ctrl|Cmd)\+(A|C|V|X|Z|Y)$/.test(key)||['Delete','Backspace','Enter','Tab'].includes(key)))return
+      if(editing && (/^(Arrow(Left|Right|Up|Down)|Home|End|PageUp|PageDown|Backspace|Delete)$/.test(event.key)||/^(Ctrl|Cmd)\+Space$/.test(key)||(!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key.length===1)))return
       const binding=state.bindings.find(b=>b.scope==='local'&&b.active&&b.key===key&&actions[b.id]&&!actions[b.id]?.disabled&&!(editing&&commands.find(c=>c.id===b.id)?.area==='List'))
       if(binding){event.preventDefault();run(binding.id)}
     }

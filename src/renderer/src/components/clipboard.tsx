@@ -8,7 +8,7 @@ import { useCommands } from './commands'
 import type { CapturedNote } from '../../../shared/capture'
 
 export type LeaveGuard=()=>Promise<boolean>
-export function Clipboard({captured,guard,newRequest=0,consumeNew=()=>{},active=true}:{captured?:CapturedNote|null;guard:RefObject<LeaveGuard|null>;newRequest?:number;consumeNew?:()=>void;active?:boolean}):React.JSX.Element {
+export function Clipboard({captured,guard,newRequest=0,consumeNew=()=>{},active=true,onAvailability}:{captured?:CapturedNote|null;guard:RefObject<LeaveGuard|null>;newRequest?:number;consumeNew?:()=>void;active?:boolean;onAvailability?:(reason:string|undefined)=>void}):React.JSX.Element {
   const [state,setState]=useState<NotesState|null>(null),[filter,setFilter]=useState('open'),[query,setQuery]=useState(''),[search,setSearch]=useState(false)
   const [selected,setSelected]=useState<string[]>([]),[focused,setFocused]=useState<string|null>(null),[detail,setDetail]=useState<string|null>(null)
   const [editor,setEditor]=useState<{id:string|null;original:string;updatedAt:number}|null>(null),[draft,setDraft]=useState(''),[suspended,setSuspended]=useState(false)
@@ -60,6 +60,7 @@ export function Clipboard({captured,guard,newRequest=0,consumeNew=()=>{},active=
   const newAction=useRef(()=>{});newAction.current=()=>{consumeNew();void begin()}
   useEffect(()=>{if(newRequest&&state)newAction.current()},[newRequest,state])
   const editing=!!editor&&!suspended,unavailable=!active?'Open Clipboard first.':!state||state.error?'Library unavailable.':busy?'Working…':undefined
+  useEffect(()=>{onAvailability?.(!state||state.error?'Library unavailable.':busy?'Working...':undefined)},[state,busy,onAvailability])
   const listDisabled=unavailable??(editing?'Close the editor first.':undefined)
   useCommands({search:{run:()=>{setSearch(true);requestAnimationFrame(()=>searchInput.current?.focus())},disabled:unavailable},
     edit:{run:()=>begin(focusedNote),disabled:listDisabled??(!focusedNote?'Focus a note.':undefined)},copy:{run:copy,disabled:listDisabled??(!selected.length?'Select notes.':undefined)},

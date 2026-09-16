@@ -11,7 +11,7 @@ createInterface({input:process.stdin}).on('line',line=>{
   if(line==='enable'||line==='disable')send({type:'status',enabled:line==='enable',error:''})
   else if(line==='capture'){
     if(active){send({type:'raise'});return}active=true;id++;send({type:'begin',id})
-    let empty=false;try{empty=readFileSync(join(dirname(fileURLToPath(import.meta.url)),'mode.txt'),'utf8')==='empty'}catch{}
+    let empty=false;try{empty=readFileSync(join(dirname(fileURLToPath(import.meta.url)),'mode.txt'),'utf8')==='empty'}catch{/* The isolated test process may already be gone. */}
     send({type:'result',id,text:empty?'':'Prova Localino 🌱\nSeconda riga è 漢字',reason:empty?'empty':'ok',ms:5})
   }else if(line.startsWith('visible:'))send({type:'timing',id,ms:42})
   else if(line==='cancel'||line==='finish')active=false

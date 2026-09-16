@@ -4,7 +4,7 @@ import { _electron as electron } from 'playwright'
 import { mkdir,mkdtemp,readFile,writeFile,appendFile } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { join,resolve } from 'node:path'
-import { mainPage } from './helpers.mjs'
+import {mainPage,panelPage,packagedExecutable} from './helpers.mjs'
 
 test('Claude real worker, UI, source switching, privacy and large archive responsiveness',async()=>{
   await mkdir('test-results/profiles',{recursive:true})
@@ -16,7 +16,7 @@ test('Claude real worker, UI, source switching, privacy and large archive respon
   await writeFile(file,original)
   const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;delete env.ELECTRON_RENDERER_URL
   const packaged=process.env.LOCALINO_TEST_PACKAGED==='1'
-  const app=await electron.launch({...(packaged?{executablePath:resolve('dist/win-unpacked/Localino.exe'),args:[`--user-data-dir=${root}`]}:{args:['.',`--user-data-dir=${root}`]}),env})
+  const app=await electron.launch({...(packaged?{executablePath:packagedExecutable(),args:[`--user-data-dir=${root}`]}:{args:['.',`--user-data-dir=${root}`]}),env})
   try{
     const page=await mainPage(app)
     await app.evaluate(({dialog})=>{globalThis.mainErrors=[];dialog.showErrorBox=(title,content)=>{globalThis.mainErrors.push({title,content})}})
@@ -28,9 +28,10 @@ test('Claude real worker, UI, source switching, privacy and large archive respon
     }
     const selectSource=async path=>{
       await app.evaluate(({dialog},path)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[path]})},path)
-      await page.getByRole('button',{name:'Seleziona cartella',exact:true}).click()
+      await page.getByRole('button',{name:'Choose source',exact:true}).click()
       await waitHistory(state=>state.source===path)
     }
+    await page.getByText('Connection',{exact:true}).click()
     await selectSource(source)
     await waitHistory(state=>!state.refreshing&&state.data!==null)
     let state=await page.evaluate(()=>window.localino.getHistory('claude'))
@@ -39,11 +40,11 @@ test('Claude real worker, UI, source switching, privacy and large archive respon
     assert.ok(Date.now()-state.lastSuccessAt<1000)
     assert.equal(JSON.stringify(state).includes('PRIVATE-CONTENT-SENTINEL'),false)
     assert.equal(await readFile(file,'utf8'),original)
-    await page.getByRole('button',{name:'Apri tabella giornaliera'}).click();assert.match(await page.getByRole('table').innerText(),/107/)
-    await page.getByLabel('Periodo',{exact:true}).selectOption('all')
+    await page.getByRole('button',{name:'Open daily table'}).click();assert.match(await page.getByRole('table').innerText(),/107/)
+    await page.getByLabel('Period',{exact:true}).selectOption('all')
     await waitHistory(state=>state.data?.period==='all')
     await selectSource(join(root,'missing'))
-    await page.getByRole('alert').filter({hasText:'La sorgente non esiste'}).waitFor()
+    await page.getByRole('alert').filter({hasText:'Source missing'}).waitFor()
     state=await page.evaluate(()=>window.localino.getHistory('claude'));assert.equal(state.data,null)
     await selectSource(source)
     await waitHistory(state=>state.data?.totals.input===107)
@@ -57,22 +58,22 @@ test('Claude real worker, UI, source switching, privacy and large archive respon
     const hash=buffer=>createHash('sha256').update(buffer).digest('hex')
     const before=hash(await readFile(largeFile))
     const start=Date.now();await selectSource(large)
-    await page.getByRole('navigation').getByRole('button',{name:'Home',exact:true}).click()
-    await page.getByRole('heading',{name:'Benvenuto in Localino'}).waitFor()
+    await page.getByRole('button',{name:'Back to panel',exact:true}).click()
+    await (await panelPage(app)).getByRole('heading',{name:'Localino',exact:true}).waitFor()
     assert.ok(Date.now()-start<1000,'navigation must remain responsive during parsing')
-    await page.evaluate(()=>window.localino.navigate('consumi'))
+    await page.evaluate(()=>window.localino.navigate('usage'))
     const readStart=Date.now()
     await waitHistory(state=>state.data?.records===100000)
     state=await page.evaluate(()=>window.localino.getHistory('claude'));assert.equal(state.data.totals.input,100000)
     assert.ok(Date.now()-readStart<15000)
     assert.equal(hash(await readFile(largeFile)),before)
-    await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('view=main')).setSize(800,600))
+    await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('view=usage')).setSize(800,600))
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
     console.log(JSON.stringify({archiveRecords:100000,bytes:(await readFile(largeFile)).length,readAndRenderMs:Date.now()-readStart,packaged}))
-    await page.getByRole('button',{name:'Scollega da Localino',exact:true}).click()
+    await page.getByRole('button',{name:'Disconnect',exact:true}).click()
     await waitHistory(state=>state.data===null)
     // A hidden panel may already be destroyed when hide/closed fires during exit.
-    await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>!w.webContents.getURL().includes('view=main')).destroy())
+    await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('view=main')).destroy())
     await page.evaluate(()=>window.localino.hide())
     assert.deepEqual(await app.evaluate(()=>globalThis.mainErrors),[])
   }finally{await app.close()}

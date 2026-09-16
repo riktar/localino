@@ -1,3 +1,4 @@
+import {waitFor} from './helpers.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { _electron as electron } from 'playwright'
@@ -35,7 +36,7 @@ test('compact clipboard multiselect, exact copy, guards, context keyboard and se
     assert.equal(await editor.inputValue(),'draft kept 🌱')
     assert.equal(await editor.evaluate(el=>document.activeElement===el),true)
     await page.getByRole('button',{name:'Save',exact:true}).click()
-    await page.waitForFunction(async()=>(await window.localino.getNotes()).notes.length===3)
+    await waitFor(page,async()=>(await window.localino.getNotes()).notes.length===3)
     for(let i=0;i<15;i++)await page.evaluate(i=>window.localino.mutateNote({kind:'create',text:'Scroll item '+i}),i)
     await page.locator('.note-list').evaluate(el=>{el.scrollTop=200})
     const scroll=await page.locator('.note-list').evaluate(el=>el.scrollTop)

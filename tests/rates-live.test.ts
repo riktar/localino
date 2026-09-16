@@ -16,8 +16,9 @@ test('Real quotas agree with contemporary Codex reading, render promptly and pol
   const app=await electron.launch({args:['.',`--user-data-dir=${profile}`],env})
   try {
     const page=await compactPage(app)
-    await page.getByRole('button',{name:'Collega Codex',exact:true}).click()
+    await page.getByRole('button',{name:'Connect',exact:true}).click()
     await page.getByRole('progressbar').first().waitFor()
+    await page.locator('.agent-summary details summary').first().click()
     await app.evaluate(({Tray})=>{
       const context=globalThis as typeof globalThis & {localinoTrayUpdates:number[]}
       context.localinoTrayUpdates=[]
@@ -34,7 +35,7 @@ test('Real quotas agree with contemporary Codex reading, render promptly and pol
     assert.ok(trayAt!==undefined&&trayAt-snapshot.lastSuccessAt!<=2000)
     for(const b of snapshot.data!.buckets) for(const w of b.windows) {
       const view=page.locator('[data-bucket]').filter({has:page.getByRole('heading',{name:b.name,exact:true})}).locator(`[data-window="${w.kind}"]`)
-      assert.ok((await view.innerText()).includes(w.usedPercent===null?'Non disponibile':`${w.usedPercent}% utilizzato`))
+      assert.ok((await view.innerText()).includes(w.usedPercent===null?'Unavailable':`${w.usedPercent}% used`))
     }
     const after=normalizeQuotas(await probe.request('account/rateLimits/read'))
     assert.deepEqual(snapshot.data!.buckets.map(b=>b.id),after.buckets.map(b=>b.id))
@@ -47,7 +48,7 @@ test('Real quotas agree with contemporary Codex reading, render promptly and pol
       const resetDeltaMs=w.resetsAt!==null&&z?.resetsAt!==null&&z?.resetsAt!==undefined?z.resetsAt-w.resetsAt:null
       return {id:b.id,kind:w.kind,usedPercent:w.usedPercent,durationMins:w.durationMins,resetDeltaMs}
     }))
-    await page.getByRole('button',{name:'Riduci nella barra'}).click()
+    await page.getByRole('button',{name:'Hide panel'}).click()
     const deadline=snapshot.lastSuccessAt!+62500
     const observedReadTimes:number[]=[]
     let hidden=await page.evaluate(()=>window.localino.getQuotas())
@@ -56,7 +57,7 @@ test('Real quotas agree with contemporary Codex reading, render promptly and pol
       hidden=await page.evaluate(()=>window.localino.getQuotas())
       if(hidden.lastSuccessAt!==null&&!observedReadTimes.includes(hidden.lastSuccessAt)) observedReadTimes.push(hidden.lastSuccessAt)
     }
-    assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>!w.webContents.getURL().includes('view=main')).isVisible()),false)
+    assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('view=main')).isVisible()),false)
     const gap=hidden.lastSuccessAt!-snapshot.lastSuccessAt!
     assert.ok(gap>=59000&&gap<70000,`hidden polling gap: ${gap} ms`)
     await writeFile('test-results/rates-live.json',JSON.stringify({observedAt:new Date().toISOString(),receivedAt:snapshot.lastSuccessAt,renderedAt,responseToRenderMs:renderedAt-snapshot.lastSuccessAt!,responseToTrayCallMs:trayAt!-snapshot.lastSuccessAt!,trayMeasurement:'actual native setToolTip call; OS paint not timed',hiddenPollGapMs:gap,observedReadTimes,comparisons},null,2))

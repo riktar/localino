@@ -21,6 +21,7 @@ function PanelContent(): React.JSX.Element {
   const [captured,setCaptured]=useState<CapturedNote|null>(null)
   const [capture,setCapture]=useState<CaptureDraft|null>(null)
   const [newRequest,setNewRequest]=useState(0)
+  const [newDisabled,setNewDisabled]=useState<string|undefined>('Library unavailable.')
   const settingsButton=useRef<HTMLButtonElement>(null)
   useEffect(()=>{
     const off=window.localino.onNavigate(next=>{setDestination(next);if(next==='panel')requestAnimationFrame(()=>settingsButton.current?.focus())})
@@ -42,10 +43,10 @@ function PanelContent(): React.JSX.Element {
   }),[])
   useEffect(()=>window.localino.onCommand(registry.run),[registry.run])
   useCommands({
-    home:{run:()=>window.localino.navigate('panel')},panel:{run:()=>window.localino.openPanel()},
-    consumi:{run:()=>window.localino.openDashboard()},clipboard:{run:()=>window.localino.navigate('panel')},
+    localino:{run:()=>window.localino.navigate('panel')},panel:{run:()=>window.localino.openPanel()},
+    advancedUsage:{run:()=>window.localino.openDashboard()},clipboard:{run:async()=>{if(await window.localino.navigate('panel'))requestAnimationFrame(()=>document.querySelector<HTMLElement>('[data-note-id] input, [data-clipboard] button[aria-label="New note"]')?.focus())}},
     shortcuts:{run:()=>window.localino.navigate('settings')},palette:{run:registry.open},
-    new:{run:async()=>{if(await window.localino.navigate('panel'))setNewRequest(n=>n+1)}},
+    new:{run:async()=>{if(await window.localino.navigate('panel'))setNewRequest(n=>n+1)},disabled:capture?'Finish capture first.':newDisabled},
     hide:{run:()=>window.localino.hide()},quit:{run:()=>window.localino.quit()},capture:{run:()=>window.localino.requestCapture()},
     closeSettings:{run:()=>window.localino.navigate('panel'),disabled:destination!=='settings'?'Open settings first.':undefined},
   })
@@ -62,9 +63,9 @@ function PanelContent(): React.JSX.Element {
       </div>
     </header>
     <div className="panel-content" hidden={recovering}>
-      <section hidden={destination==='settings'} className="panel-home">
+      <section hidden={destination==='settings'} className="panel-root">
         <AgentSummary/>
-        <Clipboard active={destination==='panel'&&!recovering} captured={captured} guard={guard} newRequest={newRequest} consumeNew={()=>setNewRequest(0)}/>
+        <Clipboard onAvailability={setNewDisabled} active={destination==='panel'&&!recovering} captured={captured} guard={guard} newRequest={newRequest} consumeNew={()=>setNewRequest(0)}/>
       </section>
       <div hidden={destination!=='settings'} className="panel-settings">{destination==='settings'&&<PanelSettings/>}</div>
     </div>
@@ -76,7 +77,7 @@ export function UsageWindow(): React.JSX.Element {
 }
 function UsageContent(): React.JSX.Element {
   const registry=useCommandRegistry()!
-  useCommands({home:{run:()=>window.localino.openPanel()},panel:{run:()=>window.localino.openPanel()},clipboard:{run:()=>window.localino.openPanel()},
+  useCommands({localino:{run:()=>window.localino.openPanel()},panel:{run:()=>window.localino.openPanel()},clipboard:{run:()=>window.localino.openPanel()},
     shortcuts:{run:()=>window.localino.navigate('settings')},new:{run:()=>window.localino.requestCommand('new')},
     palette:{run:registry.open},hide:{run:()=>window.localino.hide()},quit:{run:()=>window.localino.quit()},capture:{run:()=>window.localino.requestCapture()}})
   return <><header className="panel-header"><Button variant="ghost" onClick={()=>void window.localino.openPanel()}><ArrowLeft/>Back to panel</Button><Button className="ml-auto" variant="ghost" onClick={registry.open}>Commands</Button></header><AgentCommands/><AgentDashboard/></>

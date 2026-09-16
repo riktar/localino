@@ -8,6 +8,25 @@ Use macOS 13 or later ([Electron 44 platform support](https://www.electronjs.org
 
 Use a dedicated test account or a disposable Localino profile. Use synthetic notes and selections; do not attach account credentials, raw agent session logs or private selections to the report. Agent connections are opt-in.
 
+## Build and automated checks
+
+From the repository root, run these commands and retain their exit codes:
+
+```sh
+npm ci
+npm run check
+npm run build:mac
+npm run test:packaged
+```
+
+`build:mac` targets the host architecture. To prepare another target, use `npm run build:mac:arm64` or `npm run build:mac:x64`. Each command rebuilds both native helpers for that architecture before packaging the app. Do not combine outputs from separate builds. Artifacts are ZIP and DMG files in `dist/`; the unpacked app is in `dist/mac-arm64` (arm64) or `dist/mac` (x64).
+
+For a non-host artifact set `LOCALINO_TEST_EXECUTABLE` to its full `Localino.app/Contents/MacOS/Localino` path before running `test:packaged`. Execute both architectures on compatible hardware; an x64 run under Rosetta must be identified as such. Record an unavailable native architecture as pending.
+
+The default signing identity is ad hoc (`-`), intended for this local verification. Check `codesign --verify --deep --strict --verbose=2 dist/mac-arm64/Localino.app` (use `dist/mac` for x64). These builds are not notarized. Public signing and notarization require a separate configured identity and are not demonstrated by an ad hoc signature. Record any Gatekeeper or permission issue; do not remove quarantine or disable platform protection to manufacture a passing result.
+
+Automated capture fixtures test Localino's protocol and recovery. They do not test Accessibility access or physical double-Shift detection in another app. Complete the native checks below on the installed bundle.
+
 ## Required desktop checks
 
 - Open Localino. Only the compact panel appears. Open it again from the menu bar and a second app launch; confirm there is no duplicate panel.
@@ -31,6 +50,7 @@ Use TextEdit, a Chromium text field and VS Code (`editor.accessibilitySupport: o
 - Select synthetic text and press/release Shift twice within 350 ms. Exact text saves once, appears newest first and receives focus in the panel. Measure acquisition and presentation from capture Details.
 - A single Shift, held/repeated Shift, two simultaneous Shift keys, Shift plus a letter/modifier, slow taps and injected events must not capture. Disabling the gesture must stop detection.
 - Test empty selection, inaccessible/custom controls, a password field, text above 100,000 characters and a foreground-app change during acquisition. Do not fall back to reading the entire control, clipboard substitution or keystroke injection. Show editable recovery when needed.
+- During acquisition, switch between two windows of the same application and between two controls in the same window. A changed focus, window or selection must discard the stale result and open recovery; matching only the application PID is insufficient.
 - Keep an unsaved manual draft, then capture text externally. The captured note is saved and the manual draft can be resumed intact. Repeat rapidly: no duplicate save or lost draft.
 - Recovery: Save, failed save, Cancel, Hide, Quit and Escape inside confirmation. On cancellation the original application is restored where the OS permits; failed focus must not silently imply success.
 - Suspend/resume, terminate the test helper, retry and quit. Confirm workers time out and no owned helper remains after quit. Do not terminate unrelated processes.

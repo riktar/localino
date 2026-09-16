@@ -12,18 +12,18 @@ export async function desktopSmoke(packaged = false, rendererUrl = null) {
   const profile = await mkdtemp(resolve('test-results/profiles/smoke-'))
   const instance = await electron.launch({
     ...(packaged
-      ? { executablePath: resolve('dist/win-unpacked/Localino.exe'), args: [`--user-data-dir=${profile}`] }
+      ? { executablePath: packagedExecutable(), args: [`--user-data-dir=${profile}`] }
       : { args: ['.', `--user-data-dir=${profile}`] }),
     env,
     timeout: 30_000,
   })
   try {
     await instance.firstWindow()
-    const page = await mainPage(instance)
+    const page = await panelPage(instance)
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
-    await page.getByRole('heading', { name: 'Benvenuto in Localino', exact: true }).waitFor()
-    assert.equal(await page.getByRole('button', { name: 'Apri Clipboard', exact: true }).count(), 1)
+    await page.getByRole('heading', { name: 'Localino', exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: 'New note', exact: true }).count(), 1)
     assert.equal(await page.evaluate(() => typeof window.localino?.hide), 'function')
     assert.equal(await page.evaluate(() => typeof window.require), 'undefined')
     assert.equal(await page.evaluate(() => typeof window.process), 'undefined')
@@ -37,7 +37,7 @@ export async function desktopSmoke(packaged = false, rendererUrl = null) {
     assert.equal(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight), true)
     await mkdir('test-results', { recursive: true })
     await page.screenshot({ path: `test-results/${packaged ? 'packaged' : rendererUrl ? 'development' : 'desktop'}.png` })
-    await page.getByRole('button', { name: 'Riduci nella barra' }).click()
+    await page.getByRole('button', { name: 'Hide panel' }).click()
     // The renderer and main process run independently; wait for the IPC side effect.
     await instance.evaluate(async ({ BrowserWindow }) => {
       const window = BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('view=main'))
@@ -48,7 +48,7 @@ export async function desktopSmoke(packaged = false, rendererUrl = null) {
     assert.equal(await instance.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('view=main')).isVisible()), true)
     await instance.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('view=main')).close() })
     assert.equal(await instance.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('view=main')).isVisible()), false)
-    assert.equal(await instance.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 2)
+    assert.equal(await instance.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1)
     await instance.evaluate(({ app }) => { app.emit('activate') })
     assert.deepEqual(errors, [])
   } finally {
@@ -56,24 +56,24 @@ export async function desktopSmoke(packaged = false, rendererUrl = null) {
   }
 }
 
-export async function mainPage(instance) {
-  await instance.firstWindow()
-  const deadline = Date.now() + 15000
-  while (Date.now() < deadline) {
-    const page = instance.windows().find(p => p.url().includes('view=main'))
-    if (page) { await page.locator('nav[aria-label="Navigazione principale"]').waitFor(); return page }
-    await new Promise(resolve => setTimeout(resolve, 50))
-  }
-  throw new Error('Main window not available')
+export function packagedExecutable() {
+  return resolve(process.env.LOCALINO_TEST_EXECUTABLE || (process.platform==='darwin' ? 'dist/'+(process.arch==='arm64'?'mac-arm64':'mac')+'/Localino.app/Contents/MacOS/Localino' : 'dist/win-unpacked/Localino.exe'))
 }
-
-export async function compactPage(instance) {
-  await mainPage(instance)
-  await instance.evaluate(({BrowserWindow}) => {
-    const panel = BrowserWindow.getAllWindows().find(w => !w.webContents.getURL().includes('view=main'))
-    panel.show(); panel.focus()
-  })
-  const page = instance.windows().find(p => !p.url().includes('view=main'))
-  await page.getByRole('button', { name: 'Apri dashboard', exact: true }).waitFor()
+export async function panelPage(instance) {
+  await instance.firstWindow()
+  const page=instance.windows().find(p=>p.url().includes('view=main'))??await instance.firstWindow()
+  page.setDefaultTimeout(7000)
+  await page.locator('[data-destination]').waitFor()
   return page
 }
+export async function mainPage(instance) {
+  const panel=await panelPage(instance)
+  await panel.evaluate(()=>window.localino.openDashboard())
+  const page=instance.windows().find(p=>p.url().includes('view=usage'))
+  if(!page)throw Error('Usage window unavailable')
+  page.setDefaultTimeout(7000)
+  await page.getByRole('button',{name:'Back to panel',exact:true}).waitFor()
+  return page
+}
+export const compactPage=panelPage
+export async function waitFor(page,predicate,timeout=7000){const end=Date.now()+timeout;while(Date.now()<end){if(await page.evaluate(predicate))return;await new Promise(r=>setTimeout(r,20))}throw Error('Condition timed out')}

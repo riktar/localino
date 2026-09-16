@@ -3,8 +3,8 @@ export const commands = [
   {id:'selectClaude',label:'Select Claude Code',area:'App',local:'',global:''},
   {id:'selectPi',label:'Select Pi',area:'App',local:'',global:''},
   {id:'selectOpenCode',label:'Select OpenCode',area:'App',local:'',global:''},
-  {id:'home',label:'Open Localino',area:'App',local:'Ctrl+1',global:'Ctrl+Alt+L'},
-  {id:'consumi',label:'Advanced usage',area:'App',local:'Ctrl+2',global:'Ctrl+Alt+U'},
+  {id:'localino',label:'Open Localino',area:'App',local:'Ctrl+1',global:'Ctrl+Alt+L'},
+  {id:'advancedUsage',label:'Advanced usage',area:'App',local:'Ctrl+2',global:'Ctrl+Alt+U'},
   {id:'clipboard',label:'Open Clipboard',area:'App',local:'Ctrl+3',global:'Ctrl+Alt+C'},
   {id:'palette',label:'Commands',area:'App',local:'Ctrl+K'},
   {id:'shortcuts',label:'Settings',area:'App',local:'Ctrl+Comma'},
@@ -43,27 +43,27 @@ export interface Binding {id:CommandId;scope:Scope;key:string;active:boolean;err
 export interface ShortcutState {bindings:Binding[];error?:string}
 export type ShortcutResult = {ok:boolean;state:ShortcutState;error?:string}
 export const isCommand = (id:unknown):id is CommandId => commands.some(c=>c.id===id)
-export function defaultBindings():Binding[] {
-  return commands.flatMap(c=>[{id:c.id,scope:'local' as const,key:c.local,active:!!c.local},...('global' in c ? [{id:c.id,scope:'global' as const,key:c.global,active:false}] : [])])
+export function defaultBindings(platform:string='win32'):Binding[] {
+  return commands.flatMap(c=>[{id:c.id,scope:'local' as const,key:c.local,active:!!c.local},...('global' in c ? [{id:c.id,scope:'global' as const,key:c.global,active:false}] : [])]).map(b=>({...b,key:platform==='darwin'?b.key.replace('Ctrl+','Cmd+'):b.key}))
 }
 export function canonicalKey(value:unknown):string|null {
   if (typeof value!=='string' || value.length>80) return null
   if (!value.trim()) return ''
   const parts=value.trim().split('+').map(p=>p.trim().toLowerCase())
-  const aliases:Record<string,string>={control:'Ctrl',ctrl:'Ctrl',alt:'Alt',shift:'Shift',esc:'Escape',escape:'Escape',enter:'Enter',return:'Enter',delete:'Delete',backspace:'Backspace',tab:'Tab',space:'Space',comma:'Comma',',':'Comma',period:'Period','.':'Period',home:'Home',end:'End',up:'Up',down:'Down',left:'Left',right:'Right',pageup:'PageUp',pagedown:'PageDown'}
+  const aliases:Record<string,string>={control:'Ctrl',ctrl:'Ctrl',cmd:'Cmd',command:'Cmd',meta:'Cmd',alt:'Alt',shift:'Shift',esc:'Escape',escape:'Escape',enter:'Enter',return:'Enter',delete:'Delete',backspace:'Backspace',tab:'Tab',space:'Space',comma:'Comma',',':'Comma',period:'Period','.':'Period',home:'Home',end:'End',up:'Up',down:'Down',left:'Left',right:'Right',pageup:'PageUp',pagedown:'PageDown'}
   const keyPart=parts.pop()!;const key=aliases[keyPart] ?? (/^[a-z0-9]$/.test(keyPart) || /^f([1-9]|1[0-9]|2[0-4])$/.test(keyPart) ? keyPart.toUpperCase():null)
-  if(!key || ['Ctrl','Alt','Shift'].includes(key))return null
-  const mods=parts.map(p=>aliases[p]);if(mods.some(m=>!['Ctrl','Alt','Shift'].includes(m))||new Set(mods).size!==mods.length)return null
+  if(!key || ['Ctrl','Cmd','Alt','Shift'].includes(key))return null
+  const mods=parts.map(p=>aliases[p]);if(mods.some(m=>!['Ctrl','Cmd','Alt','Shift'].includes(m))||new Set(mods).size!==mods.length)return null
   if (!mods.length && !/^(F\d+|Escape|Delete)$/.test(key))return null
-  return [...['Ctrl','Alt','Shift'].filter(m=>mods.includes(m)),key].join('+')
+  return [...['Ctrl','Cmd','Alt','Shift'].filter(m=>mods.includes(m)),key].join('+')
 }
 export function bindingsError(bindings:Binding[]):string|null {
   for(const b of bindings){
     if(!b.key)continue
     if(canonicalKey(b.key)!==b.key)return 'Invalid format.'
-    if(b.scope==='global' && !b.key.includes('Ctrl+') && !b.key.includes('Alt+'))return 'A global shortcut requires Ctrl, Cmd or Alt.'
+    if(b.scope==='global' && !b.key.includes('Ctrl+') && !b.key.includes('Cmd+') && !b.key.includes('Alt+'))return 'A global shortcut requires Ctrl, Cmd or Alt.'
     // Standard editing remains available in text fields, including user-defined shortcuts.
-    if(b.scope==='global' && /^(Ctrl\+(A|C|V|X|Z|Y|F)|Delete|Backspace)$/.test(b.key))return 'Reserved for text editing.'
+    if(b.scope==='global' && /^((Ctrl|Cmd)\+(A|C|V|X|Z|Y|F)|Delete|Backspace)$/.test(b.key))return 'Reserved for text editing.'
     const area=commands.find(c=>c.id===b.id)!.area
     const conflict=bindings.find(other=>other!==b && other.key===b.key && (b.scope==='global'||other.scope==='global'||area===commands.find(c=>c.id===other.id)!.area||area==='App'||commands.find(c=>c.id===other.id)!.area==='App'||(area==='Clipboard'&&['List','Editor'].includes(commands.find(c=>c.id===other.id)!.area))||(commands.find(c=>c.id===other.id)!.area==='Clipboard'&&['List','Editor'].includes(area))))
     if(conflict)return `Conflicts with ${commands.find(c=>c.id===conflict.id)!.label} (${conflict.scope==='global'?'global':'local'}).`
@@ -71,9 +71,8 @@ export function bindingsError(bindings:Binding[]):string|null {
   return null
 }
 export function keyFromEvent(e:Pick<KeyboardEvent,'key'|'ctrlKey'|'altKey'|'shiftKey'|'metaKey'> & {code?:string}):string|null {
-  if(e.metaKey)return null
   const named:Record<string,string>={' ':'Space',ArrowLeft:'Left',ArrowRight:'Right',ArrowUp:'Up',ArrowDown:'Down'}
   const punctuation:Record<string,string>={Comma:'Comma',Period:'Period'}
   const key=e.code&&/^Digit[0-9]$/.test(e.code)?e.code.slice(5):(e.code&&punctuation[e.code])||named[e.key]||e.key
-  return canonicalKey([...(e.ctrlKey?['Ctrl']:[]),...(e.altKey?['Alt']:[]),...(e.shiftKey?['Shift']:[]),key].join('+'))
+  return canonicalKey([...(e.ctrlKey?['Ctrl']:[]),...(e.metaKey?['Cmd']:[]),...(e.altKey?['Alt']:[]),...(e.shiftKey?['Shift']:[]),key].join('+'))
 }

@@ -65,8 +65,9 @@ let actionSequence = 0
 let pendingAction: ActionRequest | null = null
 let resolvePendingAction: ((proceed:boolean)=>void) | null = null
 const shortcuts = new Shortcuts(join(app.getPath('userData'),'shortcuts.json'),globalShortcut,id=>{
-  if(id==='home'||id==='clipboard')void showMain('panel')
-  if(id==='consumi')void showMain('usage')
+  if(id==='localino')void showMain('panel')
+  if(id==='clipboard')void showMain('panel').then(accepted=>{if(accepted)panel?.webContents.send('localino:command','clipboard')})
+  if(id==='advancedUsage')void showMain('usage')
   if(id==='capture')capture.request()
   const selected = ({selectCodex:'codex', selectClaude:'claude', selectPi:'pi', selectOpenCode:'opencode'} as Record<string, AgentId>)[id]
   if(selected){void selectAgent(selected);showPanel()}
@@ -252,7 +253,10 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     app.setAppUserModelId('app.localino.desktop')
-    Menu.setApplicationMenu(null)
+    Menu.setApplicationMenu(process.platform==='darwin'?Menu.buildFromTemplate([
+      {label:'Localino',submenu:[{label:'Hide Localino',accelerator:'Cmd+H',click:()=>{if(panel)hideWindow(panel)}},{type:'separator'},{label:'Quit Localino',accelerator:'Cmd+Q',click:()=>app.quit()}]},
+      {label:'Edit',submenu:[{role:'undo'},{role:'redo'},{type:'separator'},{role:'cut'},{role:'copy'},{role:'paste'},{role:'selectAll'}]},
+    ]):null)
     panel = new BrowserWindow({
       width: 420,
       height: 640,
