@@ -3,12 +3,13 @@ import assert from 'node:assert/strict'
 import { _electron as electron } from 'playwright'
 import { mkdir,mkdtemp,readFile,writeFile,rmdir } from 'node:fs/promises'
 import { resolve,join } from 'node:path'
-import { panelPage as mainPage } from './helpers.mjs'
+import { panelPage as mainPage, waitFor } from './helpers.mjs'
 
 test('Clipboard exact text, search, copy, completion, guarded navigation/close, deletion and restart',async()=>{
   await mkdir('test-results/profiles',{recursive:true})
   const profile=await mkdtemp(resolve('test-results/profiles/clipboard-'))
   const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;delete env.ELECTRON_RENDERER_URL
+  const close=async instance=>{const timer=setTimeout(()=>instance.process().kill(),3000);try{await instance.close()}finally{clearTimeout(timer)}}
   const launch=()=>electron.launch({args:['.',`--user-data-dir=${profile}`],env})
   let app=await launch()
   try {
@@ -20,6 +21,7 @@ test('Clipboard exact text, search, copy, completion, guarded navigation/close, 
     await page.getByRole('button',{name:'Settings',exact:true}).click()
     await page.getByRole('dialog').getByRole('button',{name:'Stay',exact:true}).click()
     assert.equal(await editor.inputValue(),text)
+    await waitFor(page,()=>document.activeElement?.getAttribute('aria-label')==='Note text')
     assert.equal(await editor.evaluate(e=>document.activeElement===e),true)
     await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('view=main')).close())
     await page.getByRole('dialog').getByRole('button',{name:'Stay',exact:true}).click()
@@ -49,7 +51,7 @@ test('Clipboard exact text, search, copy, completion, guarded navigation/close, 
     await page.getByRole('button',{name:'Settings',exact:true}).click()
     await page.getByRole('dialog').getByRole('button',{name:'Save',exact:true}).click()
     await page.getByRole('heading',{name:'Settings',exact:true}).waitFor()
-    await app.close();app=await launch();page=await mainPage(app)
+    await close(app);app=await launch();page=await mainPage(app)
     await page.getByRole('button',{name:/^Read note:/}).click()
     assert.equal(await page.locator('[data-note-text]').textContent(),text+' aggiornato')
     const persisted=JSON.parse(await readFile(join(profile,'notes.json'),'utf8'))
@@ -62,7 +64,7 @@ test('Clipboard exact text, search, copy, completion, guarded navigation/close, 
     await page.getByRole('dialog').getByRole('button',{name:'Delete',exact:true}).click()
     await page.getByText('Deleted.',{exact:true}).waitFor()
     assert.equal(JSON.parse(await readFile(join(profile,'notes.json'),'utf8')).notes.length,0)
-  } finally {await app.close()}
+  } finally {await close(app)}
 })
 
 test('1000 notes search within 500ms, Unicode edit, minimum layout and oversized recoverable draft',async()=>{
