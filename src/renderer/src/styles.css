@@ -51,3 +51,7 @@
 .panel-content { flex: 1; min-height: 0; overflow: auto; }
 .panel-home { display: flex; flex-direction: column; height: 100%; }
 .agent-summary { margin: .75rem; border: 1px solid var(--border); border-radius: 1rem; background: var(--card); flex-shrink: 0; }
+
+.agent-summary {padding:.75rem;}
+.settings-section {border:1px solid var(--border);border-radius:.75rem;padding:.75rem;font-size:.875rem;}
+.settings-section > summary {cursor:pointer;font-weight:500;}

@@ -35,27 +35,27 @@ export function normalizeQuotas(value: unknown): Quotas {
 }
 
 export function durationLabel(minutes: number | null): string {
-  if (minutes === null) return 'Durata non disponibile'
-  if (minutes % 1440 === 0) return `${minutes / 1440} giorni`
-  if (minutes % 60 === 0) return `${minutes / 60} ore`
-  return `${minutes} minuti`
+  if (minutes === null) return 'Unknown duration'
+  if (minutes % 1440 === 0) return `${minutes / 1440} days`
+  if (minutes % 60 === 0) return `${minutes / 60} hours`
+  return `${minutes} minutes`
 }
 export function countdown(timestamp: number, now: number): string {
   const minutes = Math.ceil((timestamp - now) / 60_000)
-  if (minutes <= 0) return 'Reset da verificare'
-  if (minutes < 60) return `tra ${minutes} min`
-  if (minutes < 1440) return `tra ${Math.floor(minutes / 60)} h ${minutes % 60} min`
-  return `tra ${Math.floor(minutes / 1440)} g ${Math.floor(minutes % 1440 / 60)} h`
+  if (minutes <= 0) return 'Reset needs verification'
+  if (minutes < 60) return `in ${minutes} min`
+  if (minutes < 1440) return `in ${Math.floor(minutes / 60)} h ${minutes % 60} min`
+  return `in ${Math.floor(minutes / 1440)} d ${Math.floor(minutes % 1440 / 60)} h`
 }
 export const quotaResets = (data: Quotas): number[] => data.buckets.flatMap(b => b.windows.flatMap(w => w.resetsAt === null ? [] : [w.resetsAt]))
 export function freshness<T>(state: ResourceState<T>): string {
-  if (state.stale && state.data !== null) return 'Non aggiornato'
-  if (state.error) return 'Non disponibile'
-  if (state.refreshing && state.lastSuccessAt === null) return 'Lettura in corso'
-  return state.lastSuccessAt === null ? 'In attesa' : 'Aggiornato'
+  if (state.stale && state.data !== null) return 'Stale'
+  if (state.error) return 'Unavailable'
+  if (state.refreshing && state.lastSuccessAt === null) return 'Refreshing'
+  return state.lastSuccessAt === null ? 'Waiting' : 'Updated'
 }
 export function quotaSummary(state: ResourceState<Quotas>): string {
   const bucket = state.data?.buckets.find(b => b.id === 'codex') ?? state.data?.buckets[0]
-  if (!bucket) return 'Quote non disponibili'
-  return `${bucket.name}: ${bucket.windows.map(w => `${durationLabel(w.durationMins)} ${w.usedPercent === null ? 'non disponibile' : `${Math.max(0,100-w.usedPercent)}% rimanente`}`).join(' · ') || 'finestre non disponibili'}`
+  if (!bucket) return 'Quotas unavailable'
+  return `${bucket.name}: ${bucket.windows.map(w => `${durationLabel(w.durationMins)} ${w.usedPercent === null ? 'unavailable' : `${Math.max(0,100-w.usedPercent)}% remaining`}`).join(' · ') || 'no windows available'}`
 }

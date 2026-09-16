@@ -1,7 +1,6 @@
 import { createContext,useCallback,useContext,useEffect,useRef,useState,type ReactNode } from 'react'
 import { commands,defaultBindings,keyFromEvent,type CommandId,type ShortcutState } from '../../../shared/commands'
 import { Button } from './ui/button'
-import { CaptureSettings } from './capture'
 
 export interface CommandAction {run:()=>unknown;disabled?:string;label?:string}
 type Actions=Partial<Record<CommandId,CommandAction>>
@@ -56,18 +55,23 @@ function Palette({actions,state,close,run}:{actions:Actions;state:ShortcutState;
   </dialog>
 }
 export function ShortcutSettings():React.JSX.Element {
-  const registry=useCommandRegistry()!;const {state}=registry
-  const [error,setError]=useState('');const [message,setMessage]=useState('');const [busy,setBusy]=useState(false)
-  const apply=async(value:unknown)=>{setBusy(true);setError('');setMessage('');try{const result=await window.localino.updateShortcuts(value);if(!result.ok)setError(result.error??'Modifica non riuscita.');else setMessage('Scorciatoie salvate.')}catch{setError('Modifica non riuscita. Riprova.')}finally{setBusy(false)}}
-  useCommands({resetBindings:{run:()=>apply({reset:true}),disabled:busy?'Salvataggio in corso.':undefined}})
-  return <main className="mx-auto max-w-5xl space-y-5 p-6"><header><h1 className="text-3xl font-semibold">Scorciatoie</h1><p className="mt-2 text-sm text-muted-foreground">Le combinazioni globali funzionano mentre Localino è in esecuzione. Lascia vuoto per disabilitare. Formati: Ctrl+Alt+L, Ctrl+Shift+R, F2, Ctrl+Comma.</p><p className="mt-2 text-sm text-muted-foreground">Nei campi testo, copia, incolla, selezione e cancellazione mantengono il comportamento normale. Invio inserisce una nuova riga.</p></header>
-    {(error||state.error)&&<p role="alert" className="break-words text-sm text-destructive">{error||state.error}</p>}<p role="status" className="text-sm">{message}</p>
-    <div className="flex gap-3"><Button variant="outline" disabled={busy} onClick={()=>void apply({reset:true})}>Ripristina default</Button><Button variant="ghost" onClick={()=>registry.run('closeSettings')}>Chiudi impostazioni</Button></div>
-    <CaptureSettings/>
-    <div className="space-y-3">{state.bindings.map(b=><BindingRow key={`${b.id}:${b.scope}:${b.key}`} binding={b} busy={busy} save={key=>apply({id:b.id,scope:b.scope,key})}/>)}</div>
-  </main>
+  const registry=useCommandRegistry()!,{state}=registry
+  const [error,setError]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[query,setQuery]=useState('')
+  const apply=async(value:unknown)=>{setBusy(true);setError('');setMessage('');try{const result=await window.localino.updateShortcuts(value);if(!result.ok)setError(result.error??'Could not save.');else setMessage('Saved.')}catch{setError('Could not save. Retry.')}finally{setBusy(false)}}
+  useCommands({resetBindings:{run:()=>apply({reset:true}),disabled:busy?'Saving…':undefined}})
+  return <section className="mt-3 space-y-3">
+    {(error||state.error)&&<p role="alert" className="break-words text-sm text-destructive">{error||state.error}</p>}{message&&<p role="status" className="text-xs">{message}</p>}
+    <input type="search" aria-label="Find shortcut" placeholder="Find shortcut" className="w-full rounded-md border p-2 text-sm" value={query} onChange={event=>setQuery(event.target.value)}/>
+    {commands.filter(c=>c.label.toLowerCase().includes(query.toLowerCase())).map(command=><details className="rounded-lg border p-2" key={command.id}><summary className="cursor-pointer text-sm">{command.label}</summary>{state.bindings.filter(b=>b.id===command.id).map(b=><BindingRow key={b.scope+':'+b.key} binding={b} busy={busy} save={key=>apply({id:b.id,scope:b.scope,key})}/>)}</details>)}
+    <Button size="sm" variant="outline" disabled={busy} onClick={()=>void apply({reset:true})}>Reset defaults</Button>
+    <details className="text-xs"><summary>Help</summary><p className="mt-2">Use Ctrl or Cmd, Alt, Shift and a key, such as Cmd+Alt+L. Global shortcuts work while Localino runs. Leave a binding empty to disable it. Text editing keeps its native shortcuts.</p></details>
+  </section>
 }
 function BindingRow({binding:b,busy,save}:{binding:ShortcutState['bindings'][number];busy:boolean;save:(key:string)=>Promise<void>}):React.JSX.Element {
-  const [key,setKey]=useState(b.key);const label=commands.find(c=>c.id===b.id)!.label;const scope=b.scope==='global'?'Globale':'Locale'
-  return <form data-binding onSubmit={e=>{e.preventDefault();void save(key)}} className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3"><div className="min-w-48 flex-1"><label htmlFor={`${b.id}-${b.scope}`} className="text-sm font-medium">{label} · {scope}</label><p className={`text-xs ${b.error?'text-destructive':'text-muted-foreground'}`}>{b.error??(b.active?'Attiva':b.key?'Non attiva':'Disabilitata')}</p></div><input id={`${b.id}-${b.scope}`} aria-label={`${label} ${scope}`} value={key} onChange={e=>setKey(e.target.value)} className="w-44 rounded-md border bg-background p-2 text-sm"/><Button size="sm" variant="outline" disabled={busy} type="submit">Applica</Button><Button type="button" size="sm" variant="ghost" disabled={busy||!b.key} onClick={()=>void save('')}>Disabilita</Button></form>
+  const [key,setKey]=useState(b.key),label=commands.find(c=>c.id===b.id)!.label,scope=b.scope==='global'?'Global':'Local'
+  return <form data-binding onSubmit={e=>{e.preventDefault();void save(key)}} className="mt-3 space-y-2 text-sm">
+    <label htmlFor={b.id+'-'+b.scope}>{scope}</label><input id={b.id+'-'+b.scope} aria-label={label+' '+scope} value={key} onChange={e=>setKey(e.target.value)} className="w-full rounded-md border bg-background p-2"/>
+    <p className={b.error?'text-destructive':'text-muted-foreground'}>{b.error??(b.active?'Active':b.key?'Inactive':'Disabled')}</p>
+    <div className="flex gap-2"><Button size="sm" variant="outline" disabled={busy} type="submit">Apply</Button><Button type="button" size="sm" variant="ghost" disabled={busy||!b.key} onClick={()=>void save('')}>Disable</Button></div>
+  </form>
 }

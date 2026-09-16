@@ -1,9 +1,11 @@
+import { AgentSummary } from './agent-summary'
+import { Settings as PanelSettings } from './settings'
 import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Command, Settings, X } from 'lucide-react'
 import { Button } from './ui/button'
-import { AgentCommands, AgentDashboard, AgentPicker } from './agents'
+import { AgentCommands, AgentDashboard } from './agents'
 import { Clipboard, type LeaveGuard } from './clipboard'
-import { CommandProvider, ShortcutSettings, useCommandRegistry, useCommands } from './commands'
+import { CommandProvider, useCommandRegistry, useCommands } from './commands'
 import { CaptureView } from './capture'
 import type { CaptureDraft, CapturedNote } from '../../../shared/capture'
 import type { Destination } from '../../../shared/navigation'
@@ -61,10 +63,10 @@ function PanelContent(): React.JSX.Element {
     </header>
     <div className="panel-content" hidden={recovering}>
       <section hidden={destination==='settings'} className="panel-home">
-        <div className="agent-summary"><AgentPicker/><Button variant="ghost" onClick={()=>void window.localino.openDashboard()}>Advanced usage</Button></div>
+        <AgentSummary/>
         <Clipboard captured={captured} guard={guard} newRequest={newRequest} consumeNew={()=>setNewRequest(0)}/>
       </section>
-      {destination==='settings'&&<ShortcutSettings/>}
+      {destination==='settings'&&<PanelSettings/>}
     </div>
     {recovering&&<CaptureView guard={captureGuard}/>}
   </div>
