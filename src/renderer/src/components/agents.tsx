@@ -3,6 +3,7 @@ import { agentIds, agentLabels, agentCapabilities, initialAgents, type AgentsSta
 import { useCommands } from './commands'
 import { Button } from './ui/button'
 import { Dashboard } from './dashboard'
+import { LocalHistory } from './local-history'
 
 export function useAgents(): AgentsState {
   const [state,setState]=useState(initialAgents)
@@ -36,6 +37,9 @@ export function AgentPicker(): React.JSX.Element {
   </div>
 }
 export function LocalAgentView({id}:{id:LocalAgentId}): React.JSX.Element {
+  return agentCapabilities[id].history?<LocalHistory id={id}/>:<PendingAgent id={id}/>
+}
+function PendingAgent({id}:{id:LocalAgentId}): React.JSX.Element {
   const capability=agentCapabilities[id]
   const historyReason=capability.history?'Collega prima la cronologia locale.':`Lettore ${agentLabels[id]} in preparazione.`
   const unavailable=(disabled:string)=>({run:()=>{},disabled})

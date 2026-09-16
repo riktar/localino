@@ -3,18 +3,18 @@ import { commands,defaultBindings,keyFromEvent,type CommandId,type ShortcutState
 import { Button } from './ui/button'
 import { CaptureSettings } from './capture'
 
-export interface CommandAction {run:()=>unknown;disabled?:string}
+export interface CommandAction {run:()=>unknown;disabled?:string;label?:string}
 type Actions=Partial<Record<CommandId,CommandAction>>
 interface Registry {register:(actions:Actions)=>()=>void;run:(id:CommandId)=>void;state:ShortcutState;open:()=>void}
 const Context=createContext<Registry|null>(null)
 export const useCommandRegistry=():Registry|null=>useContext(Context)
 export function useCommands(actions:Actions):void {
   const registry=useCommandRegistry();const latest=useRef(actions);latest.current=actions
-  const signature=JSON.stringify(Object.entries(actions).map(([id,a])=>[id,a?.disabled]))
+  const signature=JSON.stringify(Object.entries(actions).map(([id,a])=>[id,a?.disabled,a?.label]))
   const register=registry?.register
   useEffect(()=>{
     if(!register)return
-    const entries=Object.fromEntries(Object.entries(latest.current).map(([id,a])=>[id,{disabled:a?.disabled,run:()=>latest.current[id as CommandId]?.run()}]))
+    const entries=Object.fromEntries(Object.entries(latest.current).map(([id,a])=>[id,{disabled:a?.disabled,label:a?.label,run:()=>latest.current[id as CommandId]?.run()}]))
     return register(entries)
   },[register,signature])
 }
@@ -44,7 +44,7 @@ export function CommandProvider({children}:{children:ReactNode}):React.JSX.Eleme
 }
 function Palette({actions,state,close,run}:{actions:Actions;state:ShortcutState;close:()=>void;run:(id:CommandId)=>void}):React.JSX.Element {
   const dialog=useRef<HTMLDialogElement>(null);const [query,setQuery]=useState('');const [index,setIndex]=useState(0)
-  const filtered=commands.filter(c=>(c.label+' '+c.area).toLocaleLowerCase().includes(query.toLocaleLowerCase()))
+  const filtered=commands.map(c=>({...c,label:actions[c.id]?.label??c.label})).filter(c=>(c.label+' '+c.area).toLocaleLowerCase().includes(query.toLocaleLowerCase()))
   useEffect(()=>{const origin=document.activeElement as HTMLElement;dialog.current!.showModal();return ()=>{if(origin?.isConnected)origin.focus()}},[])
   useEffect(()=>{dialog.current?.querySelector(`[data-command-index="${index}"]`)?.scrollIntoView({block:'nearest'})},[index])
   const execute=(id:CommandId)=>{if(!actions[id]||actions[id]?.disabled)return;close();requestAnimationFrame(()=>run(id))}

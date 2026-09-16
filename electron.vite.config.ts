@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  main: {},
+  main: { build: { rollupOptions: { input: { index: resolve('src/main/index.ts'), 'history-worker': resolve('src/main/agents/history-worker.ts') } } } },
   preload: {},
   renderer: {
     resolve: { alias: { '@': resolve('src/renderer/src') } },

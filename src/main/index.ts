@@ -17,6 +17,7 @@ import type { CapturedNote } from '../shared/capture'
 import { homedir } from 'node:os'
 import { AgentPreferences } from './agents/preferences'
 import { HistoryResource, HistoryFailure } from './agents/history-resource'
+import { workerReader } from './agents/worker-reader'
 import { agentIds, agentLabels, agentCapabilities, isAgentId, isLocalAgentId, isAgentPeriod, type AgentId, type AgentResult, type LocalAgentId } from '../shared/agents'
 
 const customData = app.commandLine.getSwitchValue('user-data-dir')
@@ -24,9 +25,9 @@ if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPa
 const codexPreferences = new FilePreferences(join(app.getPath('userData'), 'connection.json'))
 const connection = new Connection(codexPreferences)
 const agents = new AgentPreferences(join(app.getPath('userData'), 'agents.json'))
-const histories = Object.fromEntries(['claude', 'pi', 'opencode'].map(id => [id, new HistoryResource(id as LocalAgentId, async () => { throw new HistoryFailure('unsupported') })])) as Record<LocalAgentId, HistoryResource>
+const histories = Object.fromEntries(['claude', 'pi', 'opencode'].map(id => [id, new HistoryResource(id as LocalAgentId, id === 'claude' ? workerReader(id) : async () => { throw new HistoryFailure('unsupported') })])) as Record<LocalAgentId, HistoryResource>
 const defaultSources: Record<LocalAgentId, string> = {
-  claude: join(homedir(), '.claude', 'projects'), pi: join(homedir(), '.pi', 'agent', 'sessions'),
+  claude: join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects'), pi: join(homedir(), '.pi', 'agent', 'sessions'),
   opencode: join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'opencode', 'opencode.db'),
 }
 const notes = new NotesStore(join(app.getPath('userData'),'notes.json'))
@@ -163,9 +164,11 @@ capture.on('timing',draft=>{
 capture.on('status',state=>broadcast('localino:capture-status',state))
 
 function updateUsageActivity(): void {
-  const visible = destination === 'consumi' && !!dashboard?.isVisible() && !dashboard.isMinimized()
+  if (quitting) return
+  const visible = destination === 'consumi' && !!dashboard && !dashboard.isDestroyed() && dashboard.isVisible() && !dashboard.isMinimized()
   usage.setActive(visible && agents.state.selected === 'codex')
-  for (const id of Object.keys(histories) as LocalAgentId[]) histories[id].setActive(visible && agents.state.selected === id)
+  const localVisible = visible || (!!panel && !panel.isDestroyed() && panel.isVisible() && !panel.isMinimized())
+  for (const id of Object.keys(histories) as LocalAgentId[]) histories[id].setActive(localVisible && agents.state.selected === id)
 }
 async function showMain(next: Destination = 'home'): Promise<void> {
   if (unsaved && next !== destination) { requestGuard({kind:'navigate',destination:next}); return }
@@ -293,6 +296,7 @@ if (!app.requestSingleInstanceLock()) {
       },
     })
     secureWindow(panel)
+    panel.on('show',updateUsageActivity);panel.on('hide',updateUsageActivity);panel.on('minimize',updateUsageActivity);panel.on('restore',updateUsageActivity)
     panel.on('close', (event) => {
       if (!quitting) {
         event.preventDefault()
