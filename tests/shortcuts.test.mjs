@@ -73,6 +73,11 @@ test('custom event keys work, native cursor editing is preserved and unavailable
  await writeFile(file,JSON.stringify({version:1,notes:[]}));await page.getByRole('button',{name:'Retry'}).click()
  for(const [key,press] of [['Ctrl+Space','Control+Space'],['Ctrl+Left','Control+ArrowLeft'],['Ctrl+Shift+1','Control+Shift+Digit1'],['Ctrl+Shift+Comma','Control+Shift+Comma'],['Ctrl+Shift+Period','Control+Shift+Period']]){
   assert.equal((await page.evaluate(key=>window.localino.updateShortcuts({id:'new',scope:'local',key}),key)).ok,true)
+  // Observe the renderer consuming the IPC update before sending the new chord.
+  await page.getByRole('button',{name:'Commands',exact:true}).click()
+  await page.locator('#command-new kbd').filter({hasText:key}).waitFor()
+  assert.equal(await page.locator('#command-new').getAttribute('aria-disabled'),'false')
+  await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click()
   await page.evaluate(()=>window.localino.navigate('panel'));await page.getByRole('button',{name:'Settings',exact:true}).focus();await page.keyboard.press(press)
   const editor=page.getByRole('textbox',{name:'Note text'});await editor.waitFor()
   if(key==='Ctrl+Left'){
