@@ -81,6 +81,6 @@ test('custom event keys work, native cursor editing is preserved and unavailable
   }else await page.getByRole('button',{name:'Cancel'}).click()
  }
  await page.keyboard.press('ControlOrMeta+f');const search=page.getByRole('searchbox');await search.focus();await page.keyboard.press('ControlOrMeta+Comma')
- await page.getByRole('button',{name:'Back',exact:true}).click();await search.waitFor();await page.getByRole('button',{name:'Settings',exact:true}).waitFor()
+ await page.getByRole('button',{name:'Back',exact:true}).click();await search.waitFor();await page.waitForFunction(()=>document.activeElement?.getAttribute('type')==='search')
  }finally{await app.evaluate(({app})=>app.exit(0)).catch(()=>{});await app.close().catch(()=>{})}
 })

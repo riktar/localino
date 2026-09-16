@@ -1,6 +1,6 @@
 import { AgentSummary } from './agent-summary'
 import { Settings as PanelSettings } from './settings'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowLeft, Command, Settings, X } from 'lucide-react'
 import { Button } from './ui/button'
 import { AgentCommands, AgentDashboard } from './agents'
@@ -25,11 +25,23 @@ function PanelContent(): React.JSX.Element {
   const [newRequest,setNewRequest]=useState(0)
   const [newDisabled,setNewDisabled]=useState<string|undefined>('Library unavailable.')
   const settingsButton=useRef<HTMLButtonElement>(null)
+  const settingsOrigin=useRef<HTMLElement|null>(null)
+  const currentDestination=useRef<Destination>('panel')
   useEffect(()=>{
-    const off=window.localino.onNavigate(next=>{setDestination(next);if(next==='panel')requestAnimationFrame(()=>settingsButton.current?.focus())})
-    void window.localino.getDestination().then(setDestination)
+    let updated=false
+    const off=window.localino.onNavigate(next=>{
+      updated=true
+      if(next==='settings'&&currentDestination.current!=='settings')settingsOrigin.current=document.activeElement as HTMLElement
+      currentDestination.current=next;setDestination(next)
+    })
+    void window.localino.getDestination().then(next=>{if(!updated){currentDestination.current=next;setDestination(next)}})
     return off
   },[])
+  useLayoutEffect(()=>{
+    if(destination!=='panel'||!settingsOrigin.current)return
+    const origin=settingsOrigin.current;settingsOrigin.current=null
+    if(origin.isConnected&&!origin.closest('[hidden]'))origin.focus();else settingsButton.current?.focus()
+  },[destination])
   useEffect(()=>{
     const receive=(next:CapturedNote|null)=>{if(next)setCaptured(previous=>!previous||next.sequence>=previous.sequence?next:previous)}
     const off=window.localino.onCapturedNote(receive);void window.localino.getCapturedNote().then(receive);return off
