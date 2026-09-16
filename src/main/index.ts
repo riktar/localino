@@ -1,18 +1,20 @@
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, Tray } from 'electron'
+import { nativeHelper } from './platform'
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, powerMonitor, screen, Tray } from 'electron'
 import { dirname, join, resolve } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { Connection } from './codex/connection'
 import { FilePreferences } from './codex/preferences'
 import { isTrustedSender } from './security'
 import { Resource } from './codex/resource'
-import { freshness, normalizeQuotas, quotaResets, quotaSummary } from '../shared/quotas'
+import { normalizeQuotas, quotaResets, quotaSummary } from '../shared/quotas'
 import { normalizeUsage } from '../shared/usage'
-import { destinationLabels, isDestination, type Destination } from '../shared/navigation'
+import { isDestination, type Destination } from '../shared/navigation'
 import { NotesStore } from './notes'
 import type { ActionRequest, WindowAction } from '../shared/actions'
 import { Shortcuts } from './shortcuts'
 import { Capture } from './capture'
 import { Foreground } from './foreground'
+import { panelBounds } from './window-position'
 import type { CapturedNote } from '../shared/capture'
 import { homedir } from 'node:os'
 import { AgentPreferences } from './agents/preferences'
@@ -20,14 +22,14 @@ import { HistoryResource } from './agents/history-resource'
 import { openCodeSource } from './agents/opencode-source'
 import { ClaudeBridge } from './agents/bridge'
 import { workerReader } from './agents/worker-reader'
-import { agentIds, agentLabels, agentCapabilities, isAgentId, isLocalAgentId, isAgentPeriod, type AgentId, type AgentResult, type LocalAgentId } from '../shared/agents'
+import { agentLabels, agentCapabilities, isAgentId, isLocalAgentId, isAgentPeriod, type AgentId, type AgentResult, type LocalAgentId } from '../shared/agents'
 
 const customData = app.commandLine.getSwitchValue('user-data-dir')
 if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPath('userData', resolve(customData)) }
 const codexPreferences = new FilePreferences(join(app.getPath('userData'), 'connection.json'))
 const connection = new Connection(codexPreferences)
 const agents = new AgentPreferences(join(app.getPath('userData'), 'agents.json'))
-const bridge = new ClaudeBridge(join(app.getPath('userData'),'claude-bridge'),join(process.env.CLAUDE_CONFIG_DIR||join(homedir(),'.claude'),'settings.json'),app.isPackaged?join(process.resourcesPath,'native','Localino.StatusLine.exe'):join(__dirname,'..','native','Localino.StatusLine.exe'),[join(process.env.ProgramFiles||'C:\\Program Files','ClaudeCode','managed-settings.json')])
+const bridge = new ClaudeBridge(join(app.getPath('userData'),'claude-bridge'),join(process.env.CLAUDE_CONFIG_DIR||join(homedir(),'.claude'),'settings.json'),app.isPackaged?join(process.resourcesPath,'native',nativeHelper('StatusLine')):join(__dirname,'..','native',nativeHelper('StatusLine')),[join(process.env.ProgramFiles||'C:\\Program Files','ClaudeCode','managed-settings.json')])
 const histories = Object.fromEntries(['claude', 'pi', 'opencode'].map(id => [id, new HistoryResource(id as LocalAgentId, workerReader(id as LocalAgentId))])) as Record<LocalAgentId, HistoryResource>
 const defaultSources: Record<LocalAgentId, string> = {
   claude: join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects'), pi: join(process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'), 'sessions'),
@@ -39,7 +41,7 @@ connection.on('ratesChanged', () => void quotas.refresh())
 const usage = new Resource(connection, { method: 'account/usage/read', normalize: normalizeUsage, interval: 300_000, staleAfter: 300_000 })
 usage.setActive(false)
 
-const captureExecutable = app.isPackaged ? join(process.resourcesPath,'native/Localino.Capture.exe') : join(__dirname,'../native/Localino.Capture.exe')
+const captureExecutable = app.isPackaged ? join(process.resourcesPath,'native',nativeHelper('Capture')) : join(__dirname,'../native',nativeHelper('Capture'))
 const capture = new Capture(join(app.getPath('userData'),'capture.json'), captureExecutable)
 const foreground = new Foreground(captureExecutable)
 let captureCompleting = false
@@ -49,11 +51,11 @@ let captureSequence = 0
 let presentationReady = false
 let rendererPresented = false
 let presentationDone: (() => void) | null = null
-let captureWindow: BrowserWindow | null = null
-let captureLoading: Promise<void> | null = null
+let captureOrigin: { visible: boolean; destination: Destination } | null = null
+let panelLoaded = false
 let panel: BrowserWindow | null = null
 let dashboard: BrowserWindow | null = null
-let destination: Destination = 'home'
+let destination: Destination = 'panel'
 let tray: Tray | null = null
 let quitting = false
 let quitReady = false
@@ -61,33 +63,32 @@ let unsaved = false
 let actionSequence = 0
 let pendingAction: ActionRequest | null = null
 const shortcuts = new Shortcuts(join(app.getPath('userData'),'shortcuts.json'),globalShortcut,id=>{
-  if(id==='home'||id==='consumi'||id==='clipboard')void showMain(id)
+  if(id==='home'||id==='clipboard')void showMain('panel')
+  if(id==='consumi')void showMain('usage')
   if(id==='capture')capture.request()
   const selected = ({selectCodex:'codex', selectClaude:'claude', selectPi:'pi', selectOpenCode:'opencode'} as Record<string, AgentId>)[id]
   if(selected)void selectAgent(selected)
 })
 
 async function selectAgent(id: AgentId): Promise<AgentResult> {
-  if (unsaved && destination !== 'consumi') { requestGuard({kind:'navigate',destination:'consumi',agent:id}); return {ok:true} }
-  try { agents.select(id); await showMain('consumi'); return {ok:true} }
-  catch (error) { return {ok:false,error:error instanceof Error ? error.message : 'Selezione non riuscita.'} }
+  try { agents.select(id); showPanel(); return {ok:true} }
+  catch (error) { return {ok:false,error:error instanceof Error ? error.message : 'Could not select agent.'} }
 }
 
 function requestGuard(action: WindowAction): void {
-  if (!dashboard || dashboard.isDestroyed()) return
+  if (!panel || panel.isDestroyed()) return
   if (!pendingAction) {
     pendingAction = {id:++actionSequence,action}
-    dashboard.webContents.send('localino:action-request',pendingAction)
+    panel.webContents.send('localino:action-request',pendingAction)
   }
-  if (dashboard.isMinimized()) dashboard.restore()
-  dashboard.show(); dashboard.focus()
+  showPanel()
 }
 function hideWindow(window: BrowserWindow): void {
-  if (window === dashboard && unsaved) requestGuard({kind:'hide'})
+  if (window === panel && (unsaved || capture.draft)) requestGuard({kind:'hide'})
+  else if (window === dashboard) { window.hide(); showPanel() }
   else window.hide()
 }
-
-const ownedWindows = (): BrowserWindow[] => [panel,dashboard,captureWindow].filter((w): w is BrowserWindow => w !== null && !w.isDestroyed())
+const ownedWindows = (): BrowserWindow[] => [panel,dashboard].filter((w): w is BrowserWindow => w !== null && !w.isDestroyed())
 function broadcast(channel: string, value: unknown): void { for (const window of ownedWindows()) window.webContents.send(channel,value) }
 function secureWindow(window: BrowserWindow): void {
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -95,32 +96,19 @@ function secureWindow(window: BrowserWindow): void {
   window.webContents.session.setPermissionRequestHandler((_contents,_permission,callback) => callback(false))
   window.webContents.session.setPermissionCheckHandler(() => false)
 }
-async function loadWindow(window: BrowserWindow, dashboardView: boolean | 'capture' = false): Promise<void> {
+async function loadWindow(window: BrowserWindow, view: 'main' | 'usage' = 'main'): Promise<void> {
   if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
     const url = new URL(process.env.ELECTRON_RENDERER_URL)
-    if (dashboardView) url.searchParams.set('view',dashboardView === 'capture' ? 'capture' : 'main')
+    url.searchParams.set('view',view)
     await window.loadURL(url.toString())
-  } else await window.loadFile(join(__dirname,'../renderer/index.html'), dashboardView ? { query: { view:dashboardView === 'capture' ? 'capture' : 'main' } } : {})
+  } else await window.loadFile(join(__dirname,'../renderer/index.html'), {query:{view}})
 }
 async function presentCapture(): Promise<void> {
-  if (!capture.draft || capture.draft.acquiring || captureCompleting) return
-  if (!captureWindow || captureWindow.isDestroyed()) {
-    captureWindow = new BrowserWindow({width:760,height:580,minWidth:580,minHeight:460,title:'Localino — Cattura selezione',show:false,autoHideMenuBar:true,backgroundColor:'#faf9f6',
-      webPreferences:{preload:join(__dirname,'../preload/index.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}})
-    const window = captureWindow
-    secureWindow(window)
-    window.on('page-title-updated',event=>event.preventDefault())
-    window.on('close',event=>{if(!quitting){event.preventDefault();if(capture.draft && !capture.isSaving && !captureCompleting){window.hide();capture.finish(capture.draft.id,true)}}})
-    window.on('closed',()=>{captureWindow=null})
-    captureLoading = loadWindow(window,'capture').finally(()=>{captureLoading=null})
-  }
-  await captureLoading
-  if (!capture.draft || !captureWindow || captureWindow.isDestroyed()) return
-  captureWindow.webContents.send('localino:capture-draft',capture.draft)
-  if(captureWindow.isMinimized())captureWindow.restore()
-  // Keep origin focused until acquisition finishes, including the timeout path.
-  captureWindow.show();captureWindow.focus()
-  await foreground.focus(captureWindow.getNativeWindowHandle(),process.pid)
+  if (!capture.draft || capture.draft.acquiring || captureCompleting || !panelLoaded || !panel) return
+  if (!captureOrigin) captureOrigin = {visible: panel.isVisible(), destination}
+  panel.webContents.send('localino:capture-draft',capture.draft)
+  showPanel()
+  await foreground.focus(panel.getNativeWindowHandle(),process.pid)
 }
 async function saveCapturedPrompt(id: number, text: unknown): Promise<{ok:boolean;error?:string}> {
   if(captureCompleting)return {ok:false,error:'Salvataggio in corso.'}
@@ -133,21 +121,21 @@ async function saveCapturedPrompt(id: number, text: unknown): Promise<{ok:boolea
   },false)
   if(result.ok && noteId){
     try {
-      captureWindow?.hide()
+      panel?.webContents.send('localino:capture-draft', null)
       presentationReady=false;rendererPresented=false
       const presented=new Promise<void>(resolve=>{presentationDone=resolve})
       capturedNote={sequence:++captureSequence,noteId,captureId:id,elapsedMs:capture.draft?.elapsedMs}
-      await showMain('clipboard')
-      if(dashboard&&!dashboard.isDestroyed()){
-        if(!dashboard.isVisible())dashboard.show()
-        dashboard.webContents.send('localino:note-captured',capturedNote)
-        const focused=await foreground.focus(dashboard.getNativeWindowHandle(),process.pid)
+      await showMain('panel', true)
+      if(panel&&!panel.isDestroyed()){
+        if(!panel.isVisible())panel.show()
+        panel.webContents.send('localino:note-captured',capturedNote)
+        const focused=await foreground.focus(panel.getNativeWindowHandle(),process.pid)
         presentationReady=true
         if(rendererPresented)capture.presented(id)
-        if(capturedNote?.captureId===id&&!focused){capturedNote={...capturedNote,focusFailed:true};dashboard.webContents.send('localino:note-captured',capturedNote);dashboard.flashFrame(true)}
+        if(capturedNote?.captureId===id&&!focused){capturedNote={...capturedNote,focusFailed:true};panel.webContents.send('localino:note-captured',capturedNote);panel.flashFrame(true)}
       }
       await Promise.race([presented,new Promise<void>(resolve=>setTimeout(resolve,1000))])
-    } catch {if(dashboard&&!dashboard.isDestroyed())dashboard.flashFrame(true)} finally {presentationDone=null;capture.finish(id,false);captureCompleting=false;if(quitAfterCapture){quitAfterCapture=false;app.quit()}}
+    } catch {if(panel&&!panel.isDestroyed())panel.flashFrame(true)} finally {presentationDone=null;capture.finish(id,false);captureOrigin=null;captureCompleting=false;if(quitAfterCapture){quitAfterCapture=false;app.quit()}}
   }else{
     captureCompleting=false
     capture.saveError(result.error??'Salvataggio non riuscito. Il testo è conservato: riprova.')
@@ -159,90 +147,67 @@ async function saveCapturedPrompt(id: number, text: unknown): Promise<{ok:boolea
 capture.on('selection',draft=>{void saveCapturedPrompt(draft.id,draft.text)})
 capture.on('draft',()=>{void presentCapture()})
 capture.on('raise',()=>{void presentCapture()})
-capture.on('finished',()=>captureWindow?.hide())
+capture.on('finished',()=>{panel?.webContents.send('localino:capture-draft',null)})
 capture.on('timing',draft=>{
-  captureWindow?.webContents.send('localino:capture-draft',draft)
-  if(capturedNote && capturedNote.captureId===draft.id){capturedNote={...capturedNote,visibleMs:draft.visibleMs};dashboard?.webContents.send('localino:note-captured',capturedNote);presentationDone?.()}
+  panel?.webContents.send('localino:capture-draft',draft)
+  if(capturedNote && capturedNote.captureId===draft.id){capturedNote={...capturedNote,visibleMs:draft.visibleMs};panel?.webContents.send('localino:note-captured',capturedNote);presentationDone?.()}
 })
 capture.on('status',state=>broadcast('localino:capture-status',state))
 
 function updateUsageActivity(): void {
   if (quitting) return
-  const visible = destination === 'consumi' && !!dashboard && !dashboard.isDestroyed() && dashboard.isVisible() && !dashboard.isMinimized()
+  const visible = !!dashboard && !dashboard.isDestroyed() && dashboard.isVisible() && !dashboard.isMinimized()
   usage.setActive(visible && agents.state.selected === 'codex')
   const localVisible = visible || (!!panel && !panel.isDestroyed() && panel.isVisible() && !panel.isMinimized())
   for (const id of Object.keys(histories) as LocalAgentId[]) histories[id].setActive(localVisible && agents.state.selected === id)
 }
-async function showMain(next: Destination = 'home'): Promise<void> {
-  if (unsaved && next !== destination) { requestGuard({kind:'navigate',destination:next}); return }
-  destination = next
-  if (dashboard && !dashboard.isDestroyed()) {
-    if (dashboard.isMinimized()) dashboard.restore()
-    dashboard.setTitle(`Localino — ${destinationLabels[destination]}`)
-    dashboard.webContents.send('localino:navigated', destination)
-    dashboard.show(); dashboard.focus(); updateUsageActivity(); return
-  }
-  dashboard = new BrowserWindow({ width:1120,height:800,minWidth:800,minHeight:600,title:`Localino — ${destinationLabels[destination]}`,backgroundColor:'#faf9f6',show:false,autoHideMenuBar:true,
-    webPreferences:{preload:join(__dirname,'../preload/index.js'),contextIsolation:true,nodeIntegration:false,sandbox:true} })
-  const window = dashboard
-  secureWindow(window)
-  window.on('page-title-updated', event => event.preventDefault())
-  window.on('show', updateUsageActivity)
-  window.on('minimize', updateUsageActivity)
-  window.on('restore', updateUsageActivity)
-  window.on('hide', updateUsageActivity)
-  window.on('close', event => { if (!quitting) { event.preventDefault(); hideWindow(window) } })
-  window.on('closed', () => { dashboard = null; updateUsageActivity() })
-  window.once('ready-to-show', () => { window.show(); window.focus() })
-  await loadWindow(window,true)
-}
-
-function showPanel(): void {
-  if (!panel) return
-  if (panel.isMinimized()) panel.restore()
-  panel.show()
-  panel.focus()
-  void quotas.refresh()
-}
-
-function updateTray(): void {
-  if (!tray) return
-  const selected = agents.state.selected
-  if (selected !== 'codex') {
-    const state = histories[selected].state
-    const status = `${agentLabels[selected]} · ${state.enabled ? state.error ? 'Lettura non disponibile' : state.stale ? 'Dati da aggiornare' : 'Cronologia locale' : 'Non collegato'}`
-    tray.setToolTip(`Localino · ${status}`.slice(0,127))
-    tray.setContextMenu(Menu.buildFromTemplate([
-      {label:status,enabled:false},
-      {label:'Agente',submenu:agentIds.map(id=>({label:agentLabels[id],type:'radio' as const,checked:selected===id,click:()=>{void selectAgent(id)}}))},
-      {label:'Apri Home',click:()=>{void showMain('home')}}, {label:'Apri Consumi',click:()=>{void showMain('consumi')}},
-      {label:'Apri Clipboard',click:()=>{void showMain('clipboard')}}, {label:'Cattura selezione',click:()=>capture.request()},
-      {label:'Scorciatoie',click:()=>{void showMain('shortcuts')}},
-      ...(!agentCapabilities[selected].history?[{label:'Lettore in preparazione',enabled:false}]:[]),
-      {label:'Aggiorna statistiche',enabled:agentCapabilities[selected].history&&state.enabled&&!state.refreshing,click:()=>{if(agentCapabilities[selected].history)void histories[selected].refresh()}},
-      ...(selected==='claude'?[{label:bridge.state.enabled?bridge.state.effective?'Bridge Claude: payload ricevuto':'Bridge Claude: in attesa o obsoleto':'Bridge Claude disattivato',enabled:false},{label:'Rileggi quote Claude dalla cache',enabled:bridge.state.enabled,click:()=>{void bridge.refresh()}}]:[]),
-      {type:'separator'}, {label:'Esci',click:()=>app.quit()},
-    ]))
+async function showMain(next: Destination = 'panel', preserveDraft = false): Promise<void> {
+  if (!panelLoaded || !panel) return
+  if (!preserveDraft && (unsaved || capture.draft) && next !== destination) { requestGuard({kind:'navigate',destination:next}); return }
+  if (next !== 'usage') {
+    destination = next
+    panel.webContents.send('localino:navigated',next)
+    showPanel()
     return
   }
-  const connected = connection.state.status === 'connected'
-  const status = connected ? `Codex collegato · ${freshness(quotas.state)}` : connection.state.status === 'connecting' ? 'Collegamento Codex…' : 'Codex non collegato'
-  const summary = quotaSummary(quotas.state)
-  const timestamp = quotas.state.lastSuccessAt === null ? 'Nessuna lettura riuscita' : `Ultima lettura ${new Date(quotas.state.lastSuccessAt).toLocaleTimeString('it-IT')}`
-  tray.setToolTip(`Localino · ${status}${connected ? ` · ${summary}` : ''}`.slice(0,127))
+  if (!dashboard || dashboard.isDestroyed()) {
+    dashboard = new BrowserWindow({width:1120,height:800,minWidth:800,minHeight:600,title:'Localino — Usage',backgroundColor:'#faf9f6',show:false,autoHideMenuBar:true,
+      webPreferences:{preload:join(__dirname,'../preload/index.js'),contextIsolation:true,nodeIntegration:false,sandbox:true}})
+    const window = dashboard
+    secureWindow(window)
+    window.on('page-title-updated',event=>event.preventDefault())
+    window.on('show',updateUsageActivity);window.on('hide',updateUsageActivity)
+    window.on('minimize',updateUsageActivity);window.on('restore',updateUsageActivity)
+    window.on('close',event=>{if(!quitting){event.preventDefault();window.hide();showPanel()}})
+    window.on('closed',()=>{dashboard=null;updateUsageActivity()})
+    await loadWindow(window,'usage')
+  }
+  panel.hide()
+  if(dashboard.isMinimized())dashboard.restore()
+  dashboard.show();dashboard.focus();updateUsageActivity()
+}
+function positionPanel(anchor = false): void {
+  if (!panel || panel.isDestroyed()) return
+  const bounds=panel.getBounds()
+  const trayBounds=anchor ? tray?.getBounds() : undefined
+  const validAnchor=trayBounds && trayBounds.width>0 ? trayBounds : undefined
+  const area=screen.getDisplayNearestPoint(validAnchor ? {x:validAnchor.x,y:validAnchor.y} : screen.getCursorScreenPoint()).workArea
+  panel.setBounds(panelBounds(area,bounds,validAnchor))
+}
+function showPanel(anchor = false): void {
+  if (!panelLoaded || !panel || panel.isDestroyed()) return
+  positionPanel(anchor)
+  if(panel.isMinimized())panel.restore()
+  panel.show();panel.focus()
+  void quotas.refresh()
+}
+function updateTray(): void {
+  if (!tray) return
+  const selected=agents.state.selected
+  tray.setToolTip(('Localino · '+agentLabels[selected]+(selected==='codex' ? ' · '+quotaSummary(quotas.state) : '')).slice(0,127))
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: status, enabled: false },
-    {label:'Agente',submenu:agentIds.map(id=>({label:agentLabels[id],type:'radio' as const,checked:selected===id,click:()=>{void selectAgent(id)}}))},
-    ...(connected ? [{ label: summary, enabled: false }, { label: timestamp, enabled: false }] : []),
-    { type: 'separator' },
-    { label: 'Apri Home', click: () => { void showMain('home') } },
-    { label: 'Apri Consumi', click: () => { void showMain('consumi') } },
-    { label: 'Apri Clipboard', click: () => { void showMain('clipboard') } },
-    { label: 'Cattura selezione', click: () => capture.request() },
-    { label: 'Scorciatoie', click: () => { void showMain('shortcuts') } },
-    { label: 'Aggiorna quote', enabled: connected, click: () => void quotas.refresh() },
-    { type: 'separator' },
-    { label: 'Esci', click: () => app.quit() },
+    {label:'Open Localino',click:()=>showPanel(true)},
+    {type:'separator'}, {label:'Quit',click:()=>app.quit()},
   ]))
 }
 
@@ -262,13 +227,13 @@ function createTrayIcon(): Electron.NativeImage {
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => { void showMain('home') })
-  app.on('activate', () => { void showMain('home') })
+  app.on('second-instance', () => { void showMain('panel') })
+  app.on('activate', () => { void showMain('panel') })
   app.on('before-quit', (event) => {
     if (quitReady) return
     event.preventDefault()
     if (capture.isSaving || captureCompleting) { quitAfterCapture=true; return }
-    if (unsaved && !quitting) { requestGuard({kind:'quit'}); return }
+    if ((unsaved || capture.draft) && !quitting) { requestGuard({kind:'quit'}); return }
     if (quitting) return
     quitting = true
     capture.dispose();foreground.dispose()
@@ -292,6 +257,7 @@ if (!app.requestSingleInstanceLock()) {
       title: 'Localino',
       backgroundColor: '#faf9f6',
       show: false,
+      alwaysOnTop: true,
       autoHideMenuBar: true,
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),
@@ -301,11 +267,11 @@ if (!app.requestSingleInstanceLock()) {
       },
     })
     secureWindow(panel)
-    panel.on('show',updateUsageActivity);panel.on('hide',updateUsageActivity);panel.on('minimize',updateUsageActivity);panel.on('restore',updateUsageActivity)
+    panel.on('minimize',()=>hideWindow(panel!));panel.on('show',updateUsageActivity);panel.on('hide',updateUsageActivity);panel.on('minimize',updateUsageActivity);panel.on('restore',updateUsageActivity)
     panel.on('close', (event) => {
       if (!quitting) {
         event.preventDefault()
-        panel?.hide()
+        if(panel)hideWindow(panel)
       }
     })
     ipcMain.on('localino:hide', (event) => {
@@ -319,10 +285,10 @@ if (!app.requestSingleInstanceLock()) {
       return action(BrowserWindow.fromWebContents(event.sender)!, value)
     })
     ipcMain.on('localino:unsaved',(event,value:unknown) => {
-      if (typeof value === 'boolean' && dashboard && isTrustedSender(event.sender,event.senderFrame,[dashboard.webContents])) unsaved = value
+      if (typeof value === 'boolean' && panel && isTrustedSender(event.sender,event.senderFrame,[panel.webContents])) unsaved = value
     })
     handle('localino:resolve-action',(owner,value) => {
-      if (owner !== dashboard || !value || typeof value !== 'object') throw Error('Access denied')
+      if (owner !== panel || !value || typeof value !== 'object') throw Error('Access denied')
       const response = value as {id:unknown;proceed:unknown}
       if (!pendingAction || response.id !== pendingAction.id || typeof response.proceed !== 'boolean') throw Error('Richiesta scaduta')
       const {action} = pendingAction; pendingAction = null
@@ -332,27 +298,30 @@ if (!app.requestSingleInstanceLock()) {
       if (action.kind === 'hide') owner.hide()
       else app.quit()
     })
-    handle('localino:captured-note',owner=>{if(owner!==dashboard)throw Error('Access denied');return capturedNote})
+    handle('localino:captured-note',owner=>{if(owner!==panel)throw Error('Access denied');return capturedNote})
     handle('localino:captured-note-presented',(owner,sequence)=>{
-      if(owner!==dashboard||typeof sequence!=='number')throw Error('Access denied')
+      if(owner!==panel||typeof sequence!=='number')throw Error('Access denied')
       if(capturedNote?.sequence===sequence){rendererPresented=true;if(presentationReady)capture.presented(capturedNote.captureId);owner.flashFrame(false)}
     })
     handle('localino:capture-status',()=>capture.state)
     handle('localino:capture-request',()=>capture.request())
     handle('localino:capture-enable',(_owner,value)=>capture.setEnabled(value))
     handle('localino:capture-retry',()=>capture.start())
-    handle('localino:capture-draft',owner=>{if(owner!==captureWindow)throw Error('Access denied');return capture.draft})
+    handle('localino:capture-draft',owner=>{if(owner!==panel)throw Error('Access denied');return capture.draft})
     handle('localino:capture-presented',(owner,id)=>{
-      if(owner!==captureWindow||typeof id!=='number')throw Error('Access denied')
+      if(owner!==panel||typeof id!=='number')throw Error('Access denied')
       if(owner.isVisible())capture.presented(id)
       else owner.once('show',()=>capture.presented(id))
     })
     handle('localino:capture-cancel',(owner,id)=>{
-      if(owner!==captureWindow||typeof id!=='number')throw Error('Access denied')
-      if(capture.draft?.id===id&&!capture.isSaving&&!captureCompleting){owner.hide();capture.finish(id,true)}
+      if(owner!==panel||typeof id!=='number')throw Error('Access denied')
+      if(capture.draft?.id===id&&!capture.isSaving&&!captureCompleting){
+        const origin=captureOrigin;captureOrigin=null;capture.finish(id,true)
+        if(origin){destination=origin.destination;owner.webContents.send('localino:navigated',destination);if(!origin.visible)owner.hide()}
+      }
     })
     handle('localino:capture-save',(owner,value)=>{
-      if(owner!==captureWindow||!value||typeof value!=='object')throw Error('Access denied')
+      if(owner!==panel||!value||typeof value!=='object')throw Error('Access denied')
       const request=value as {id:unknown;text:unknown}
       if(typeof request.id!=='number')throw Error('Richiesta non valida')
       return saveCapturedPrompt(request.id,request.text)
@@ -361,11 +330,11 @@ if (!app.requestSingleInstanceLock()) {
     handle('localino:quit',() => app.quit())
     handle('localino:shortcuts',()=>shortcuts.state)
     handle('localino:update-shortcuts',(_owner,value)=>shortcuts.update(value))
-    handle('localino:panel',()=>showPanel())
+    handle('localino:panel',()=>{dashboard?.hide();showPanel()})
     handle('localino:request-command',async (_owner,id)=>{
       if(id!=='new'&&id!=='palette')throw Error('Comando non valido')
-      await showMain(id==='new'?'clipboard':destination)
-      dashboard?.webContents.send('localino:command',id)
+      await showMain('panel')
+      panel?.webContents.send('localino:command',id)
     })
     shortcuts.on('change',state=>broadcast('localino:shortcuts-changed',state))
     await shortcuts.init()
@@ -437,7 +406,7 @@ if (!app.requestSingleInstanceLock()) {
     }
     handle('localino:quotas', () => quotas.state)
     handle('localino:refresh-quotas', () => quotas.refresh())
-    handle('localino:open-dashboard', () => showMain('consumi'))
+    handle('localino:open-dashboard', () => showMain('usage'))
     handle('localino:destination', () => destination)
     handle('localino:navigate', (_owner, value) => {
       if (!isDestination(value)) throw new Error('Destinazione non valida')
@@ -449,7 +418,7 @@ if (!app.requestSingleInstanceLock()) {
     handle('localino:reread', () => connection.connect())
     handle('localino:disconnect', () => connection.disconnect())
     handle('localino:choose-codex', async owner => {
-      const choice = await dialog.showOpenDialog(owner, { title: 'Seleziona Codex', properties: ['openFile'], filters: [{ name: 'Codex', extensions: ['exe'] }] })
+      const choice = await dialog.showOpenDialog(owner, { title: 'Seleziona Codex', properties: ['openFile'], ...(process.platform==='win32'?{filters:[{name:'Codex',extensions:['exe']}]}:{}) })
       if (!choice.canceled && choice.filePaths[0]) await connection.connect(choice.filePaths[0])
     })
     connection.on('change', state => {
@@ -465,9 +434,12 @@ if (!app.requestSingleInstanceLock()) {
     powerMonitor.on('resume', () => { capture.resume(); quotas.resume(); usage.resume();Object.values(histories).forEach(r=>r.resume()) })
     tray = new Tray(createTrayIcon())
     updateTray()
-    tray.on('click', () => panel?.isVisible() ? panel.hide() : showPanel())
-    await showMain('home')
+    tray.on('click',()=>{if(panel?.isVisible())hideWindow(panel);else showPanel(true)})
+    screen.on('display-added',()=>positionPanel());screen.on('display-removed',()=>positionPanel())
+    screen.on('display-metrics-changed',()=>positionPanel())
     await loadWindow(panel)
+    panelLoaded=true
+    showPanel(true)
     void connection.autoConnect()
   }).catch((error: unknown) => {
     console.error('Impossibile avviare Localino', error)

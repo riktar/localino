@@ -1,6 +1,6 @@
-export const destinations = ['home', 'consumi', 'clipboard', 'shortcuts'] as const
+export const destinations = ['panel', 'usage', 'settings'] as const
 export type Destination = typeof destinations[number]
-export const destinationLabels: Record<Destination, string> = { home: 'Home', consumi: 'Consumi', clipboard: 'Clipboard', shortcuts: 'Scorciatoie' }
+export const destinationLabels: Record<Destination, string> = { panel: 'Localino', usage: 'Usage', settings: 'Settings' }
 export function isDestination(value: unknown): value is Destination {
   return typeof value === 'string' && destinations.includes(value as Destination)
 }

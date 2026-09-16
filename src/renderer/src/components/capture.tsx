@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { captureHelp, type CaptureDraft, type CaptureStatus } from '../../../shared/capture'
 import { textError } from '../../../shared/notes'
 import { Button } from './ui/button'
+import type { LeaveGuard } from './clipboard'
+import { useConfirm } from './confirm-dialog'
 
 export function useCaptureStatus(): CaptureStatus {
   const [state, setState] = useState<CaptureStatus>({ enabled: true, status: 'starting' })
@@ -33,7 +35,8 @@ export function CaptureSettings(): React.JSX.Element {
   </section>
 }
 
-export function CaptureView(): React.JSX.Element {
+export function CaptureView({guard}:{guard:React.MutableRefObject<LeaveGuard|null>}): React.JSX.Element {
+  const {ask,dialog}=useConfirm()
   const [draft, setDraft] = useState<CaptureDraft | null>(null)
   const [text, setText] = useState('')
   const [error, setError] = useState('')
@@ -71,7 +74,18 @@ export function CaptureView(): React.JSX.Element {
     finally { saving.current = false; setBusy(false) }
   }
   const cancel = () => { if (draft && !saving.current) void window.localino.cancelCapture(draft.id) }
-  return <main className="flex min-h-screen flex-col gap-4 p-6" onKeyDown={event => {
+  useEffect(()=>{
+    guard.current=async()=>{
+      if(saving.current)return false
+      if(!draft)return true
+      const answer=await ask('Keep this capture?','Save the text or discard it.',['Save','Discard','Stay'])
+      if(answer===0){const invalid=textError(text);if(invalid){setError(invalid);return false}const result=await window.localino.saveCapture(draft.id,text);if(!result.ok){setError(result.error??'Could not save.');return false}return true}
+      if(answer===1){await window.localino.cancelCapture(draft.id);return true}
+      return false
+    }
+    return ()=>{guard.current=null}
+  },[guard,draft,text,ask])
+  return <main className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-4" onKeyDown={event => {
     if (event.repeat || event.nativeEvent.isComposing || event.keyCode === 229) return
     if (event.key === 'Escape') { event.preventDefault(); cancel() }
     if (event.key === 'Enter' && event.ctrlKey && !event.altKey && !event.shiftKey) { event.preventDefault(); void save() }
@@ -83,5 +97,6 @@ export function CaptureView(): React.JSX.Element {
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     <p className="text-xs text-muted-foreground">{captureHelp}</p>
     <footer className="flex flex-wrap gap-3"><Button disabled={!draft || draft.acquiring || busy} onClick={() => void save()}>{busy ? 'Salvataggio…' : 'Salva prompt'} <kbd>Ctrl+Invio</kbd></Button><Button variant="outline" disabled={busy || !draft} onClick={cancel}>Annulla <kbd>Esc</kbd></Button></footer>
+    {dialog}
   </main>
 }

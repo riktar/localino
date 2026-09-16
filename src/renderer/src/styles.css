@@ -42,3 +42,12 @@
   button { -webkit-app-region: no-drag; }
   :is(button, a, input, textarea, select, summary):focus-visible { outline: 2px solid var(--color-ring); outline-offset: 3px; }
 }
+
+[hidden] { display: none !important; }
+.panel { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+.panel-header { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.panel-header h1 { font-size: .95rem; font-weight: 650; }
+.brand-mark { background: var(--primary); border-radius: .55rem; padding: .15rem .5rem; font-weight: 700; }
+.panel-content { flex: 1; min-height: 0; overflow: auto; }
+.panel-home { display: flex; flex-direction: column; height: 100%; }
+.agent-summary { margin: .75rem; border: 1px solid var(--border); border-radius: 1rem; background: var(--card); flex-shrink: 0; }

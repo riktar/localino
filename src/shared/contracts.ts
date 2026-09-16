@@ -59,7 +59,7 @@ export interface LocalinoApi {
   setCaptureEnabled: (value:boolean) => Promise<{ok:boolean;error?:string}>
   retryCapture: () => Promise<void>
   getCaptureDraft: () => Promise<import('./capture').CaptureDraft|null>
-  onCaptureDraft: (listener:(draft:import('./capture').CaptureDraft)=>void)=>()=>void
+  onCaptureDraft: (listener:(draft:import('./capture').CaptureDraft|null)=>void)=>()=>void
   capturePresented: (id:number) => Promise<void>
   cancelCapture: (id:number) => Promise<void>
   saveCapture: (id:number,text:string) => Promise<{ok:boolean;error?:string}>
