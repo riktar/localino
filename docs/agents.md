@@ -14,6 +14,8 @@ Advanced usage refreshes every five minutes only while its window is visible. Li
 
 Readers start only after Connect or an explicit source choice. Disconnect changes Localino preferences, not the source archive. Each reader runs in a cancellable worker with a 15-second limit. Refresh occurs on connection/opening and every 60 seconds while that agent's panel or usage window is visible. Hidden histories do not scan periodically. Same-source failures preserve a stale aggregate; changing source or disconnecting clears it. Only aggregate metrics and source metadata reach the renderer.
 
+These readers are deliberately not live-session adapters. A recent history record or open process cannot establish Running state and never authorizes message delivery. See the [live-session feasibility matrix](sessions.md) for the separately evaluated control transports.
+
 ### Claude Code
 
 Default source: `~/.claude/projects` or `CLAUDE_CONFIG_DIR/projects`. The reader visits regular JSONL files, including subagents, without following symlinks. Responses deduplicate by `message.id` across copies and forks. Conflicting copies are excluded. Session counts include sessions containing valid response copies and are distinct from original-response counts.

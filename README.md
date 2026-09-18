@@ -47,6 +47,8 @@ Custom and disabled bindings are preserved during migration. Imported Ctrl bindi
 
 See [sources and metric semantics](docs/agents.md) for connection requirements, recorded fixture versions, polling, privacy, partial history and the optional Claude bridge. Local history is not an account quota; estimated costs are not invoices. Missing days are not measured zeroes.
 
+Localino does not currently attach to arbitrary live sessions opened in another client. The [live-session feasibility matrix](docs/sessions.md) records the upstream transports, required startup setup and current blockers. Historical files never enable Send or imply that a turn is running.
+
 ## Develop and verify
 
 Requires Node.js 22.12 or later and npm. Windows x64 builds need .NET Framework 4.8 reference assemblies and the Framework64 C# compiler. Mac builds need Xcode command line tools and macOS 13 or later ([Electron 44 requirement](https://www.electronjs.org/blog/electron-44-0)).
