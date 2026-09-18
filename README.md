@@ -1,65 +1,100 @@
 # Localino
 
-A compact desktop panel for coding agents and local notes. Built with Electron, React, TypeScript, Tailwind CSS and local shadcn/ui components.
+### Keep every coding agent in view — without leaving your flow.
 
-Open Localino from the Windows tray or macOS menu bar. The panel stays above ordinary windows while open. Close, minimize or Hide keeps the app running; **Quit** stops it. **Advanced usage** opens one reusable detail window; Back or its close button returns to the panel.
+Localino is a compact, local-first desktop command center for **Codex, Claude Code, Pi and OpenCode**. Check usage and quotas, run supervised CLI sessions, queue the next prompt and save selected text as a note — all from one panel in your tray or menu bar.
 
-Drag the app header to move either window. Choose **Settings → Theme → System, Light or Dark**; System is the default and follows live OS changes. The preference applies to both windows and survives restarts. Subtle transitions respect the system reduced-motion preference.
+**No new account. No cloud workspace. Your existing agents, on your machine.**
 
-## Use the panel
+[Run Localino](#run-localino) · [See what it does](#everything-you-need-within-reach) · [Read the technical docs](#documentation)
 
-- Choose Codex, Claude Code, Pi or OpenCode. Switching agents does not connect them or open another screen.
-- Press **Connect** to use an existing Codex ChatGPT login or a local agent history. **Settings → Connections** contains source selection, disconnect and recovery.
-- The card shows one labeled quota window. **Details** exposes every received limit. Windows are never added together; unavailable, stale and exhausted values remain distinct. Exhausted secondary limits are flagged.
-- Use **+** to create a note. Each row has independent selection, edit, delete and complete/reopen actions. Click its text to read the full note.
-- Select notes and use the context menu or Ctrl/Cmd+C to copy newest first. **Copy all** joins exact complete texts with one LF between notes. Search/filter changes clear selection. Text fields retain native copy/paste.
-- Unsaved drafts offer **Save**, **Discard** or **Stay**. Failed saves keep the text. Escape in a confirmation means Stay.
+## Everything you need, within reach
 
-Notes live in the versioned `notes.json` under Electron's user-data directory. Unicode, whitespace and line endings are preserved; the limit is 100,000 UTF-16 code units. Empty or whitespace-only notes are rejected. Corrupt libraries are preserved and can be reloaded after repair. Notes are plain text on disk and are never sent to agents, network services, logs or telemetry.
+- **Know where you stand.** See available quotas, usage history, token totals and estimated costs without jumping between tools.
+- **Keep agents moving.** Start a CLI session for a project, follow its state and queue the next instruction while the current turn is still running.
+- **Capture context instantly.** Select text in a supported app and press Shift twice to turn it into a searchable local note.
+- **Stay in your flow.** Open the always-on-top panel from the Windows tray or macOS menu bar, then dismiss it when you are done.
+- **Keep control of your data.** Notes and pending messages stay on your computer. Credentials remain with the agent CLI that owns them.
 
-## Supervised CLI sessions
+## Run Localino
 
-For the selected agent, **Start session** chooses a project and launches an installed Codex, Claude Code, Pi or OpenCode CLI through its machine protocol. Select the resulting card with click or Enter to open the composer. **Send** hands exact multiline Unicode text to that instance when idle; **Queue** keeps later messages local and FIFO until its current turn ends. A `Sent` receipt means the CLI accepted the message, not that the model finished it. Queued messages can be cancelled.
+Localino is currently **pre-release** and does not yet have a downloadable installer. You can try it from source in a few commands.
 
-Localino never retries an uncertain delivery. A lost receipt becomes `Unknown`; later queued text becomes `Suspended` and is not sent during reconnect or restart. Drafts and unresolved messages are stored as plain text in `sessions.json` under Electron's user-data directory and can be reviewed or discarded after restart. The 100,000-character limit is enforced without truncation. Localino does not copy Clipboard content, credentials or transcripts into a message, and does not log message text.
+You need [Node.js 22.12+](https://nodejs.org/). To connect agent data or start a session, keep at least one supported agent CLI installed and configured.
 
-This feature owns only CLI processes started by Localino. It does not attach to VS Code extensions, desktop clients, ordinary existing terminal sessions, remote/WSL agents or persisted history. See [live sessions](docs/sessions.md) for protocol, setup and delivery limits.
+```sh
+git clone https://github.com/riktar/localino.git
+cd localino
+npm ci
+npm run dev
+```
 
-## Capture selected text
+That is it. Open Localino from the tray or menu bar, choose an agent and press **Connect**.
 
-Select text in another app, then press and release **Shift twice within 350 ms**, without other keys. The alternative is Ctrl+Alt+P on Windows or Cmd+Alt+P on a fresh Mac profile. Configure both in Settings.
+> [!NOTE]
+> Windows builds also require the .NET Framework 4.8 reference assemblies and Framework64 C# compiler. macOS builds require macOS 13+ and Xcode command line tools; production behavior on Mac is not yet fully verified.
 
-A readable selection saves once and appears selected in the Clipboard list, scrolled into view. Click its text to read the full note. An existing manual draft stays in memory under **Resume draft**. Empty, inaccessible, changed or oversized selections open recovery; text is never truncated. Cancel is guarded and attempts to restore the source app. Software acquisition/presentation timings are in Details.
+### Build the desktop app
 
-Windows uses UI Automation; macOS uses Accessibility and a passive event tap. Capture reads selected text only: no simulated copy, clipboard substitution, OCR or retained key history. Protected/password controls are excluded. Workers have hard deadlines. Unsupported controls allow manual paste.
+```sh
+# Windows x64 — creates a portable ZIP in dist/
+npm run build:win
 
-**VS Code:** set `editor.accessibilitySupport` to `on`. **macOS:** use **Settings → Capture → Allow permissions** for Accessibility and Input Monitoring, then Retry. Localino does not change other apps' settings. Actual Mac behavior remains pending the colleague's [verification checklist](docs/mac-testing.md); Windows tests do not establish Mac support.
+# macOS — creates a ZIP and DMG in dist/
+npm run build:mac
+```
 
-## Shortcuts
+Runtime users of a packaged build do not need Node.js or an SDK.
 
-Open Commands with Ctrl/Cmd+K, search, use arrow keys and Enter. Settings lets you edit, disable or reset local/global bindings. Conflicts preserve previous values.
+## From connection to momentum
 
-| Action | Windows | Fresh macOS profile |
+1. **Connect your agent.** Localino uses your existing Codex login or reads the local history of Claude Code, Pi or OpenCode.
+2. **See the signal.** Get the current quota window in the panel and open **Advanced usage** for every available limit and historical metric.
+3. **Start working.** Launch a supervised CLI session for a project, send an instruction and queue what should happen next.
+4. **Save what matters.** Highlight text in another app and press Shift twice within 350 ms. It appears in Localino as a searchable note.
+
+## Four agents, one consistent view
+
+| Agent | Usage and limits | Supervised sessions |
 |---|---|---|
-| Panel / usage / Clipboard | Ctrl+1 / 2 / 3 | Cmd+1 / 2 / 3 |
-| Same actions globally | Ctrl+Alt+L / U / C | Cmd+Alt+L / U / C |
-| New note / search | Ctrl+N / Ctrl+F | Cmd+N / Cmd+F |
-| Edit / copy selection / delete | F2 / Ctrl+C / Delete | F2 / Cmd+C / Delete |
-| Save editor or complete focused note | Ctrl+Enter | Cmd+Enter |
-| Settings / commands | Ctrl+, / Ctrl+K | Cmd+, / Cmd+K |
-| Hide or dismiss a dialog | Escape | Escape |
+| Codex | ChatGPT quota windows and service usage | Yes |
+| Claude Code | Local history, plus an optional quota bridge | Yes |
+| Pi | Local token usage and estimated cost | Yes |
+| OpenCode | Local token usage and estimated cost | Yes |
 
-Custom and disabled bindings are preserved during migration. Imported Ctrl bindings stay Ctrl; Reset applies current platform defaults. App text and distributed documentation are English. User content and external provider labels are unchanged; English formatting keeps the local timezone and original metric calculations.
+Localino reads each source according to what it actually provides. Missing data stays **Unavailable** rather than being guessed, and separate quota windows are never added together.
 
-## Agent data
+## Built for trust
 
-See [sources and metric semantics](docs/agents.md) for connection requirements, recorded fixture versions, polling, privacy, partial history and the optional Claude bridge. Local history is not an account quota; estimated costs are not invoices. Missing days are not measured zeroes.
+- Notes are stored as plain text in `notes.json` inside Electron's user-data directory.
+- Drafts and unresolved deliveries are stored locally in `sessions.json` so you can review them after a restart.
+- Note and message text is not written to application logs.
+- Localino never retries an uncertain message delivery, preventing an accidental duplicate prompt.
+- Renderers are sandboxed and isolated; native helpers run with bounded deadlines.
 
-Localino does not attach to arbitrary live sessions opened in another client. The [live-session guide and feasibility matrix](docs/sessions.md) distinguish supported supervised CLIs from evaluated external transports. Historical files never enable Send or imply that a turn is running.
+Localino only controls CLI processes that it starts. It does not attach to sessions already running in a terminal, IDE, desktop client, WSL or a remote environment. It also does not install agent CLIs or change their credentials.
 
-## Develop and verify
+## Everyday shortcuts
 
-Requires Node.js 22.12 or later and npm. Windows x64 builds need .NET Framework 4.8 reference assemblies and the Framework64 C# compiler. Mac builds need Xcode command line tools and macOS 13 or later ([Electron 44 requirement](https://www.electronjs.org/blog/electron-44-0)).
+| Action | Windows | macOS |
+|---|---|---|
+| Open commands | Ctrl+K | Cmd+K |
+| Show panel globally | Ctrl+Alt+L | Cmd+Alt+L |
+| Capture selected text | Shift twice or Ctrl+Alt+P | Shift twice or Cmd+Alt+P |
+| New note | Ctrl+N | Cmd+N |
+| Search notes | Ctrl+F | Cmd+F |
+| Settings | Ctrl+, | Cmd+, |
+
+Shortcuts can be edited, disabled or reset in Settings. For text capture in VS Code, set `editor.accessibilitySupport` to `on`. macOS also requires Accessibility and Input Monitoring permissions.
+
+## Documentation
+
+- [Agent connections, data sources and metric semantics](docs/agents.md)
+- [Supervised sessions, delivery guarantees and limitations](docs/sessions.md)
+- [macOS setup and verification checklist](docs/mac-testing.md)
+- [Regression and test coverage map](docs/regression-map.md)
+
+## Development
 
 ```sh
 npm ci
@@ -67,18 +102,17 @@ npm run dev
 npm run check
 ```
 
-`npm run dev` first compiles the host-platform helpers automatically (and signs them on macOS); build failures stop startup with the compiler output. `build:common` builds TypeScript/React/Electron; `build:native` compiles host-platform helpers. Runtime users do not need Node or an SDK. Renderers are sandboxed and isolated. The preload exposes named operations with trusted main-frame sender checks. Native binaries are outside ASAR. New main/preload dependencies must be bundled or explicitly packaged.
+`npm run dev` compiles the native helpers for the host platform before starting Electron. `npm run check` runs linting, unit tests, builds and integration tests.
 
-Use `npm run build:win` for the Windows x64 ZIP. On a Mac, `npm run build:mac` creates the host-architecture ZIP and DMG; explicit arm64/x64 commands are in the [Mac guide](docs/mac-testing.md). `npm run test:packaged` checks the unpacked artifact. The [regression map](docs/regression-map.md) describes retained coverage after removing the old screens. The Claude bridge supports automatic macOS setup; see the [Mac guide](docs/mac-testing.md) for its file-coordination limits. No Mac production release is verified yet.
+The app is built with Electron, React, TypeScript, Tailwind CSS and local shadcn/ui components.
 
-The [Mac checklist](docs/mac-testing.md) and [report](docs/mac-test-report.md) distinguish automated protocol fixtures from external-app testing. Native verification must cover permissions, focus, gestures, source changes, worker cleanup and packaged operation.
+```text
+src/main       lifecycle, storage, IPC and agent adapters
+src/preload    minimal renderer API
+src/shared     shared contracts
+src/renderer   panel, settings, editors and usage window
+native         Windows and macOS helpers
+tests          unit, Electron, native protocol and package checks
+```
 
-## Repository
-
-- `src/main`: lifecycle, stores, IPC and read-only agent adapters.
-- `src/preload` / `src/shared`: minimal API and contracts.
-- `src/renderer`: panel, internal settings/editors and subordinate usage window.
-- `native`: Windows helpers; `native/mac`: Mac helpers.
-- `tests`: isolated unit, Electron, native protocol and package checks.
-
-Git workflow: one branch per sprint, separate review and integrated verification before a PR. Merges and production acceptance are separate. Local TheOneLoop records are intentionally ignored and may be Italian.
+Want the exact protocol and recovery behavior? Start with the [live-session guide](docs/sessions.md). Want to understand how a metric is calculated? See [agent data sources](docs/agents.md).

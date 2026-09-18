@@ -68,8 +68,8 @@ function PanelContent(): React.JSX.Element {
   return <div className="panel" data-destination={destination} onKeyDown={event=>{if(!event.defaultPrevented&&event.key==='Escape'&&!document.querySelector('dialog[open]')&&dismiss.current&&destination==='panel'&&!recovering){event.preventDefault();event.stopPropagation();void dismiss.current()}}}>
     <AgentCommands/>
     <header className="panel-header">
-      {destination==='settings'?<Button size="icon" variant="ghost" aria-label="Back" onClick={()=>void window.localino.navigate('panel')}><ArrowLeft/></Button>:<span className="brand-mark" aria-hidden="true">l.</span>}
-      <h1>{destination==='settings'?'Settings':'Localino'}</h1>
+      {destination==='settings'?<Button size="icon" variant="ghost" aria-label="Back" onClick={()=>void window.localino.navigate('panel')}><ArrowLeft/></Button>:<span className="brand-mark" aria-hidden="true"><i/>l</span>}
+      <div className="title-stack"><h1>{destination==='settings'?'Settings':'Localino'}</h1><span>{destination==='settings'?'Preferences':'Local workspace'}</span></div>
       <div className="ml-auto flex">
         <Button size="icon" variant="ghost" aria-label="Commands" title="Commands" onClick={registry.open}><Command/></Button>
         <Button ref={settingsButton} size="icon" variant="ghost" aria-label="Settings" title="Settings" onClick={()=>void window.localino.navigate('settings')}><Settings/></Button>
@@ -94,9 +94,9 @@ function UsageContent(): React.JSX.Element {
   useCommands({localino:{run:()=>window.localino.openPanel()},panel:{run:()=>window.localino.openPanel()},clipboard:{run:()=>window.localino.requestCommand('clipboard')},
     shortcuts:{run:()=>window.localino.navigate('settings')},new:{run:()=>window.localino.requestCommand('new')},
     palette:{run:registry.open},hide:{run:()=>window.localino.hide()},quit:{run:()=>window.localino.quit()},capture:{run:()=>window.localino.requestCapture()}})
-  return <><header className="panel-header"><Button variant="ghost" onClick={()=>void window.localino.openPanel()}><ArrowLeft/>Back to panel</Button><Button className="ml-auto" variant="ghost" onClick={registry.open}>Commands</Button>
+  return <div className="usage-shell"><header className="panel-header usage-header"><Button variant="ghost" onClick={()=>void window.localino.openPanel()}><ArrowLeft/>Back to panel</Button><span className="usage-title">Localino workspace</span><Button className="ml-auto" variant="ghost" onClick={registry.open}>Commands</Button>
     <Button size="icon" variant="ghost" aria-label="Minimize window" title="Minimize" onClick={()=>void window.localino.windowAction('minimize')}><Minus/></Button>
     <Button size="icon" variant="ghost" aria-label="Maximize or restore window" title="Maximize / restore" onClick={()=>void window.localino.windowAction('maximize')}><Maximize2/></Button>
     <Button size="icon" variant="ghost" aria-label="Close usage" title="Back to panel" onClick={()=>void window.localino.openPanel()}><X/></Button>
-  </header><AgentCommands/><AgentDashboard/></>
+  </header><AgentCommands/><AgentDashboard/></div>
 }

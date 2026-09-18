@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { ChevronDown, Terminal } from 'lucide-react'
-import { agentIds, agentLabels, type AgentId, type LocalAgentId } from '../../../shared/agents'
+import { Sparkles } from 'lucide-react'
+import { type AgentId, type LocalAgentId } from '../../../shared/agents'
 import { compactQuota } from '../../../shared/quota-summary'
 import { durationLabel } from '../../../shared/quotas'
 import { useConnection } from '../hooks/use-connection'
@@ -12,22 +12,16 @@ import { QuotaCard } from './quota-card'
 import { Button } from './ui/button'
 import { connectionErrors } from './account-card'
 import type { Quotas, ResourceState } from '../../../shared/contracts'
+import { AgentSwitcher } from './agent-switcher'
 
 export function AgentSummary(): React.JSX.Element {
   const agents=useAgents(),[error,setError]=useState<string>()
   return <section className="agent-summary" aria-label="Agent">
-    <div className="flex items-center gap-2">
-      <Terminal className="size-5 shrink-0" aria-hidden="true"/>
-      <label className="relative min-w-0 flex-1">
-        <span className="sr-only">Agent</span>
-        <select aria-label="Agent" className="w-full appearance-none rounded-md bg-transparent py-1 pr-6 font-medium" value={agents.selected} onChange={event=>void window.localino.selectAgent(event.target.value as AgentId).then(result=>setError(result.error))}>
-          {agentIds.map(id=><option key={id} value={id}>{agentLabels[id]}</option>)}
-        </select><ChevronDown className="pointer-events-none absolute right-0 top-2 size-4" aria-hidden="true"/>
-      </label>
-    </div>
+    <div className="agent-summary-glow" aria-hidden="true"/>
+    <div className="agent-summary-top"><AgentSwitcher compact selected={agents.selected} onSelect={(id:AgentId)=>void window.localino.selectAgent(id).then(result=>setError(result.error))}/><span className="agent-ready"><Sparkles/>Live</span></div>
     {(agents.error||error)&&<p role="alert" className="text-sm text-destructive">{agents.error||error}</p>}
     {agents.selected==='codex'?<CodexSummary/>:<LocalSummary key={agents.selected} id={agents.selected}/>}
-    <Button size="sm" variant="ghost" className="mt-1 h-7 px-0" onClick={()=>void window.localino.openDashboard()}>Advanced usage</Button>
+    <Button size="sm" variant="ghost" className="agent-advanced" onClick={()=>void window.localino.openDashboard()}>Advanced usage</Button>
   </section>
 }
 function CodexSummary():React.JSX.Element {

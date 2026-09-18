@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { agentIds, agentLabels, initialAgents, type AgentsState, type LocalAgentId } from '../../../shared/agents'
+import { initialAgents, type AgentId, type AgentsState, type LocalAgentId } from '../../../shared/agents'
 import { useCommands } from './commands'
 import { Button } from './ui/button'
 import { Dashboard } from './dashboard'
 import { LocalHistory } from './local-history'
 import { LiveSessions } from './live-sessions'
+import { AgentSwitcher } from './agent-switcher'
 
 export function useAgents(): AgentsState {
   const [state,setState]=useState(initialAgents)
@@ -28,11 +29,9 @@ export function AgentCommands(): null {
 export function AgentPicker(): React.JSX.Element {
   const state=useAgents()
   const [error,setError]=useState<string>()
-  return <div className="flex flex-wrap items-center gap-3 px-6 pt-4">
-    <label className="text-sm font-medium">Agent <select aria-label="Agent" className="ml-2 rounded-md border bg-background p-2" value={state.selected} onChange={event=>{
-      const id=event.target.value as typeof state.selected
-      void window.localino.selectAgent(id).then(result=>setError(result.error))
-    }}>{agentIds.map(id=><option key={id} value={id}>{agentLabels[id]}</option>)}</select></label>
+  return <div className="workspace-agent-bar">
+    <AgentSwitcher selected={state.selected} onSelect={(id:AgentId)=>void window.localino.selectAgent(id).then(result=>setError(result.error))}/>
+    <div className="workspace-agent-context"><span>Active workspace</span><strong>Usage, sessions and local history</strong></div>
     {(state.error||error)&&<p role="alert" className="text-sm text-destructive">{state.error||error}</p>}
     {state.error&&<Button variant="outline" onClick={()=>void window.localino.recoverPreferences('agents')}>Recover agent preferences</Button>}
   </div>

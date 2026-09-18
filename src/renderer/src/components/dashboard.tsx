@@ -43,7 +43,7 @@ export function Dashboard(): React.JSX.Element {
   ] : []
   return <main className="mx-auto max-w-[1440px] space-y-7 p-6 lg:p-8" data-dashboard>
     <header className="flex items-start justify-between gap-4">
-      <div><h1 className="text-2xl font-semibold tracking-tight">Codex usage</h1></div>
+      <div><h1 className="text-2xl font-semibold tracking-tight">Codex usage</h1><p className="mt-1 text-sm text-muted-foreground">A clear view of activity, limits and account health.</p></div>
     </header>
     <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
       <div className="min-w-0 space-y-6">
