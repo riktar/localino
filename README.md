@@ -57,7 +57,7 @@ npm run dev
 npm run check
 ```
 
-`npm run dev` first compiles and signs the host-platform helpers automatically; build failures stop startup with the compiler output. `build:common` builds TypeScript/React/Electron; `build:native` compiles host-platform helpers. Runtime users do not need Node or an SDK. Renderers are sandboxed and isolated. The preload exposes named operations with trusted main-frame sender checks. Native binaries are outside ASAR. New main/preload dependencies must be bundled or explicitly packaged.
+`npm run dev` first compiles the host-platform helpers automatically (and signs them on macOS); build failures stop startup with the compiler output. `build:common` builds TypeScript/React/Electron; `build:native` compiles host-platform helpers. Runtime users do not need Node or an SDK. Renderers are sandboxed and isolated. The preload exposes named operations with trusted main-frame sender checks. Native binaries are outside ASAR. New main/preload dependencies must be bundled or explicitly packaged.
 
 Use `npm run build:win` for the Windows x64 ZIP. On a Mac, `npm run build:mac` creates the host-architecture ZIP and DMG; explicit arm64/x64 commands are in the [Mac guide](docs/mac-testing.md). `npm run test:packaged` checks the unpacked artifact. The [regression map](docs/regression-map.md) describes retained coverage after removing the old screens. The Claude bridge supports automatic macOS setup; see the [Mac guide](docs/mac-testing.md) for its file-coordination limits. No Mac production release is verified yet.
 

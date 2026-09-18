@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp,writeFile,readFile } from 'node:fs/promises'
+import { mkdtemp,writeFile,readFile,mkdir,symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join,resolve } from 'node:path'
 import { readPi } from '../../src/main/agents/pi'
@@ -65,4 +65,15 @@ test('numeric contradictions, negative cost, aggregate overflow and internal par
   const invalid=message('11111111','22222222',1,0,0,0);invalid.message.usage.totalTokens=99;invalid.message.usage.cost.total=-1
   await write(file,[header('A'),invalid,message('22222222','11111111',0,0,0,0)])
   data=await readPi(root,'all',now);assert.equal(data.totals.total,null);assert.equal(data.totals.cost,null);assert.equal(data.partial,true);assert.ok(data.issues>=3)
+})
+
+
+test('selected root aliases preserve fork dedup without following transcript links',async()=>{
+ const root=await mkdtemp(join(tmpdir(),'localino-pi-alias-')),actual=join(root,'actual'),alias=join(root,'alias')
+ await mkdir(actual);await symlink(actual,alias,process.platform==='win32'?'junction':'dir')
+ const original=message('11111111',null)
+ await write(join(actual,'original.jsonl'),[header('A'),original])
+ await write(join(actual,'fork.jsonl'),[header('F',join(alias,'original.jsonl')),original,message('22222222','11111111')])
+ const data=await readPi(alias,'all',now)
+ assert.equal(data.records,2);assert.equal(data.totals.total,34);assert.equal(data.issues,0)
 })

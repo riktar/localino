@@ -56,7 +56,7 @@ export function Clipboard({captured,guard,newRequest=0,consumeNew=()=>{},active=
   const begin=async(note?:Note)=>{if(!state||state.error||busy||!await canLeave())return;setError('');setMessage('');setSuspended(false);setDetail(null);setDraft(note?.text??'');setEditor({id:note?.id??null,original:note?.text??'',updatedAt:note?.updatedAt??0});requestAnimationFrame(()=>textArea.current?.focus())}
   const closeEditor=async()=>{if(await canLeave()){setEditor(null);setDetail(null)}}
   useEffect(()=>{if(!openList)return;openList.current=async()=>{if(!await canLeave())return;setEditor(null);setSuspended(false);setDetail(null);requestAnimationFrame(()=>(document.querySelector<HTMLElement>('[data-note-id] input')??document.querySelector<HTMLElement>('[data-clipboard] button[aria-label="New note"]'))?.focus())};return()=>{openList.current=null}},[openList,canLeave])
-  const copy=async()=>{const result=await window.localino.copyNotes(selected);if(result.ok){setMessage('Copied.');setError('')}else{setError(result.error??'Could not copy. Retry.');setMessage('')}setMenu(false)}
+  const copy=async()=>{setMenu(false);const result=await window.localino.copyNotes(selected);if(result.ok){setMessage('Copied.');setError('')}else{setError(result.error??'Could not copy. Retry.');setMessage('')}}
   const mutate=async(note:Note,kind:'complete'|'delete')=>{
     if(busy||saving.current)return
     if(kind==='delete'&&await ask('Delete this note?','This cannot be undone.',['Delete','Cancel'])!==0)return

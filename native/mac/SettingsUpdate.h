@@ -40,6 +40,9 @@ static int updateSettings(void) {
   NSString *path=request[@"path"],*expected=request[@"expectedHash"];
   id remove=request[@"remove"];
   if(![path isKindOfClass:NSString.class]||!path.isAbsolutePath||![expected isKindOfClass:NSString.class]||expected.length!=64||![remove isKindOfClass:NSNumber.class])return 4;
+  // File coordination canonicalizes ancestor aliases such as /var -> /private/var.
+  // Resolve only the parent so settingsRead still rejects a symlink at the leaf.
+  path=[[[path stringByDeletingLastPathComponent] stringByResolvingSymlinksInPath] stringByAppendingPathComponent:path.lastPathComponent];
   NSString *lockPath=[path stringByAppendingString:@".localino.lock"];
   int gate=open(lockPath.fileSystemRepresentation,O_CREAT|O_RDWR|O_NOFOLLOW|O_CLOEXEC,0600);
   if(gate<0)return 3;

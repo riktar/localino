@@ -1,4 +1,5 @@
-import { basename, dirname, resolve } from 'node:path'
+import { realpath } from 'node:fs/promises'
+import { basename, dirname, relative, resolve } from 'node:path'
 import type { AgentPeriod, HistoryData } from '../../shared/agents'
 import { aggregate, blankMetrics, sum, type UsageEvent } from './aggregate'
 import { count, identifier, jsonlFiles, money, object, readJsonl, timestamp } from './jsonl'
@@ -66,7 +67,11 @@ export async function readPi(root: string, period: AgentPeriod, now = Date.now()
     }
   }
   if (scan.files.length && !files.length) throw new HistoryFailure('unsupported')
-  const byPath = new Map(files.map(file => [file.path, file]))
+  // Enumeration uses the canonical root; recorded parents may retain the
+  // selected root's alias (e.g. /var vs /private/var on macOS). Map only known
+  // files back to that alias, without opening recorded outside parent paths.
+  const canonicalRoot = await realpath(root)
+  const byPath = new Map(files.flatMap(file => [[file.path, file], [keyPath(resolve(root,relative(canonicalRoot,file.path))),file]] as [string,SessionFile][]))
   const byId = new Map(files.map(file => [file.id.toLowerCase(),file]))
   for (const file of files) if (file.parent && !byPath.has(file.parent)) {
     // Pi's native filenames encode the stable session UUID. A moved archive

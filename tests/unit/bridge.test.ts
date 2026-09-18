@@ -114,7 +114,7 @@ test('a pending snapshot cannot cross disable and re-enable generations, includi
   const {bridge,dir,settings}=await setup();bridge.dispose()
   const originalRead=fs.readFile;let release=()=>{},capturedResolve=()=>{};const captured=new Promise<void>(r=>capturedResolve=r)
   try{
-    await bridge.setEnabled(true);const cache=join(dir,'snapshot.json')
+    assert.deepEqual(await bridge.setEnabled(true),{ok:true});const cache=join(dir,'snapshot.json')
     await writeFile(cache,JSON.stringify({generation:JSON.parse(await readFile(bridge.configPath,'utf8')).generation,sessionId:'old-generation',receivedAt:Date.now(),cost:1,windows:[]}))
     let delayed=false
     fs.readFile=async function(path,...args){const result=await (originalRead as (...values:unknown[])=>Promise<string|Buffer>)(path,...args);if(String(path)===cache&&!delayed){delayed=true;capturedResolve();await new Promise<void>(r=>release=r)}return result} as typeof fs.readFile
