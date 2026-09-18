@@ -4,7 +4,7 @@ Copy this template for each tested commit and architecture. `Pending` is not a p
 
 | Environment | Value |
 |---|---|
-| Commit | f21728cc6b5b2d3a1fe74423049d9ddbdeffa5e0 |
+| Commit | Pending - record the exact candidate commit |
 | Tester / date | Pending |
 | macOS / architecture | Pending |
 | Node / npm / Xcode SDK | Pending |
@@ -24,6 +24,10 @@ Copy this template for each tested commit and architecture. `Pending` is not a p
 | Clipboard CRUD, Unicode, multiselect and copy | Pending | |
 | Draft guards and failure recovery | Pending | |
 | All agents, quota details and data qualifiers | Pending | |
+| Supervised CLI discovery/start/stop and owned-process cleanup | Pending | Record each installed CLI version and protocol; missing binaries are a valid unavailable case, not a protocol pass. |
+| Concurrent session identity, state, timer and exact routing | Pending | Test two same-agent/project instances and one different agent. |
+| Send receipt, terminal lifecycle, FIFO queue and cancellation | Pending | Use multiline Unicode and record provider-specific evidence without transcript content. |
+| Unknown/suspended delivery and restart recovery without resend | Pending | Confirm no replacement CLI starts after relaunch. |
 | Cmd shortcuts, migration and text editing | Pending | |
 | Accessibility / Input Monitoring grant, deny, revoke | Pending | Must be run by colleague on a real Mac. |
 | Double Shift positive and negative cases | Pending | Native FSM self-test passed in CI; physical keyboard gesture remains pending. |
