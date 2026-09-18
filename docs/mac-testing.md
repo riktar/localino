@@ -12,7 +12,7 @@ Use a dedicated test account or a disposable Localino profile. Use synthetic not
 
 `npm run dev` compiles and signs the native helpers before starting Electron. A clean clone therefore does not require a separate native-build command. If Xcode tools are missing, fix the compiler error before retrying. Do not copy Windows `.exe` helpers onto a Mac.
 
-The `macOS validation` GitHub Actions workflow compiles helpers, tests the gesture state machine and unit contracts (including real native bridge setup/restore), then builds and verifies an ad hoc bundle on arm64 and Intel macOS runners. Its artifacts are for testing. CI does not grant capture permissions or prove physical gestures, interactive focus, or notarization. Check the exact run result; the presence of this workflow is not a passing result.
+The manual-only `macOS validation` GitHub Actions workflow compiles helpers, tests the gesture state machine and unit contracts (including real native bridge setup/restore), then builds and verifies an ad hoc bundle on arm64 and Intel macOS runners. Start it explicitly with **Run workflow**; commits, pull requests and merges do not trigger it. Its artifacts are for testing. CI does not grant capture permissions or prove physical gestures, interactive focus, or notarization. Check the exact run result; the presence of this workflow is not a passing result.
 
 From the repository root, run these commands and retain their exit codes:
 
