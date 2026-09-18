@@ -2,6 +2,7 @@
 #import <ApplicationServices/ApplicationServices.h>
 #import <Carbon/Carbon.h>
 #import <dispatch/dispatch.h>
+#include <IOKit/hidsystem/IOLLEvent.h>
 #include <signal.h>
 #include <unistd.h>
 #include "ShiftGesture.h"
@@ -125,7 +126,9 @@ static CGEventRef eventCallback(CGEventTapProxy proxy,CGEventType type,CGEventRe
   CGEventFlags flags=CGEventGetFlags(event);
   int key=(int)CGEventGetIntegerValueField(event,kCGKeyboardEventKeycode);
   BOOL shift=key==56||key==60;
-  BOOL down=type==kCGEventKeyDown || (type==kCGEventFlagsChanged && shift && CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState,key));
+  // Read the state attached to this event. Querying the current session state
+  // can observe a later release when rapid taps are queued on a busy run loop.
+  BOOL down=type==kCGEventKeyDown || (type==kCGEventFlagsChanged && shift && (flags&(key==56?NX_DEVICELSHIFTKEYMASK:NX_DEVICERSHIFTKEYMASK))!=0);
   BOOL modifier=(flags&(kCGEventFlagMaskControl|kCGEventFlagMaskAlternate|kCGEventFlagMaskCommand))!=0;
   BOOL injected=CGEventGetIntegerValueField(event,kCGEventSourceUnixProcessID)!=0 || CGEventGetIntegerValueField(event,kCGKeyboardEventAutorepeat)!=0;
   if (gestureFeed(&gesture,key,down,(int64_t)(CGEventGetTimestamp(event)/1000000),modifier,injected)) dispatch_async(dispatch_get_main_queue(),^{capture();});
@@ -145,6 +148,11 @@ int main(int argc,const char **argv) { @autoreleasepool {
     ShiftGesture g={0};gestureReset(&g);
     if(gestureFeed(&g,56,true,0,false,false)||gestureFeed(&g,56,false,20,false,false)||gestureFeed(&g,56,true,100,false,false)||!gestureFeed(&g,56,false,120,false,false))return 1;
     for(int scenario=0;scenario<5;scenario++){gestureReset(&g);gestureFeed(&g,56,true,0,false,false);gestureFeed(&g,56,false,20,false,false);if(scenario==0)gestureFeed(&g,1,true,30,false,false);gestureFeed(&g,56,true,scenario==1?400:100,scenario==2,scenario==3);if(scenario==4)gestureFeed(&g,56,true,110,false,false);if(gestureFeed(&g,56,false,scenario==1?420:120,false,false))return 1;}
+    for(int key=56;key<=60;key+=4){
+      gestureReset(&g);uint64_t mask=key==56?NX_DEVICELSHIFTKEYMASK:NX_DEVICERSHIFTKEYMASK;
+      uint64_t flags[]={NX_SHIFTMASK|mask,0,NX_SHIFTMASK|mask,0};
+      for(int i=0;i<4;i++)if(gestureFeed(&g,key,(flags[i]&mask)!=0,i*40,false,false)!=(i==3))return 1;
+    }
     puts("gesture-tests-ok");return 0;
   }
   [NSApplication sharedApplication];[NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
@@ -172,6 +180,7 @@ int main(int argc,const char **argv) { @autoreleasepool {
   [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *timer){
     if(getppid()!=parentProcess){terminateWorker();exit(0);}
     if(enabled&&!trusted()){if(tap){CFMachPortInvalidate(tap);CFRelease(tap);tap=NULL;}gestureReset(&gesture);status();}
+    else if(enabled&&!tap)installTap(); // Permission may be granted after the prompt returns.
   }];
   [NSApp run];terminateWorker();return 0;
 } }

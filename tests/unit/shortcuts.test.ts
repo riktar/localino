@@ -79,13 +79,34 @@ test('global conflict rollback, persistence, disable, callbacks and disposal',as
 test('startup occupied key isolated; bad files preserved; failed write restores old bindings',async()=>{
  const folder=await mkdtemp(join(tmpdir(),'localino-keys-errors-'));const file=join(folder,'shortcuts.json')
  const keys=new Set<string>();const os={register:(k:string)=>{if(k==='Ctrl+Alt+L')return false;keys.add(k);return true},unregister:(k:string)=>{keys.delete(k)}}
- const store=new Shortcuts(file,os,()=>{});await store.init()
+ const store=new Shortcuts(file,os,()=>{},'win32');await store.init()
  assert.equal(store.state.bindings.find(b=>b.scope==='global'&&b.id==='localino')!.active,false);assert.equal(keys.size,3)
  await mkdir(file)
  const result=await store.update({id:'clipboard',scope:'global',key:'Ctrl+Alt+H'})
  assert.equal(result.ok,false);assert.ok(keys.has('Ctrl+Alt+C'));assert.equal(keys.has('Ctrl+Alt+H'),false)
  store.dispose()
  await rename(file,file+'.directory');await writeFile(file,'{broken')
- const corrupt=new Shortcuts(file,os,()=>{});await corrupt.init();assert.ok(corrupt.state.error)
+ const corrupt=new Shortcuts(file,os,()=>{},'win32');await corrupt.init();assert.ok(corrupt.state.error)
  assert.equal((await corrupt.update({reset:true})).ok,false);assert.equal(await readFile(file,'utf8'),'{broken');corrupt.dispose()
+})
+
+
+test('Mac Option shortcuts handle symbols and dead keys without changing ordinary layout letters',()=>{
+ for(const [key,code,expected] of [['¬','KeyL','Cmd+Alt+L'],['Dead','KeyN','Cmd+Alt+N'],['x','KeyY','Cmd+Alt+X']]){
+  assert.equal(keyFromEvent({key,code,metaKey:true,altKey:true,ctrlKey:false,shiftKey:false},'darwin'),expected)
+ }
+})
+
+test('native punctuation accelerators register, roll back and unregister correctly',async()=>{
+ const file=join(await mkdtemp(join(tmpdir(),'localino-punctuation-')),'shortcuts.json')
+ const callbacks=new Map<string,()=>void>(),invoked:string[]=[]
+ const os={register:(key:string,fn:()=>void)=>{if(key==='Cmd+Alt+.'||callbacks.has(key))return false;callbacks.set(key,fn);return true},unregister:(key:string)=>{callbacks.delete(key)}}
+ const store=new Shortcuts(file,os,id=>invoked.push(id),'darwin');await store.init()
+ try {
+  assert.equal((await store.update({id:'localino',scope:'global',key:'Cmd+Alt+Comma'})).ok,true)
+  callbacks.get('Cmd+Alt+,')!();assert.deepEqual(invoked,['localino'])
+  assert.equal((await store.update({id:'localino',scope:'global',key:'Cmd+Alt+Period'})).ok,false)
+  assert.ok(callbacks.has('Cmd+Alt+,'));assert.equal(callbacks.has('Cmd+Alt+Comma'),false)
+ }finally{store.dispose()}
+ assert.equal(callbacks.size,0)
 })

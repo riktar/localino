@@ -24,14 +24,15 @@ export function CommandProvider({children}:{children:ReactNode}):React.JSX.Eleme
   const register=useCallback((entries:Actions)=>{setActions(prev=>({...prev,...entries}));return ()=>setActions(prev=>{const next={...prev};for(const key of Object.keys(entries) as CommandId[])delete next[key];return next})},[])
   const run=useCallback((id:CommandId)=>{const action=actions[id];if(action&&!action.disabled)void action.run()},[actions])
   const open=useCallback(()=>setPalette(true),[])
-  useEffect(()=>{const off=window.localino.onShortcuts(setState);void window.localino.getShortcuts().then(setState);return off},[])
+  useEffect(()=>{let updated=false,disposed=false;const off=window.localino.onShortcuts(next=>{updated=true;setState(next)});void window.localino.getShortcuts().then(next=>{if(!updated&&!disposed)setState(next)});return()=>{disposed=true;off()}},[])
   useEffect(()=>{
     const keydown=(event:KeyboardEvent)=>{
       if(event.defaultPrevented||event.repeat||event.isComposing||event.keyCode===229||event.getModifierState('AltGraph')||document.querySelector('dialog[open]'))return
       const target=event.target as HTMLElement
       if(target.closest('[data-binding]'))return
-      const key=keyFromEvent(event);if(!key)return
+      const key=keyFromEvent(event,window.localino.platform);if(!key)return
       const editing=!!target.closest('input:not([type=checkbox]):not([type=radio]):not([type=button]),textarea,select,[contenteditable=true]')
+      if(editing&&window.localino.platform==='darwin'&&event.altKey&&!event.metaKey&&!event.ctrlKey&&(event.key.length===1||event.key==='Dead'))return
       if(editing && (/^(Ctrl|Cmd)\+(A|C|V|X|Z|Y)$/.test(key)||['Delete','Backspace','Enter','Tab'].includes(key)))return
       if(editing && (/^(Arrow(Left|Right|Up|Down)|Home|End|PageUp|PageDown|Backspace|Delete)$/.test(event.key)||/^(Ctrl|Cmd)\+Space$/.test(key)||(!event.ctrlKey&&!event.metaKey&&!event.altKey&&event.key.length===1)))return
       const binding=state.bindings.find(b=>b.scope==='local'&&b.active&&b.key===key&&actions[b.id]&&!actions[b.id]?.disabled&&!(editing&&commands.find(c=>c.id===b.id)?.area==='List'))

@@ -13,6 +13,7 @@ export interface CaptureDraft {
 }
 export const captureHelp = 'In VS Code set Editor: Accessibility Support (editor.accessibilitySupport) to on. On macOS allow Accessibility and Input Monitoring in System Settings. Localino never changes other apps’ settings.'
 export function captureMessage(reason:string):string {
+  if(reason==='helper-missing')return 'Capture helper missing. In development run npm run build:native and restart. For an installed app, reinstall Localino.'
   if(reason==='ok')return 'Saving selection…'
   if(reason==='timeout')return 'Selection timed out. Paste or type the text.'
   if(reason==='limit')return 'Selection exceeds 100,000 characters. Use a shorter selection.'

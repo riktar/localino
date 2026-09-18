@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { readFile,writeFile,rename,unlink } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import { bindingsError,canonicalKey,defaultBindings,isCommand,type Binding,type CommandId,type ShortcutResult,type ShortcutState } from '../shared/commands'
+import { bindingsError,canonicalKey,defaultBindings,electronAccelerator,isCommand,type Binding,type CommandId,type ShortcutResult,type ShortcutState } from '../shared/commands'
 
 interface Registrar {register:(key:string,callback:()=>void)=>boolean;unregister:(key:string)=>void}
 export class Shortcuts extends EventEmitter {
@@ -11,7 +11,7 @@ export class Shortcuts extends EventEmitter {
   constructor(private file:string,private os:Registrar,private run:(id:CommandId)=>void,private platform=process.platform){super();this.state={bindings:defaultBindings(platform)}}
   private register(key:string):boolean {
     if(this.registered.has(key))return true
-    try {if(!this.os.register(key,()=>{const b=this.state.bindings.find(b=>b.scope==='global'&&b.key===key&&b.active);if(b)this.run(b.id)}))return false}
+    try {if(!this.os.register(electronAccelerator(key),()=>{const b=this.state.bindings.find(b=>b.scope==='global'&&b.key===key&&b.active);if(b)this.run(b.id)}))return false}
     catch{return false}
     this.registered.add(key);return true
   }
@@ -62,13 +62,13 @@ export class Shortcuts extends EventEmitter {
     for(const b of next.filter(b=>b.scope==='global'&&b.key)){
       if(this.registered.has(b.key))continue
       if(request.reset!==true && !(request.id===b.id&&request.scope===b.scope) && this.state.bindings.some(old=>old.id===b.id&&old.scope===b.scope&&old.key===b.key&&!old.active))continue
-      if(!this.register(b.key)){for(const key of added){this.os.unregister(key);this.registered.delete(key)}return fail(`Global shortcut unavailable (${b.key}): already in use. Previous binding kept.`)}
+      if(!this.register(b.key)){for(const key of added){this.os.unregister(electronAccelerator(key));this.registered.delete(key)}return fail(`Global shortcut unavailable (${b.key}): already in use. Previous binding kept.`)}
       added.push(b.key)
     }
     try{await this.persist(next)}
-    catch{for(const key of added){this.os.unregister(key);this.registered.delete(key)}return fail('Could not save. Previous bindings kept.')}
+    catch{for(const key of added){this.os.unregister(electronAccelerator(key));this.registered.delete(key)}return fail('Could not save. Previous bindings kept.')}
     this.state={bindings:next.map(({id,scope,key})=>{const active=!!key&&(scope==='local'||this.registered.has(key));return {id,scope,key,active,...(key&&!active?{error:'Global shortcut unavailable: already in use.'}:{})}})}
-    for(const key of this.registered){if(!next.some(b=>b.scope==='global'&&b.key===key)){this.os.unregister(key);this.registered.delete(key)}}
+    for(const key of this.registered){if(!next.some(b=>b.scope==='global'&&b.key===key)){this.os.unregister(electronAccelerator(key));this.registered.delete(key)}}
     this.emit('change',this.state);return {ok:true,state:this.state}
   }
   private async persist(bindings:Binding[]):Promise<void>{
@@ -76,5 +76,5 @@ export class Shortcuts extends EventEmitter {
     try{await writeFile(temp,JSON.stringify({version:2,bindings:bindings.map(({id,scope,key})=>({id,scope,key}))}),'utf8');await rename(temp,this.file)}
     catch(error){await unlink(temp).catch(()=>{});throw error}
   }
-  dispose():void{for(const key of this.registered)this.os.unregister(key);this.registered.clear()}
+  dispose():void{for(const key of this.registered)this.os.unregister(electronAccelerator(key));this.registered.clear()}
 }

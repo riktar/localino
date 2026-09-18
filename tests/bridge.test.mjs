@@ -17,7 +17,7 @@ test('Claude bridge opt-in, passive tray delivery, IPC whitelist and restore in 
   const control=join(profile,'claude-bridge','control.json')
   const invoke=async input=>{
     const config=JSON.parse(await readFile(control,'utf8'))
-    return new Promise((resolve,reject)=>{const child=spawn('powershell.exe',config.installed.command.split(' ').slice(1),{env:{...env,PATH:process.env.SystemRoot+'\\System32;'+process.env.SystemRoot+'\\System32\\WindowsPowerShell\\v1.0'},windowsHide:true,stdio:['pipe','pipe','pipe']}),chunks=[];child.stdout.on('data',chunk=>chunks.push(chunk));child.stderr.resume();child.on('error',reject);child.on('close',code=>resolve({code,output:Buffer.concat(chunks).toString()}));child.stdin.end(JSON.stringify(input))})
+    return new Promise((resolve,reject)=>{const child=spawn(process.platform==='darwin'?'/bin/bash':'powershell.exe',process.platform==='darwin'?['-c',config.installed.command]:config.installed.command.split(' ').slice(1),{env:{...env,PATH:process.platform==='darwin'?'/usr/bin:/bin':process.env.SystemRoot+'\\System32;'+process.env.SystemRoot+'\\System32\\WindowsPowerShell\\v1.0'},windowsHide:true,stdio:['pipe','pipe','pipe']}),chunks=[];child.stdout.on('data',chunk=>chunks.push(chunk));child.stderr.resume();child.on('error',reject);child.on('close',code=>resolve({code,output:Buffer.concat(chunks).toString()}));child.stdin.end(JSON.stringify(input))})
   }
   try{
     const page=await mainPage(app);await page.evaluate(()=>window.localino.selectAgent('claude'))

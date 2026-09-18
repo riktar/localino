@@ -62,7 +62,7 @@ export class Capture extends EventEmitter {
         try { this.message(JSON.parse(line)) } catch { this.fail(); return }
       }
     })
-    child.on('error', () => { if (this.child === child) this.fail() })
+    child.on('error', error => { if (this.child === child) this.fail((error as NodeJS.ErrnoException).code==='ENOENT'?'helper-missing':'unavailable') })
     child.on('exit', () => { if (this.child === child) this.fail() })
     this.startup = setTimeout(() => this.fail(), 3000)
   }

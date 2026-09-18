@@ -9,6 +9,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
+    "predev": "npm run build:native",
     "dev": "electron-vite dev",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit",

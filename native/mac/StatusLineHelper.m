@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <math.h>
 #include <float.h>
+#include "SettingsUpdate.h"
 
 static NSDictionary *document(NSString *path) {
   NSData *data=[NSData dataWithContentsOfFile:path];
@@ -33,7 +34,7 @@ static NSDictionary *project(NSData *input,long long receivedAt) {
   return @{@"sessionId":session,@"receivedAt":@(receivedAt),@"windows":windows,@"cost":number(cost[@"total_cost_usd"],DBL_MAX)};
 }
 static int lock(NSString *path) {
-  int fd=open(path.fileSystemRepresentation,O_CREAT|O_RDWR,0600);if(fd<0)return -1;
+  int fd=open(path.fileSystemRepresentation,O_CREAT|O_RDWR|O_NOFOLLOW|O_CLOEXEC,0600);if(fd<0)return -1;
   for(int attempt=0;attempt<12;attempt++){if(flock(fd,LOCK_EX|LOCK_NB)==0)return fd;usleep(10000);}close(fd);return -1;
 }
 static void cache(NSString *path,NSDictionary *config,NSData *input,long long now) {
@@ -58,9 +59,20 @@ static int previous(NSDictionary *config,NSData *input) {
   @try{[pipe.fileHandleForWriting writeData:input];}@catch(NSException *exception){}@finally{[pipe.fileHandleForWriting closeFile];}
   [task waitUntilExit];return task.terminationStatus;
 }
+static int updateControl(NSString *path) {
+  NSData *input=[[NSFileHandle fileHandleWithStandardInput] readDataToEndOfFile];
+  if(!path.isAbsolutePath||input.length>8*1024*1024)return 3;
+  id value=[NSJSONSerialization JSONObjectWithData:input options:0 error:nil];
+  if(![value isKindOfClass:NSDictionary.class]||![value[@"generation"] isKindOfClass:NSString.class]||![value[@"enabled"] isKindOfClass:NSNumber.class])return 3;
+  int fd=lock([path stringByAppendingString:@".lock"]);if(fd<0)return 3;
+  int result=3;
+  @try {NSError *error=nil;if([input writeToFile:path options:NSDataWritingAtomic error:&error]){chmod(path.fileSystemRepresentation,0600);result=0;}}
+  @finally {flock(fd,LOCK_UN);close(fd);}
+  return result;
+}
 int main(int argc,const char **argv) { @autoreleasepool {
-  /* There is no NTFS transaction equivalent here. Never silently substitute a racy settings overwrite. */
-  if(argc==2 && strcmp(argv[1],"--settings-cas")==0)return 3;
+  if(argc==2 && strcmp(argv[1],"--settings-cas")==0)return updateSettings();
+  if(argc==3 && strcmp(argv[1],"--control-update")==0)return updateControl([NSString stringWithUTF8String:argv[2]]);
   if(argc!=2)return 1;
   NSString *path=[NSString stringWithUTF8String:argv[1]];NSDictionary *config=document(path);if(!config)return 1;
   NSData *input=[NSFileHandle.fileHandleWithStandardInput readDataToEndOfFile];

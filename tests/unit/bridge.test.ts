@@ -1,20 +1,21 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdtemp,readFile,writeFile,mkdir,access} from 'node:fs/promises'
+import {mkdtemp,readFile,writeFile,mkdir,access,unlink} from 'node:fs/promises'
 import {join,resolve} from 'node:path'
 import {tmpdir} from 'node:os'
 import {spawn} from 'node:child_process'
-import {ClaudeBridge,updateBridgeSettings} from '../../src/main/agents/bridge'
+import {ClaudeBridge,updateBridgeSettings,bridgeCommand} from '../../src/main/agents/bridge'
 import fs from 'node:fs/promises'
+import {nativeHelper} from '../../src/main/platform'
 
-const helper=resolve('out/native/Localino.StatusLine.exe')
+const helper=resolve('out/native',nativeHelper('StatusLine'))
 const payload=(id='session-A')=>({session_id:id,cwd:'PRIVATE-SENTINEL',transcript_path:'SECRET',context_window:{total_input_tokens:999999},cost:{total_cost_usd:0},rate_limits:{five_hour:{used_percentage:0,resets_at:1},seven_day:{used_percentage:40,resets_at:1800000000},spend_limit:{used_percentage:125,resets_at:null}}})
 const run=(exe:string,args:string[],input:Buffer)=>new Promise<{code:number|null;output:Buffer}>( (resolve,reject)=>{
   const child=spawn(exe,args,{windowsHide:true,stdio:['pipe','pipe','pipe']}),chunks:Buffer[]=[]
   child.stdout.on('data',chunk=>chunks.push(chunk));child.stderr.resume();child.on('error',reject);child.on('close',code=>resolve({code,output:Buffer.concat(chunks)}));child.stdin.end(input)
 })
 const setup=async(previous?:unknown)=>{
-  const root=await mkdtemp(join(tmpdir(),'localino-bridge-è ')),settings=join(root,'settings.json'),dir=join(root,'localino')
+  const root=await mkdtemp(join(tmpdir(),"localino-bridge-è ' ")),settings=join(root,'settings.json'),dir=join(root,'localino')
   await writeFile(settings,JSON.stringify({env:{SECRET:'must-not-be-backed-up'},...(previous?{statusLine:previous}:{})}))
   const bridge=new ClaudeBridge(dir,settings,helper);await bridge.start()
   return {root,settings,dir,bridge}
@@ -43,13 +44,13 @@ test('opt-in, native whitelist, last session, invalid payload, stale/reset and r
   }finally{bridge.dispose()}
 })
 
-test('native helper preserves exact stdin/stdout through installed Windows wrapper and works with broken cache, app closed',async()=>{
+test('native helper preserves exact stdin/stdout through installed platform wrapper and works with broken cache, app closed',async()=>{
   const {bridge,dir}=await setup({type:'command',command:'cat',padding:1})
   try{
     assert.deepEqual(await bridge.setEnabled(true),{ok:true});bridge.dispose()
     const config=JSON.parse(await readFile(bridge.configPath,'utf8')),input=Buffer.from(JSON.stringify(payload())+'\r\n\t è 😀\u0000','utf8')
     const start=Date.now(),args=config.installed.command.split(' ').slice(1)
-    const result=await run('powershell.exe',args,input)
+    const result=await run(process.platform==='darwin'?'/bin/bash':'powershell.exe',process.platform==='darwin'?['-c',config.installed.command]:args,input)
     assert.equal(result.code,0);assert.deepEqual(result.output,input);assert.ok(Date.now()-start<1000,`wrapper overhead ${Date.now()-start}ms`)
     // Cache path is deliberately an existing directory. Prior command must still work.
     await mkdir(join(dir,'blocked'));config.cachePath=join(dir,'blocked');await writeFile(bridge.configPath,JSON.stringify(config))
@@ -75,13 +76,13 @@ test('restart, user conflict, managed/project overrides and invalid settings do 
   }finally{bridge.dispose()}
 })
 
-test('PowerShell previous command preserves bytes; missing quotas stay absent and interrupted configuration can recover',async()=>{
+test('Platform shell previous command preserves bytes; missing quotas stay absent and interrupted configuration can recover',async()=>{
   const {bridge,settings,dir}=await setup()
   try{
     await bridge.setEnabled(true)
     const config=JSON.parse(await readFile(bridge.configPath,'utf8'))
-    config.shell=join(process.env.SystemRoot!,'System32','WindowsPowerShell','v1.0','powershell.exe');config.shellKind='powershell'
-    config.previous={type:'command',command:'[Console]::OpenStandardInput().CopyTo([Console]::OpenStandardOutput())'}
+    config.shell=process.platform==='darwin'?'/bin/bash':join(process.env.SystemRoot!,'System32','WindowsPowerShell','v1.0','powershell.exe');config.shellKind=process.platform==='darwin'?'bash':'powershell'
+    config.previous={type:'command',command:process.platform==='darwin'?'cat':'[Console]::OpenStandardInput().CopyTo([Console]::OpenStandardOutput())'}
     await writeFile(bridge.configPath,JSON.stringify(config))
     const input=Buffer.from(JSON.stringify({session_id:'no-quota'})+'\n'),result=await run(helper,[bridge.configPath],input)
     assert.deepEqual(result.output,input);assert.equal(result.code,0);await bridge.refresh();assert.deepEqual(bridge.state.quotas.data?.buckets,[]);assert.equal(bridge.state.cost,null)
@@ -95,7 +96,7 @@ test('PowerShell previous command preserves bytes; missing quotas stay absent an
   }finally{bridge.dispose()}
 })
 
-test('settings compare and update is indivisible: stale expectation and concurrent transactions preserve user keys',async()=>{
+test('settings updates reject stale expectations and serialize concurrent Localino writers while preserving user keys',async()=>{
   const {bridge,settings}=await setup()
   try{
     const expected=await readFile(settings,'utf8'),edited=JSON.stringify({theme:'edited',newUserSetting:true})
@@ -114,7 +115,7 @@ test('a pending snapshot cannot cross disable and re-enable generations, includi
   const originalRead=fs.readFile;let release=()=>{},capturedResolve=()=>{};const captured=new Promise<void>(r=>capturedResolve=r)
   try{
     await bridge.setEnabled(true);const cache=join(dir,'snapshot.json')
-    await writeFile(cache,JSON.stringify({sessionId:'old-generation',receivedAt:Date.now(),cost:1,windows:[]}))
+    await writeFile(cache,JSON.stringify({generation:JSON.parse(await readFile(bridge.configPath,'utf8')).generation,sessionId:'old-generation',receivedAt:Date.now(),cost:1,windows:[]}))
     let delayed=false
     fs.readFile=async function(path,...args){const result=await (originalRead as (...values:unknown[])=>Promise<string|Buffer>)(path,...args);if(String(path)===cache&&!delayed){delayed=true;capturedResolve();await new Promise<void>(r=>release=r)}return result} as typeof fs.readFile
     const pending=bridge.refresh();await captured
@@ -129,14 +130,52 @@ test('a pending snapshot cannot cross disable and re-enable generations, includi
 })
 
 test('failed final enable write can be retried in the same process without a recursive wrapper',async()=>{
-  const {bridge}=await setup(),originalRename=fs.rename
+  const {bridge}=await setup()
+  // Inject a persistence failure at the control boundary on either platform.
+  const control=bridge as unknown as {saveConfig:(config:{enabled:boolean})=>Promise<void>}
+  const save=control.saveConfig.bind(bridge)
   try{
     let failed=false
-    fs.rename=async function(from,to){if(String(to)===bridge.configPath&&!failed&&JSON.parse(await readFile(from,'utf8')).enabled){failed=true;throw Error('simulated disk failure')}return originalRename(from,to)}
+    control.saveConfig=async config=>{if(config.enabled&&!failed){failed=true;throw Error('simulated disk failure')}await save(config)}
     assert.equal((await bridge.setEnabled(true)).ok,false);assert.equal(bridge.state.enabled,false)
-    fs.rename=originalRename
+    control.saveConfig=save
     assert.equal((await bridge.setEnabled(true)).ok,true);assert.equal(bridge.state.enabled,true)
     assert.equal(JSON.parse(await readFile(bridge.configPath,'utf8')).previous,null)
     assert.equal((await bridge.setEnabled(false)).ok,true)
-  }finally{fs.rename=originalRename;bridge.dispose()}
+  }finally{control.saveConfig=save;bridge.dispose()}
+})
+
+
+test('Mac installed command quotes shell metacharacters and apostrophes literally',()=>{
+ assert.equal(bridgeCommand("/Users/test's home/$folder/helper",'/tmp/a; b/control.json','darwin'), `'`+`/Users/test'"'"'s home/$folder/helper' '/tmp/a; b/control.json'`)
+})
+
+test('automatic setup creates missing settings and restores only its statusLine',async()=>{
+ const {bridge,settings}=await setup()
+ try{
+  await unlink(settings)
+  assert.deepEqual(await bridge.setEnabled(true),{ok:true})
+  const installed=JSON.parse(await readFile(settings,'utf8'));installed.userAdded='keep'
+  await writeFile(settings,JSON.stringify(installed))
+  assert.deepEqual(await bridge.setEnabled(false),{ok:true})
+  assert.deepEqual(JSON.parse(await readFile(settings,'utf8')),{userAdded:'keep'})
+ }finally{bridge.dispose()}
+})
+
+
+test('a failed disable keeps the persisted generation live and retryable',async()=>{
+ const {bridge}=await setup()
+ const control=bridge as unknown as {saveConfig:(config:{enabled:boolean})=>Promise<void>}
+ const save=control.saveConfig.bind(bridge)
+ try{
+  assert.deepEqual(await bridge.setEnabled(true),{ok:true})
+  const before=await readFile(bridge.configPath,'utf8')
+  control.saveConfig=async()=>{throw Error('simulated control lock contention')}
+  assert.equal((await bridge.setEnabled(false)).ok,false)
+  assert.equal(bridge.state.enabled,true);assert.equal(await readFile(bridge.configPath,'utf8'),before)
+  await run(helper,[bridge.configPath],Buffer.from(JSON.stringify(payload('still-enabled'))))
+  await bridge.refresh();assert.equal(bridge.state.sessionId,'still-enabled')
+  await bridge.refresh(bridge.state.receivedAt!+120001);assert.equal(bridge.state.quotas.stale,true)
+  control.saveConfig=save;assert.deepEqual(await bridge.setEnabled(false),{ok:true})
+ }finally{control.saveConfig=save;bridge.dispose()}
 })

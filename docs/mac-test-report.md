@@ -15,6 +15,7 @@ Copy this template for each tested commit and architecture. `Pending` is not a p
 | Check | Pass / Fail / Pending | Evidence and limits |
 |---|---|---|
 | Clean install, typecheck, lint, unit tests | Pending | |
+| Automatic Claude bridge enable, payload forwarding, restart and restore | Pending | |
 | Common and native compilation | Pending | |
 | Electron integration tests | Pending | |
 | Package, signing and helper launch | Pending | |

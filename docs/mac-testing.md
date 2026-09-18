@@ -10,7 +10,9 @@ Use a dedicated test account or a disposable Localino profile. Use synthetic not
 
 ## Build and automated checks
 
-Current preparation blocker: the optional Claude status-line bridge still needs an agreed macOS settings activation strategy. Its existing end-to-end/unit activation tests use the Windows transaction helper and PowerShell. Until that work is integrated, a full Mac `check` is expected to fail in that area; do not omit it and report an overall pass. Capture, panel and packaging work can be assessed separately, with this blocker retained in the report.
+`npm run dev` compiles and signs the native helpers before starting Electron. A clean clone therefore does not require a separate native-build command. If Xcode tools are missing, fix the compiler error before retrying. Do not copy Windows `.exe` helpers onto a Mac.
+
+The `macOS validation` GitHub Actions workflow compiles helpers, tests the gesture state machine and unit contracts (including real native bridge setup/restore), then builds and verifies an ad hoc bundle on arm64 and Intel macOS runners. Its artifacts are for testing. CI does not grant capture permissions or prove physical gestures, interactive focus, or notarization. Check the exact run result; the presence of this workflow is not a passing result.
 
 From the repository root, run these commands and retain their exit codes:
 
@@ -60,6 +62,14 @@ Use TextEdit, a Chromium text field and VS Code (`editor.accessibilitySupport: o
 - Keep an unsaved manual draft, then capture text externally. The captured note is saved and the manual draft can be resumed intact. Repeat rapidly: no duplicate save or lost draft.
 - Recovery: Save, failed save, Cancel, Hide, Quit and Escape inside confirmation. On cancellation the original application is restored where the OS permits; failed focus must not silently imply success.
 - Suspend/resume, terminate the test helper, retry and quit. Confirm workers time out and no owned helper remains after quit. Do not terminate unrelated processes.
+
+## Automatic Claude bridge
+
+Enable **Session quota bridge** in Claude usage. Localino installs an executable helper without an `.exe` suffix, configures the quoted command in Claude settings, and preserves/forwards any previous status-line command. No shell, Node or .NET installation is required by the distributed helper beyond macOS system tools. Start a Claude session to confirm delivery, then disable the bridge and check restoration.
+
+Settings updates use native file coordination, a lock shared by Localino writers, a hash/identity recheck and atomic replacement. Observed conflicts are rejected. These locks are advisory: an unrelated program that ignores file coordination can still race the final replacement. Avoid editing Claude settings during enable/disable; this is not the Windows NTFS transaction guarantee. Only the previous `statusLine` is kept in Localino's control file, not a backup of unrelated settings. Collection/control updates share a native lock so disabled or old-generation snapshots cannot reappear.
+
+Test with disposable `CLAUDE_CONFIG_DIR` settings first: absent/existing files, paths with spaces/apostrophes, an existing status-line command, preservation of unrelated keys, restart, disable/re-enable and a user-edited status line. A conflict or invalid JSON must leave the user's settings intact. Test the installed command with Node absent from PATH and with Localino closed. Retain actual Claude-session verification separately from synthetic payload tests.
 
 ## Packaging and evidence
 

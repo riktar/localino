@@ -170,3 +170,16 @@ test('only a valid nonblank selection triggers autosave; a held session suppress
     service.finish(id,false);assert.equal(service.draft,null)
   }finally{service.dispose()}
 })
+
+
+test('missing native helper reports a recoverable build error without losing a manual recovery draft',async()=>{
+ const {service,child}=await fixture()
+ try {
+  child.emit('error',Object.assign(new Error('missing'),{code:'ENOENT'}))
+  assert.equal(service.state.status,'error')
+  assert.match(service.state.error!,/build:native/)
+  service.request()
+  assert.equal(service.draft?.text,'')
+  assert.equal(service.draft?.acquiring,false)
+ }finally{service.dispose()}
+})

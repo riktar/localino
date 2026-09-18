@@ -70,9 +70,16 @@ export function bindingsError(bindings:Binding[]):string|null {
   }
   return null
 }
-export function keyFromEvent(e:Pick<KeyboardEvent,'key'|'ctrlKey'|'altKey'|'shiftKey'|'metaKey'> & {code?:string}):string|null {
+/** Stored names are UI-friendly; Electron expects literal punctuation accelerators. */
+export function electronAccelerator(key:string):string {
+  return key.split('+').map(part=>part==='Comma'?',':part==='Period'?'.':part).join('+')
+}
+export function keyFromEvent(e:Pick<KeyboardEvent,'key'|'ctrlKey'|'altKey'|'shiftKey'|'metaKey'> & {code?:string},platform:string='win32'):string|null {
   const named:Record<string,string>={' ':'Space',ArrowLeft:'Left',ArrowRight:'Right',ArrowUp:'Up',ArrowDown:'Down'}
   const punctuation:Record<string,string>={Comma:'Comma',Period:'Period'}
-  const key=e.code&&/^Digit[0-9]$/.test(e.code)?e.code.slice(5):(e.code&&punctuation[e.code])||named[e.key]||e.key
+  // Option changes event.key to a symbol (or Dead) on macOS. Keep ordinary
+  // layout-aware letters, but resolve modified symbols using the physical key.
+  const optionLetter=platform==='darwin'&&e.altKey&&e.code&&/^Key[A-Z]$/.test(e.code)&&!/^[a-z]$/i.test(e.key)?e.code.slice(3):null
+  const key=optionLetter||(e.code&&/^Digit[0-9]$/.test(e.code)?e.code.slice(5):(e.code&&punctuation[e.code])||named[e.key]||e.key)
   return canonicalKey([...(e.ctrlKey?['Ctrl']:[]),...(e.metaKey?['Cmd']:[]),...(e.altKey?['Alt']:[]),...(e.shiftKey?['Shift']:[]),key].join('+'))
 }
