@@ -15,8 +15,8 @@ Copy this template for each tested commit and architecture. `Pending` is not a p
 | Check | Pass / Fail / Pending | Evidence and limits |
 |---|---|---|
 | Clean install, typecheck, lint, unit tests | Pending | |
-| Common and native compilation | Pass (CI arm64 + Intel) | GitHub Actions run 35322576757; both architectures compiled helpers and packaged ad hoc bundles. |
-| Automatic Claude bridge enable, payload forwarding, restart and restore | Pass (CI arm64 + Intel) | Packaged bridge test passed on both macOS architectures; physical Claude session still pending. |
+| Common and native compilation | Pending | Historical SPRINT-004 run 35322576757 tested `f21728c`, not the candidate recorded above; rerun both architectures for this report. |
+| Automatic Claude bridge enable, payload forwarding, restart and restore | Pending | Historical SPRINT-004 packaged coverage at `f21728c` is not evidence for this candidate; physical Claude session also remains pending. |
 | Electron integration tests | Pending | |
 | Package, signing and helper launch | Pending | |
 | Single panel, menu bar, activation, close and quit | Pending | |
