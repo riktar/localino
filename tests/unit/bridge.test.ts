@@ -190,3 +190,17 @@ test('a failed disable keeps the persisted generation live and retryable',async(
   control.saveConfig=save;assert.deepEqual(await bridge.setEnabled(false),{ok:true})
  }finally{control.saveConfig=save;bridge.dispose()}
 })
+
+
+test('statusLine JSON property ordering is not a user conflict',async()=>{
+ const {bridge,settings}=await setup({type:'command',command:'printf prior',padding:3})
+ try {
+  assert.deepEqual(await bridge.setEnabled(true),{ok:true})
+  const value=JSON.parse(await readFile(settings,'utf8'))
+  value.statusLine=Object.fromEntries(Object.entries(value.statusLine).reverse())
+  await writeFile(settings,JSON.stringify(value))
+  assert.deepEqual(await bridge.setEnabled(true),{ok:true})
+  assert.deepEqual(await bridge.setEnabled(false),{ok:true})
+  assert.deepEqual(JSON.parse(await readFile(settings,'utf8')).statusLine,{type:'command',command:'printf prior',padding:3})
+ }finally{bridge.dispose()}
+})

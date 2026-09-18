@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { isDeepStrictEqual } from 'node:util'
 import { access, chmod, copyFile, mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { nativeHelper } from '../platform'
 import { dirname, join, delimiter, isAbsolute } from 'node:path'
@@ -9,7 +10,7 @@ import type { QuotaBucket } from '../../shared/contracts'
 import { object } from './jsonl'
 
 interface Config { enabled:boolean;generation:string;settingsPath:string;cachePath:string;hadPrevious:boolean;previous:unknown;installed:Record<string,unknown>;shell:string;shellKind:'bash'|'powershell' }
-const equal=(a:unknown,b:unknown)=>JSON.stringify(a)===JSON.stringify(b)
+const equal=isDeepStrictEqual
 const absent=(error:unknown)=>(error as NodeJS.ErrnoException).code==='ENOENT'
 const ps=(value:string)=>`'${value.replaceAll("'","''")}'`
 const exists=async(path:string)=>{try{await access(path);return true}catch{return false}}
