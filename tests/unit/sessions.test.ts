@@ -62,6 +62,18 @@ test('an established stdio protocol becomes unknown when its health check is sil
   }finally{await supervisor.dispose();context.mock.timers.reset()}
 })
 
+test('an active silent Claude stream becomes unknown while an untouched ready stream stays ready',async context=>{
+  const {supervisor}=fixture();await supervisor.refreshCapabilities();await supervisor.start('claude',mkdtempSync(join(tmpdir(),'localino-claude-health-')));await wait(300)
+  const managed=(supervisor as unknown as {sessions:Map<string,{view:{status:string};lastContactAt:number;health?:NodeJS.Timeout}>}).sessions.values().next().value!
+  assert.equal(managed.view.status,'ready')
+  if(managed.health)clearInterval(managed.health);managed.health=undefined;managed.view.status='running';managed.lastContactAt=Date.now()-16_000
+  context.mock.timers.enable({apis:['setInterval']})
+  try{
+    ;(supervisor as unknown as {armHealth:(value:unknown)=>void}).armHealth(managed);context.mock.timers.tick(5000)
+    assert.equal(supervisor.state.sessions[0].status,'unknown');assert.match(supervisor.state.sessions[0].error!,/Claude stream/)
+  }finally{await supervisor.dispose();context.mock.timers.reset()}
+})
+
 test('Codex App Server handshake creates one isolated session and maps turn lifecycle',async()=>{
   const {supervisor,children,calls}=fixture();await supervisor.refreshCapabilities()
   const project=mkdtempSync(join(tmpdir(),'localino-codex-')),result=await supervisor.start('codex',project);assert.equal(result.ok,true)
@@ -92,7 +104,7 @@ test('Pi and Claude use machine protocols without a terminal and stop independen
   assert.ok(calls[1].args.includes('stream-json'))
   line(children[0],{id:1,type:'response',command:'get_state',success:true,data:{sessionId:'pi-one'}});await wait()
   assert.equal(supervisor.state.sessions.find(session=>session.agent==='pi')?.status,'idle')
-  assert.equal(supervisor.state.sessions.find(session=>session.agent==='claude')?.status,'idle')
+  assert.equal(supervisor.state.sessions.find(session=>session.agent==='claude')?.status,'ready')
   const claudeSession=supervisor.state.sessions.find(session=>session.agent==='claude')!
   assert.ok(claudeSession.providerSessionId)
   assert.ok(calls[1].args.includes('--session-id'))
@@ -101,7 +113,7 @@ test('Pi and Claude use machine protocols without a terminal and stop independen
   assert.equal(supervisor.state.sessions.find(session=>session.agent==='pi')?.status,'idle')
   await supervisor.stop(pi.sessionId!);children[0].kill();await wait()
   assert.equal(supervisor.state.sessions.find(session=>session.agent==='pi')?.status,'stopped')
-  assert.equal(supervisor.state.sessions.find(session=>session.agent==='claude')?.status,'idle')
+  assert.equal(supervisor.state.sessions.find(session=>session.agent==='claude')?.status,'ready')
   await supervisor.dispose()
 })
 
@@ -151,5 +163,8 @@ test('OpenCode owns an authenticated loopback server and creates its session',as
     assert.equal(result.ok,true)
     assert.equal(calls[0].args[0],'serve');assert.equal(calls[0].args[1],'--hostname');assert.equal(calls[0].args[2],'127.0.0.1')
     const session=supervisor.state.sessions[0];assert.equal(session.providerSessionId,'open-one');assert.equal(session.status,'idle')
+    supervisor.suspend();assert.equal(supervisor.state.sessions[0].status,'unknown');supervisor.resume();await wait()
+    const managed=(supervisor as unknown as {sessions:Map<string,{poll?:NodeJS.Timeout}>}).sessions.get(result.sessionId!)!
+    assert.equal(supervisor.state.sessions[0].status,'idle');assert.ok(managed.poll)
   }finally{await supervisor.dispose();globalThis.fetch=originalFetch}
 })

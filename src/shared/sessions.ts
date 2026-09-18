@@ -1,6 +1,6 @@
 import { agentIds, isAgentId, type AgentId } from './agents'
 
-export const sessionStatuses = ['starting','idle','running','waiting','stopping','stopped','unknown','error'] as const
+export const sessionStatuses = ['starting','ready','idle','running','waiting','stopping','stopped','unknown','error'] as const
 export type SessionStatus = typeof sessionStatuses[number]
 export type SessionProtocol = 'codex-app-server'|'claude-stream-json'|'pi-rpc'|'opencode-server'
 export type DeliveryStatus = 'queued'|'sending'|'sent'|'failed'|'unknown'|'cancelled'

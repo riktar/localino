@@ -162,7 +162,7 @@ export class SessionSupervisor extends EventEmitter {
     const clean=text.trim();if(!clean)return {ok:false,error:'Message is empty.'}
     if(text.length>100_000)return {ok:false,error:'Message is too large.'}
     if(['stopped','stopping','error','unknown','starting'].includes(session.view.status))return {ok:false,error:'Session is not ready.'}
-    const delivery:SessionDelivery={id:randomUUID(),text,createdAt:Date.now(),status:session.view.status==='idle'?'sending':'queued',error:null}
+    const delivery:SessionDelivery={id:randomUUID(),text,createdAt:Date.now(),status:session.view.status==='idle'||session.view.status==='ready'?'sending':'queued',error:null}
     session.view.deliveries=[...session.view.deliveries,delivery];session.view.updatedAt=Date.now();this.changed()
     if(delivery.status==='sending')void this.dispatch(session,delivery)
     return {ok:true,sessionId:delivery.id}
@@ -186,7 +186,7 @@ export class SessionSupervisor extends EventEmitter {
       if(session.child.exitCode!==null||session.child.stdin.destroyed||!session.child.stdin.writable){this.update(session,{status:'unknown',error:'Agent process is unreachable.'});continue}
       if(session.view.agent==='codex'||session.view.agent==='pi')this.sendHealthCheck(session,true)
       else if(session.view.agent==='opencode')void this.pollOpenCode(session,true)
-      else if(session.resumeStatus==='idle')this.update(session,{status:'idle',error:null})
+      else if(session.resumeStatus==='idle'||session.resumeStatus==='ready')this.update(session,{status:session.resumeStatus,error:null})
       session.resumeStatus=undefined;this.armHealth(session)
     }
   }
@@ -223,7 +223,7 @@ export class SessionSupervisor extends EventEmitter {
         const generation=session.generation
         session.deadline=setTimeout(()=>{
           session.deadline=undefined
-          if(!session.stopping&&generation===session.generation&&session.child.exitCode===null&&session.child.stdin.writable)this.update(session,{status:'idle'})
+          if(!session.stopping&&generation===session.generation&&session.child.exitCode===null&&session.child.stdin.writable)this.update(session,{status:'ready'})
         },250);session.deadline.unref()
       }
       else void this.startOpenCode(session)
@@ -340,6 +340,7 @@ export class SessionSupervisor extends EventEmitter {
       const type=statuses[session.view.providerSessionId]?.type
       if(type==='busy'||type==='retry'){if(session.view.status!=='running')this.update(session,{status:'running',turnStartedAt:reconcile?null:Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})}
       else if(type==='idle'||type===undefined)this.idle(session,session.view.lastTurnOutcome)
+      if(reconcile&&!session.poll&&!session.stopping&&generation===session.generation){session.poll=setInterval(()=>void this.pollOpenCode(session),2000);session.poll.unref()}
     }catch{if(!session.stopping&&generation===session.generation)this.update(session,{status:'unknown',error:'OpenCode status is unavailable.'})}
     finally{session.polling=false}
   }
@@ -369,6 +370,7 @@ export class SessionSupervisor extends EventEmitter {
     session.health=setInterval(()=>{
       if(session.stopping||['starting','stopped','stopping','error'].includes(session.view.status))return
       if(session.child.exitCode!==null||session.child.stdin.destroyed||!session.child.stdin.writable){this.update(session,{status:'unknown',error:'Agent process is unreachable.'});return}
+      if(session.view.agent==='claude'&&(session.view.status==='running'||session.view.status==='waiting')&&Date.now()-session.lastContactAt>=15_000){this.update(session,{status:'unknown',error:'Claude stream is not responding.'});return}
       if((session.view.agent==='codex'||session.view.agent==='pi')&&Date.now()-session.lastContactAt>=10_000&&!session.deadline)this.sendHealthCheck(session,false)
     },5000);session.health.unref()
   }
