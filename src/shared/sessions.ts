@@ -4,6 +4,7 @@ export const sessionStatuses = ['starting','idle','running','waiting','stopping'
 export type SessionStatus = typeof sessionStatuses[number]
 export type SessionProtocol = 'codex-app-server'|'claude-stream-json'|'pi-rpc'|'opencode-server'
 export type DeliveryStatus = 'queued'|'sending'|'sent'|'failed'|'unknown'|'cancelled'
+export type TurnOutcome = 'completed'|'interrupted'|'failed'
 
 export interface SessionCapability {
   agent: AgentId
@@ -32,6 +33,7 @@ export interface LiveSession {
   createdAt: number
   turnStartedAt: number|null
   turnElapsedMs: number|null
+  lastTurnOutcome: TurnOutcome|null
   updatedAt: number
   error: string|null
   deliveries: SessionDelivery[]
