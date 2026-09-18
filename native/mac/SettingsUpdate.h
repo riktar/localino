@@ -49,43 +49,53 @@ static int updateSettings(void) {
   BOOL locked=NO;
   for(int i=0;i<100;i++){if(flock(gate,LOCK_EX|LOCK_NB)==0){locked=YES;break;}usleep(10000);}
   if(!locked){close(gate);return 3;}
-  __block int result=3;
+  __block int result=3;__block const char *stage="coordination";
   @try {
     NSFileCoordinator *coordinator=[[NSFileCoordinator alloc] initWithFilePresenter:nil];
     NSError *error=nil;
     [coordinator coordinateWritingItemAtURL:[NSURL fileURLWithPath:path] options:NSFileCoordinatorWritingForReplacing error:&error byAccessor:^(NSURL *url) {
       // Reject relocated paths rather than editing a different settings file.
-      if(![url.path isEqual:path])return;
+      stage="coordinated-path";
+      if(![[url.path.stringByResolvingSymlinksInPath precomposedStringWithCanonicalMapping] isEqual:[path precomposedStringWithCanonicalMapping]])return;
+      stage="read";
       NSData *before=nil;struct stat original={0};BOOL existed=NO;
       if(!settingsRead(path,&before,&original,&existed))return;
+      stage="hash";
       if(![settingsHash(before) isEqual:expected]){result=2;return;}
+      stage="parse";
       id parsed=before.length?[NSJSONSerialization JSONObjectWithData:before options:NSJSONReadingMutableContainers error:nil]:[NSMutableDictionary dictionary];
       if(![parsed isKindOfClass:NSMutableDictionary.class]){result=4;return;}
       NSMutableDictionary *settings=parsed;
       if([remove boolValue])[settings removeObjectForKey:@"statusLine"];
       else {id line=request[@"statusLine"];if(![line isKindOfClass:NSDictionary.class]){result=4;return;}settings[@"statusLine"]=line;}
+      stage="serialize";
       NSMutableData *replacement=[[NSJSONSerialization dataWithJSONObject:settings options:NSJSONWritingPrettyPrinted error:nil] mutableCopy];
       if(!replacement)return;[replacement appendBytes:"\n" length:1];
       NSString *temporary=[path stringByAppendingFormat:@".%@.tmp",NSUUID.UUID.UUIDString];
+      stage="temporary-file";
       int fd=open(temporary.fileSystemRepresentation,O_CREAT|O_EXCL|O_WRONLY|O_CLOEXEC,0600);
       if(fd<0)return;
+      stage="write";
       BOOL complete=YES;NSUInteger offset=0;
       while(offset<replacement.length){ssize_t n=write(fd,(const char *)replacement.bytes+offset,replacement.length-offset);if(n<0&&errno==EINTR)continue;if(n<=0){complete=NO;break;}offset+=(NSUInteger)n;}
       if(fchmod(fd,existed?(original.st_mode&0777):0600)!=0||fsync(fd)!=0)complete=NO;
       close(fd);
       if(complete){
+        stage="recheck";
         NSData *latest=nil;struct stat current={0};BOOL nowExists=NO;
         if(!settingsRead(path,&latest,&current,&nowExists))complete=NO;
         else if(nowExists!=existed||(existed&&(current.st_dev!=original.st_dev||current.st_ino!=original.st_ino))||![latest isEqual:before]){result=2;complete=NO;}
       }
       if(complete){
+        stage="rename";
         int renamed=existed?rename(temporary.fileSystemRepresentation,path.fileSystemRepresentation):renamex_np(temporary.fileSystemRepresentation,path.fileSystemRepresentation,RENAME_EXCL);
         if(renamed==0)result=0;else if(errno==EEXIST)result=2;
       }
       unlink(temporary.fileSystemRepresentation);
     }];
-    if(error)result=3;
-  } @catch(NSException *exception){result=3;}
+    if(error){stage="coordination-error";result=3;}
+  } @catch(NSException *exception){stage="exception";result=3;}
   @finally {flock(gate,LOCK_UN);close(gate);}
+  if(result==3)fprintf(stderr,"settings-update:%s\n",stage);
   return result;
 }

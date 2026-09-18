@@ -4,15 +4,16 @@ import {mkdtemp,readFile,writeFile,mkdir,access,unlink} from 'node:fs/promises'
 import {join,resolve} from 'node:path'
 import {tmpdir} from 'node:os'
 import {spawn} from 'node:child_process'
+import {createHash} from 'node:crypto'
 import {ClaudeBridge,updateBridgeSettings,bridgeCommand} from '../../src/main/agents/bridge'
 import fs from 'node:fs/promises'
 import {nativeHelper} from '../../src/main/platform'
 
 const helper=resolve('out/native',nativeHelper('StatusLine'))
 const payload=(id='session-A')=>({session_id:id,cwd:'PRIVATE-SENTINEL',transcript_path:'SECRET',context_window:{total_input_tokens:999999},cost:{total_cost_usd:0},rate_limits:{five_hour:{used_percentage:0,resets_at:1},seven_day:{used_percentage:40,resets_at:1800000000},spend_limit:{used_percentage:125,resets_at:null}}})
-const run=(exe:string,args:string[],input:Buffer)=>new Promise<{code:number|null;output:Buffer}>( (resolve,reject)=>{
-  const child=spawn(exe,args,{windowsHide:true,stdio:['pipe','pipe','pipe']}),chunks:Buffer[]=[]
-  child.stdout.on('data',chunk=>chunks.push(chunk));child.stderr.resume();child.on('error',reject);child.on('close',code=>resolve({code,output:Buffer.concat(chunks)}));child.stdin.end(input)
+const run=(exe:string,args:string[],input:Buffer)=>new Promise<{code:number|null;output:Buffer;error:string}>( (resolve,reject)=>{
+  const child=spawn(exe,args,{windowsHide:true,stdio:['pipe','pipe','pipe']}),chunks:Buffer[]=[],errors:Buffer[]=[]
+  child.stdout.on('data',chunk=>chunks.push(chunk));child.stderr.on('data',chunk=>errors.push(chunk));child.on('error',reject);child.on('close',code=>resolve({code,output:Buffer.concat(chunks),error:Buffer.concat(errors).toString()}));child.stdin.end(input)
 })
 const setup=async(previous?:unknown)=>{
   const root=await mkdtemp(join(tmpdir(),"localino-bridge-è ' ")),settings=join(root,'settings.json'),dir=join(root,'localino')
@@ -20,6 +21,16 @@ const setup=async(previous?:unknown)=>{
   const bridge=new ClaudeBridge(dir,settings,helper);await bridge.start()
   return {root,settings,dir,bridge}
 }
+
+test('native settings update accepts the selected settings path',async()=>{
+ const {bridge,settings}=await setup()
+ try {
+  const expected=await readFile(settings,'utf8')
+  const result=await run(helper,['--settings-cas'],Buffer.from(JSON.stringify({path:settings,expectedHash:createHash('sha256').update(expected).digest('hex'),remove:false,statusLine:{type:'command',command:'printf probe'}})))
+  assert.equal(result.code,0,result.error)
+  assert.equal(JSON.parse(await readFile(settings,'utf8')).statusLine.command,'printf probe')
+ }finally{bridge.dispose()}
+})
 
 test('opt-in, native whitelist, last session, invalid payload, stale/reset and reversible settings',async()=>{
   const {bridge,settings,dir}=await setup({type:'command',command:'printf existing',padding:3,refreshInterval:8})
