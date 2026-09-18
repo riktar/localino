@@ -24,7 +24,7 @@ interface ManagedSession {
   deadline?: NodeJS.Timeout
   lastContactAt: number
   generation: number
-  polling: boolean
+  pollingGeneration?: number
   resumeStatus?: LiveSession['status']
   piTurnOutcome?: LiveSession['lastTurnOutcome']
   stopping: boolean
@@ -138,7 +138,7 @@ export class SessionSupervisor extends EventEmitter {
       const args=agent==='opencode'?['serve','--hostname','127.0.0.1','--port',String(port)]:commandFor(agent,providerSessionId??undefined)
       const env=agent==='opencode'?{...process.env,OPENCODE_SERVER_USERNAME:'localino',OPENCODE_SERVER_PASSWORD:password!}:process.env
       const child=this.spawnProcess(binary,args,{cwd:directory,env,stdio:['pipe','pipe','pipe']})
-      const managed:ManagedSession={view,child,buffer:new JsonlBuffer(),requestSequence:0,pending:new Map(),lastContactAt:now,generation:0,polling:false,stopping:false,...(port&&password?{endpoint:`http://127.0.0.1:${port}`,authorization:`Basic ${Buffer.from(`localino:${password}`).toString('base64')}`}:{})}
+      const managed:ManagedSession={view,child,buffer:new JsonlBuffer(),requestSequence:0,pending:new Map(),lastContactAt:now,generation:0,stopping:false,...(port&&password?{endpoint:`http://127.0.0.1:${port}`,authorization:`Basic ${Buffer.from(`localino:${password}`).toString('base64')}`}:{})}
       this.sessions.set(id,managed);this.attach(managed);this.changed()
       return {ok:true,sessionId:id}
     }catch{return {ok:false,error:'Could not start the agent process.'}}
@@ -331,8 +331,10 @@ export class SessionSupervisor extends EventEmitter {
     }catch{if(!session.stopping&&generation===session.generation){this.fail(session,'OpenCode server handshake failed.');session.child.kill()}}
   }
   private async pollOpenCode(session:ManagedSession,reconcile=false):Promise<void>{
-    if(session.stopping||session.polling||!session.view.providerSessionId)return
-    const generation=session.generation;session.polling=true
+    if(session.stopping||!session.view.providerSessionId)return
+    const generation=session.generation
+    if(session.pollingGeneration===generation)return
+    session.pollingGeneration=generation
     try{
       const statuses=await this.request(session,'/session/status') as Record<string,{type?:unknown}>
       if(session.stopping||generation!==session.generation||session.view.status==='stopped'||session.view.status==='stopping')return
@@ -342,7 +344,7 @@ export class SessionSupervisor extends EventEmitter {
       else if(type==='idle'||type===undefined)this.idle(session,session.view.lastTurnOutcome)
       if(reconcile&&!session.poll&&!session.stopping&&generation===session.generation){session.poll=setInterval(()=>void this.pollOpenCode(session),2000);session.poll.unref()}
     }catch{if(!session.stopping&&generation===session.generation)this.update(session,{status:'unknown',error:'OpenCode status is unavailable.'})}
-    finally{session.polling=false}
+    finally{if(session.pollingGeneration===generation)session.pollingGeneration=undefined}
   }
   private async dispatch(session:ManagedSession,delivery:SessionDelivery):Promise<void>{
     try{

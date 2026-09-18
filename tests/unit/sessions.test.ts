@@ -149,6 +149,27 @@ test('late OpenCode status cannot resurrect a stopped session',async()=>{
   }finally{await supervisor.dispose();globalThis.fetch=originalFetch}
 })
 
+test('OpenCode resume starts a new-generation reconciliation while an old poll is in flight',async()=>{
+  const {supervisor}=fixture();const originalFetch=globalThis.fetch;let release:(response:Response)=>void=()=>{},statusCalls=0
+  const delayed=new Promise<Response>(resolveResponse=>{release=resolveResponse})
+  globalThis.fetch=async input=>{
+    const url=String(input)
+    if(url.endsWith('/global/health'))return Response.json({healthy:true})
+    if(url.endsWith('/session/status'))return ++statusCalls===1?delayed:Response.json({'open-resume':{type:'idle'}})
+    if(url.endsWith('/session'))return Response.json({id:'open-resume'})
+    return Response.json(true)
+  }
+  try{
+    await supervisor.refreshCapabilities();const result=await supervisor.start('opencode',mkdtempSync(join(tmpdir(),'localino-open-resume-')));await wait();await wait()
+    const managed=(supervisor as unknown as {sessions:Map<string,{poll?:NodeJS.Timeout}>}).sessions.get(result.sessionId!)!
+    const stale=(supervisor as unknown as {pollOpenCode:(value:unknown)=>Promise<void>}).pollOpenCode(managed)
+    supervisor.suspend();supervisor.resume();await wait();await wait()
+    assert.equal(statusCalls,2);assert.equal(supervisor.state.sessions[0].status,'idle');assert.ok(managed.poll)
+    release(Response.json({'open-resume':{type:'busy'}}));await stale
+    assert.equal(supervisor.state.sessions[0].status,'idle')
+  }finally{await supervisor.dispose();globalThis.fetch=originalFetch}
+})
+
 test('OpenCode owns an authenticated loopback server and creates its session',async()=>{
   const {supervisor,calls}=fixture();const originalFetch=globalThis.fetch
   globalThis.fetch=async input=>{
