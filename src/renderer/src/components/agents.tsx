@@ -4,6 +4,7 @@ import { useCommands } from './commands'
 import { Button } from './ui/button'
 import { Dashboard } from './dashboard'
 import { LocalHistory } from './local-history'
+import { LiveSessions } from './live-sessions'
 
 export function useAgents(): AgentsState {
   const [state,setState]=useState(initialAgents)
@@ -41,5 +42,5 @@ export function LocalAgentView({id}:{id:LocalAgentId}): React.JSX.Element {
 }
 export function AgentDashboard(): React.JSX.Element {
   const state=useAgents()
-  return <><AgentPicker/>{state.selected==='codex'?<Dashboard/>:<LocalAgentView id={state.selected}/>}</>
+  return <><AgentPicker/><LiveSessions agent={state.selected}/>{state.selected==='codex'?<Dashboard/>:<LocalAgentView id={state.selected}/>}</>
 }

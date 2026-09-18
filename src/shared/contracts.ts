@@ -48,6 +48,12 @@ export interface LocalinoApi {
   recoverPreferences: (target: 'agents' | 'codex') => Promise<import('./agents').AgentResult>
   getHistory: (id: import('./agents').LocalAgentId) => Promise<import('./agents').HistoryState>
   onHistory: (listener: (state: import('./agents').HistoryState) => void) => () => void
+  getLiveSessions: () => Promise<import('./sessions').LiveSessionsState>
+  startLiveSession: (agent: import('./agents').AgentId) => Promise<import('./sessions').SessionResult>
+  stopLiveSession: (sessionId: string) => Promise<import('./sessions').SessionResult>
+  sendLiveSession: (sessionId: string, text: string) => Promise<import('./sessions').SessionResult>
+  cancelLiveDelivery: (sessionId: string, deliveryId: string) => Promise<import('./sessions').SessionResult>
+  onLiveSessions: (listener: (state: import('./sessions').LiveSessionsState) => void) => () => void
   connectAgent: (id: import('./agents').LocalAgentId) => Promise<import('./agents').AgentResult>
   chooseAgentSource: (id: import('./agents').LocalAgentId) => Promise<import('./agents').AgentResult>
   disconnectAgent: (id: import('./agents').LocalAgentId) => Promise<import('./agents').AgentResult>

@@ -25,6 +25,8 @@ import { openCodeSource } from './agents/opencode-source'
 import { ClaudeBridge } from './agents/bridge'
 import { workerReader } from './agents/worker-reader'
 import { agentLabels, agentCapabilities, isAgentId, isLocalAgentId, isAgentPeriod, type AgentId, type AgentResult, type LocalAgentId } from '../shared/agents'
+import { SessionSupervisor } from './sessions/supervisor'
+import { isSessionDelivery, isSessionText } from '../shared/sessions'
 
 const customData = app.commandLine.getSwitchValue('user-data-dir')
 if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPath('userData', resolve(customData)) }
@@ -36,6 +38,7 @@ const connection = new Connection(codexPreferences)
 const agents = new AgentPreferences(join(app.getPath('userData'), 'agents.json'))
 const bridge = new ClaudeBridge(join(app.getPath('userData'),'claude-bridge'),join(process.env.CLAUDE_CONFIG_DIR||join(homedir(),'.claude'),'settings.json'),app.isPackaged?join(process.resourcesPath,'native',nativeHelper('StatusLine')):join(__dirname,'..','native',nativeHelper('StatusLine')),[process.platform==='darwin'?'/Library/Application Support/ClaudeCode/managed-settings.json':join(process.env.ProgramFiles||'C:\\Program Files','ClaudeCode','managed-settings.json')])
 const histories = Object.fromEntries(['claude', 'pi', 'opencode'].map(id => [id, new HistoryResource(id as LocalAgentId, workerReader(id as LocalAgentId))])) as Record<LocalAgentId, HistoryResource>
+const liveSessions = new SessionSupervisor()
 const defaultSources: Record<LocalAgentId, string> = {
   claude: join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects'), pi: join(process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'), 'sessions'),
   opencode: join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'opencode', 'opencode.db'),
@@ -251,7 +254,7 @@ if (!app.requestSingleInstanceLock()) {
     usage.dispose()
     Object.values(histories).forEach(resource=>resource.dispose())
     bridge.dispose()
-    void connection.shutdown().finally(() => { quitReady = true; app.quit() })
+    void Promise.all([connection.shutdown(),liveSessions.dispose()]).finally(() => { quitReady = true; app.quit() })
   })
   app.on('window-all-closed', () => { if (quitting) app.quit() })
 
@@ -388,6 +391,15 @@ if (!app.requestSingleInstanceLock()) {
       return bridge.diagnose(choice.canceled?undefined:choice.filePaths[0])
     })
     handle('localino:history',(_owner,id)=>histories[localId(id)].state)
+    handle('localino:live-sessions',()=>liveSessions.state)
+    handle('localino:start-live-session',async(owner,value)=>{
+      if(!isAgentId(value))throw Error('Invalid agent')
+      const choice=await dialog.showOpenDialog(owner,{title:`Start ${agentLabels[value]} session`,buttonLabel:'Start session',properties:['openDirectory']})
+      return choice.canceled||!choice.filePaths[0]?{ok:false,error:'No project selected.'}:liveSessions.start(value,choice.filePaths[0])
+    })
+    handle('localino:stop-live-session',(_owner,value)=>{if(typeof value!=='string'||value.length>128)throw Error('Invalid session');return liveSessions.stop(value)})
+    handle('localino:send-live-session',(_owner,value)=>{if(!isSessionText(value))throw Error('Invalid message');return liveSessions.send(value.sessionId,value.text)})
+    handle('localino:cancel-live-delivery',(_owner,value)=>{if(!isSessionDelivery(value))throw Error('Invalid delivery');return liveSessions.cancel(value.sessionId,value.deliveryId)})
     handle('localino:refresh-history',(_owner,value)=>{const id=localId(value);if(!agentCapabilities[id].history)throw Error('Reader unavailable');return histories[id].refresh()})
     handle('localino:agent-period',(_owner,value)=>{
       if(!value||typeof value!=='object')throw Error('Invalid period')
@@ -421,6 +433,8 @@ if (!app.requestSingleInstanceLock()) {
       }catch{return {ok:false,error:'Recovery failed. Previous file preserved.'}}
     })
     agents.on('change',state=>{broadcast('localino:agents-changed',state);updateUsageActivity();updateTray()})
+    liveSessions.on('change',state=>broadcast('localino:live-sessions-changed',state))
+    await liveSessions.refreshCapabilities()
     bridge.on('change',state=>{broadcast('localino:bridge-changed',state);updateTray()})
     await bridge.start()
     for(const id of Object.keys(histories) as LocalAgentId[]){

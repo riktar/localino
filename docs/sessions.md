@@ -1,6 +1,10 @@
 # Live coding-agent sessions
 
-Localino does not currently claim that it can attach to every coding-agent session already open in another client. A persisted transcript, a session database, and a live process are different things: history does not provide a safe channel to the process that owns the current turn.
+Localino can start and supervise new CLI sessions for Codex, Claude Code, Pi and OpenCode when their binaries are available. Choose the agent, select **Start session**, then choose a project folder. The session card shows the project, lifecycle state and current-turn wall-clock time; **Stop** affects only that supervised process. Hiding the panel keeps it running, while quitting Localino stops every process it owns.
+
+Binary discovery uses the current executable search path. An advanced installation can set `LOCALINO_CODEX_PATH`, `LOCALINO_CLAUDE_PATH`, `LOCALINO_PI_PATH` or `LOCALINO_OPENCODE_PATH` to an exact executable or Windows command shim. Localino does not install CLIs, alter provider credentials or open a terminal. It uses Codex App Server, Claude stream-json, Pi RPC and an authenticated loopback OpenCode server respectively.
+
+These guarantees do not extend to coding-agent sessions already open in another client. A persisted transcript, a session database, and a live process are different things: history does not provide a safe channel to the process that owns the current turn. VS Code extensions, desktop clients, ordinary pre-existing TUIs, remote/WSL agents and retroactive attach are outside the supported scope.
 
 ## Evaluated clients
 
@@ -30,13 +34,13 @@ No macOS arm64 or x64 host was available. Every macOS row is therefore blocked, 
 | Pi RPC / extension | `agent_start` starts work; `agent_settled` is the reliable end after retry/compaction/follow-up. Capture monotonic receipt time; RPC events do not supply a source wall-clock timestamp. | Native `follow_up`/`deliverAs:'followUp'` owns FIFO; `steer` is excluded because it changes the current run. | Correlated success accepts the command; `queue_update` and lifecycle events confirm queue progression. Lost response remains `Unknown`. | The owning RPC process or loaded extension must reconnect with the same session/process registration. Never resume a transcript in another process silently. |
 | OpenCode server | SSE `session.status` (`busy`, `retry`, `idle`) and `session.idle`, keyed by `sessionID`; no turn-start timestamp is documented, so adapter reception time is the only candidate. | `prompt_async` returns immediately and does not document an end-of-turn FIFO guarantee. Localino would own FIFO and submit only after reconciled idle. | HTTP 204 acknowledges request receipt, not completed processing; message ID plus SSE/message lookup is needed. Timeout after possible 204 is `Unknown`. | Reconnect to the same registered endpoint, fetch `/session/status`, then resubscribe SSE. A fresh server over the same database is a different instance. |
 
-No row has complete same-session evidence on both required platforms. Consequently Localino must not enable Send or present historical activity as a live turn.
+No external-client row has complete same-session evidence on both required platforms. Consequently Localino does not enable control of those sessions or present their historical activity as a live turn. The supervised CLI path above owns its process and transport from startup and is a separate capability.
 
 ## Reproducible, non-invasive checks
 
 `node scripts/probe-session-capabilities.mjs` records only availability and documented help markers; it suppresses raw provider output, paths, credentials and session data. `node --test tests/session-contracts.test.mjs` exercises the agreed reference semantics for composite identity, stale/foreign events, FIFO, duplicate acknowledgements, uncertain delivery and restart suspension. These are contract fixtures, not live integration evidence.
 
-## Safety rules for a future implementation
+## Safety rules
 
 - A live identity includes provider, owning process/server instance and session ID; turn ID is separate. A transcript ID alone is insufficient.
 - Running comes from a live lifecycle event. File modification time, login state and an open process do not imply an active turn.

@@ -40,6 +40,16 @@ const api: LocalinoApi = {
     ipcRenderer.on('localino:history-changed', callback)
     return () => { ipcRenderer.removeListener('localino:history-changed', callback) }
   },
+  getLiveSessions:()=>ipcRenderer.invoke('localino:live-sessions'),
+  startLiveSession:agent=>ipcRenderer.invoke('localino:start-live-session',agent),
+  stopLiveSession:sessionId=>ipcRenderer.invoke('localino:stop-live-session',sessionId),
+  sendLiveSession:(sessionId,text)=>ipcRenderer.invoke('localino:send-live-session',{sessionId,text}),
+  cancelLiveDelivery:(sessionId,deliveryId)=>ipcRenderer.invoke('localino:cancel-live-delivery',{sessionId,deliveryId}),
+  onLiveSessions:listener=>{
+    const callback=(_event:Electron.IpcRendererEvent,state:import('../shared/sessions').LiveSessionsState)=>listener(state)
+    ipcRenderer.on('localino:live-sessions-changed',callback)
+    return ()=>{ipcRenderer.removeListener('localino:live-sessions-changed',callback)}
+  },
   getCapturedNote:()=>ipcRenderer.invoke('localino:captured-note'),
   capturedNotePresented:sequence=>ipcRenderer.invoke('localino:captured-note-presented',sequence),
   onCapturedNote:listener=>{
