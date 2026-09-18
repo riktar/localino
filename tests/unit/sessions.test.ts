@@ -237,8 +237,8 @@ test('duplicate Codex completion cannot acknowledge or advance the next queued t
 test('stale Pi lifecycle cannot acknowledge or advance the next queued turn',async()=>{
   const {supervisor,children}=fixture();await supervisor.refreshCapabilities();const started=await supervisor.start('pi',mkdtempSync(join(tmpdir(),'localino-pi-stale-')));await wait();line(children[0],{id:1,type:'response',success:true,data:{sessionId:'pi-stale'}});await wait()
   const writes:string[]=[];children[0].stdin.on('data',chunk=>writes.push(String(chunk)));await supervisor.send(started.sessionId!,'one');await supervisor.send(started.sessionId!,'two');await supervisor.send(started.sessionId!,'three')
-  line(children[0],{id:2,type:'response',success:true});line(children[0],{type:'agent_start'});line(children[0],{type:'turn_start',turnIndex:0,timestamp:Date.now()});line(children[0],{type:'turn_end',turnIndex:0,message:{stopReason:'stop'}});line(children[0],{type:'agent_settled'});await wait()
-  line(children[0],{type:'agent_start'});line(children[0],{type:'turn_start',turnIndex:0,timestamp:Date.now()});line(children[0],{type:'turn_end',turnIndex:0,message:{stopReason:'stop'}});line(children[0],{type:'agent_settled'});await wait()
+  line(children[0],{id:2,type:'response',success:true});line(children[0],{type:'agent_start'});line(children[0],{type:'turn_start'});line(children[0],{type:'message_start',message:{role:'user',content:'one',timestamp:100}});line(children[0],{type:'turn_end',message:{stopReason:'stop'}});line(children[0],{type:'agent_settled'});await wait()
+  line(children[0],{type:'agent_start'});line(children[0],{type:'turn_start'});line(children[0],{type:'message_start',message:{role:'user',content:'one',timestamp:100}});line(children[0],{type:'turn_end',message:{stopReason:'stop'}});line(children[0],{type:'agent_settled'});await wait()
   assert.deepEqual(supervisor.state.sessions[0].deliveries.map(item=>item.status),['sent','sending','queued']);assert.equal(writes.join('').match(/"type":"prompt"/g)?.length,2)
   await supervisor.dispose()
 })

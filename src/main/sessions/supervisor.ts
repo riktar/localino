@@ -29,8 +29,9 @@ interface ManagedSession {
   pollingGeneration?: number
   resumeStatus?: LiveSession['status']
   piTurnOutcome?: LiveSession['lastTurnOutcome']
-  activePiTurn?: number
-  completedPiTurns: Set<number>
+  awaitingPiDelivery?: string
+  activePiRun?: string
+  completedPiRuns: Set<string>
   piCanSettle: boolean
   activeClaudeMessage?: string
   completedClaudeMessages: Set<string>
@@ -150,7 +151,7 @@ export class SessionSupervisor extends EventEmitter {
       const args=agent==='opencode'?['serve','--hostname','127.0.0.1','--port',String(port)]:commandFor(agent,providerSessionId??undefined)
       const env=agent==='opencode'?{...process.env,OPENCODE_SERVER_USERNAME:'localino',OPENCODE_SERVER_PASSWORD:password!}:process.env
       const child=this.spawnProcess(binary,args,{cwd:directory,env,stdio:['pipe','pipe','pipe']})
-      const managed:ManagedSession={view,child,buffer:new JsonlBuffer(),requestSequence:0,pending:new Map(),deliveryDeadlines:new Map(),lastContactAt:now,generation:0,completedPiTurns:new Set(),piCanSettle:false,completedClaudeMessages:new Set(),completedClaudeResults:new Set(),completedCodexTurns:new Set(),stopping:false,...(port&&password?{endpoint:`http://127.0.0.1:${port}`,authorization:`Basic ${Buffer.from(`localino:${password}`).toString('base64')}`}:{})}
+      const managed:ManagedSession={view,child,buffer:new JsonlBuffer(),requestSequence:0,pending:new Map(),deliveryDeadlines:new Map(),lastContactAt:now,generation:0,completedPiRuns:new Set(),piCanSettle:false,completedClaudeMessages:new Set(),completedClaudeResults:new Set(),completedCodexTurns:new Set(),stopping:false,...(port&&password?{endpoint:`http://127.0.0.1:${port}`,authorization:`Basic ${Buffer.from(`localino:${password}`).toString('base64')}`}:{})}
       this.sessions.set(id,managed);this.attach(managed);this.changed()
       return {ok:true,sessionId:id}
     }catch{return {ok:false,error:'Could not start the agent process.'}}
@@ -322,20 +323,24 @@ export class SessionSupervisor extends EventEmitter {
         else if(data.isStreaming===true)this.update(session,{status:'running',turnStartedAt:session.view.turnStartedAt,lastTurnOutcome:null,error:null})
         else this.idle(session,session.piTurnOutcome??session.view.lastTurnOutcome)
       }else if(pending?.startsWith('delivery:')){
-        const delivery=this.delivery(session,pending.slice(9));if(delivery)this.confirmDelivery(session,delivery,value.success===true,value.success===true?undefined:'Pi rejected the message.')
+        const delivery=this.delivery(session,pending.slice(9));if(delivery){this.confirmDelivery(session,delivery,value.success===true,value.success===true?undefined:'Pi rejected the message.');if(value.success!==true&&session.awaitingPiDelivery===delivery.id)session.awaitingPiDelivery=undefined}
       }
     }
     if(value.type==='agent_start')this.update(session,{status:'running',turnStartedAt:session.view.turnStartedAt??Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})
-    if(value.type==='turn_start'&&Number.isSafeInteger(value.turnIndex)){
-      const index=value.turnIndex as number;if(session.completedPiTurns.has(index)||session.activePiTurn!==undefined&&session.activePiTurn!==index)return
-      session.activePiTurn=index;session.piCanSettle=false;session.piTurnOutcome=undefined;this.update(session,{status:'running',turnStartedAt:typeof value.timestamp==='number'&&value.timestamp>0?value.timestamp:session.view.turnStartedAt??Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})
+    if(value.type==='message_start'){
+      const message=value.message as {role?:unknown;content?:unknown;timestamp?:unknown}|undefined,delivery=session.awaitingPiDelivery?this.delivery(session,session.awaitingPiDelivery):undefined
+      const content=typeof message?.content==='string'?message.content:Array.isArray(message?.content)?message.content.filter((item):item is {type:'text';text:string}=>Boolean(item)&&typeof item==='object'&&(item as {type?:unknown}).type==='text'&&typeof (item as {text?:unknown}).text==='string').map(item=>item.text).join(''):''
+      const key=typeof message?.timestamp==='number'&&Number.isFinite(message.timestamp)?String(message.timestamp):null
+      if(message?.role==='user'&&delivery?.status==='sent'&&content===delivery.text&&key&&!session.completedPiRuns.has(key)){session.activePiRun=key;session.awaitingPiDelivery=undefined;session.piCanSettle=false}
     }
-    if(value.type==='turn_end'){
-      const index=value.turnIndex;if(!Number.isSafeInteger(index)||session.activePiTurn!==index||session.completedPiTurns.has(index as number))return
+    if(value.type==='turn_start'&&session.activePiRun){
+      session.piCanSettle=false;session.piTurnOutcome=undefined;this.update(session,{status:'running',turnStartedAt:session.view.turnStartedAt??Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})
+    }
+    if(value.type==='turn_end'&&session.activePiRun){
       const message=value.message as {stopReason?:unknown}|undefined
-      session.completedPiTurns.add(index as number);if(session.completedPiTurns.size>32)session.completedPiTurns.delete(session.completedPiTurns.values().next().value!);session.activePiTurn=undefined;session.piCanSettle=true;session.piTurnOutcome=message?.stopReason==='error'?'failed':message?.stopReason==='aborted'?'interrupted':'completed'
+      session.piCanSettle=true;session.piTurnOutcome=message?.stopReason==='error'?'failed':message?.stopReason==='aborted'?'interrupted':'completed'
     }
-    if(value.type==='agent_settled'&&session.piCanSettle){session.piCanSettle=false;this.idle(session,session.piTurnOutcome??'completed')}
+    if(value.type==='agent_settled'&&session.activePiRun&&session.piCanSettle){session.completedPiRuns.add(session.activePiRun);if(session.completedPiRuns.size>32)session.completedPiRuns.delete(session.completedPiRuns.values().next().value!);session.activePiRun=undefined;session.piCanSettle=false;this.idle(session,session.piTurnOutcome??'completed')}
     if(value.type==='extension_ui_request'&&['select','confirm','input','editor'].includes(String(value.method)))this.update(session,{status:'waiting'})
   }
   private claudeRecord(session:ManagedSession,value:Record<string,unknown>):void{
@@ -398,7 +403,7 @@ export class SessionSupervisor extends EventEmitter {
       if(session.view.agent==='codex'){
         const id=++session.requestSequence;session.pending.set(id,`delivery:${delivery.id}`);this.write(session,{id,method:'turn/start',params:{threadId:session.view.providerSessionId,input:[{type:'text',text:delivery.text}]}});this.awaitReceipt(session,delivery);this.update(session,{status:'running',turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,error:null})
       }else if(session.view.agent==='pi'){
-        session.activePiTurn=undefined;session.piCanSettle=false;const id=++session.requestSequence;session.pending.set(id,`delivery:${delivery.id}`);this.write(session,{id,type:'prompt',message:delivery.text});this.awaitReceipt(session,delivery);this.update(session,{status:'running',turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,error:null})
+        session.activePiRun=undefined;session.awaitingPiDelivery=delivery.id;session.piCanSettle=false;const id=++session.requestSequence;session.pending.set(id,`delivery:${delivery.id}`);this.write(session,{id,type:'prompt',message:delivery.text});this.awaitReceipt(session,delivery);this.update(session,{status:'running',turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,error:null})
       }else if(session.view.agent==='claude'){
         session.activeClaudeMessage=undefined
         this.write(session,{type:'user',message:{role:'user',content:[{type:'text',text:delivery.text}]},parent_tool_use_id:null,session_id:session.view.providerSessionId??''})
@@ -485,6 +490,7 @@ export class SessionSupervisor extends EventEmitter {
     if(session.view.status==='starting'&&next!=='starting'&&session.deadline){clearTimeout(session.deadline);session.deadline=undefined}
     Object.assign(session.view,change,{updatedAt:Date.now()})
     if(next==='unknown'){
+      session.awaitingPiDelivery=undefined;session.activePiRun=undefined
       for(const delivery of session.view.deliveries){if(delivery.status==='sending'){this.clearDeliveryDeadline(session,delivery.id);delivery.status='unknown';delivery.error='Delivery outcome is unknown.'}else if(delivery.status==='queued')delivery.status='suspended'}
       this.persist(session)
     }
