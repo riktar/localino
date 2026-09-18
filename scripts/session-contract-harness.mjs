@@ -1,6 +1,6 @@
 // Executable reference model for STORY-019 only. Product adapters must be built
 // and reviewed separately after CAP-005 is resolved.
-export const identityKey = value => [value.provider, value.instanceId, value.sessionId].join(':')
+export const identityKey = value => JSON.stringify([value.provider, value.instanceId, value.sessionId])
 
 export function createModel(identity) {
   return { identity, sequence: -1, turnId: null, status: 'unknown', startedAt: null, queue: [], deliveries: [] }
@@ -25,7 +25,7 @@ export function cancel(model, id) {
 }
 
 export function dispatch(model) {
-  if (model.status === 'running' || model.status === 'waiting') return model
+  if (model.status !== 'idle') return model
   const index = model.queue.findIndex(item => item.state === 'queued')
   if (index < 0) return model
   const item = model.queue[index]

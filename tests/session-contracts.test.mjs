@@ -9,6 +9,10 @@ const beta = { provider: 'codex', instanceId: 'instance-b', sessionId: 'session-
 test('identity includes provider, owning instance and session', () => {
   assert.notEqual(identityKey(alpha), identityKey(beta))
   assert.notEqual(identityKey(alpha), identityKey({ ...alpha, provider: 'claude' }))
+  assert.notEqual(
+    identityKey({ provider: 'opencode', instanceId: 'http://127.0.0.1:4096', sessionId: 's' }),
+    identityKey({ provider: 'opencode:http', instanceId: '//127.0.0.1', sessionId: '4096:s' }),
+  )
 })
 
 test('out-of-order and foreign lifecycle events cannot replace the active turn', () => {
@@ -28,6 +32,13 @@ test('FIFO dispatch waits for idle, supports local cancellation and never duplic
   model = dispatch(model)
   model = acknowledge(acknowledge(model, 'm2', 'sent'), 'm2', 'sent')
   assert.deepEqual(model.deliveries, [{ id: 'm2', text: 'second', state: 'sent' }])
+})
+
+test('dispatch remains disabled until the owning session is explicitly reconciled as idle', () => {
+  const unknown = enqueue(createModel(alpha), 'm1', 'first')
+  const dispatched = dispatch(unknown)
+  assert.equal(dispatched.queue[0].state, 'queued')
+  assert.equal(dispatched.deliveries.length, 0)
 })
 
 test('restart suspends local work and converts in-flight delivery to unknown without retry', () => {
