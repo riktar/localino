@@ -6,6 +6,16 @@ Binary discovery uses the current executable search path. An advanced installati
 
 These guarantees do not extend to coding-agent sessions already open in another client. A persisted transcript, a session database, and a live process are different things: history does not provide a safe channel to the process that owns the current turn. VS Code extensions, desktop clients, ordinary pre-existing TUIs, remote/WSL agents and retroactive attach are outside the supported scope.
 
+## Send, Queue and recovery
+
+Click a supervised session card, or focus it and press Enter, to open its internal composer. The heading repeats the project and short Localino instance ID so same-project sessions remain distinguishable. The composer preserves exact multiline Unicode text, rejects blank text and shows the 100,000-character limit without truncating. It never imports Clipboard content automatically.
+
+**Send** is available for an idle/ready instance. The provider-specific receipt changes the delivery from `Sending` to `Sent`; it does not mean the agent turn completed. While a turn is active, **Queue** stores messages locally for only that Localino instance. They dispatch one at a time, FIFO, after correlated terminal evidence; a still-local `Queued` message can be cancelled. Switching cards or agents does not change the recorded destination.
+
+If a write may have reached the provider but its receipt is lost, Localino marks that delivery `Unknown` and never retries it. Connection loss also converts remaining local queue entries to `Suspended`; reconciliation does not transmit them. Stopped, missing, starting, errored or unknown sessions reject new sends rather than starting or resuming a substitute process.
+
+Drafts and unresolved deliveries are written atomically as plain text to `sessions.json` in Electron's user-data directory. On restart they appear under **Recovered drafts and undelivered messages**, remain suspended, and can be discarded; no process is started and no message is sent automatically. A corrupt recovery file is preserved and reported instead of overwritten. Message text, Clipboard data, credentials and transcripts are not written to application logs.
+
 ## Evaluated clients
 
 The Windows x64 investigation used Windows `10.0.26200`, Codex CLI `0.151.0`, Codex VS Code extension `openai.chatgpt@26.908.40401`, Codex desktop product `1.110.0` (process product name `Knotic`), Claude Code CLI `2.1.247`, Pi `0.84.3`, and VS Code `1.138.0`. The Claude VS Code extension and OpenCode were unavailable. Registry versions observed without installation were Codex `0.155.0`, Claude Code `2.1.276`, Pi `0.85.1`, and OpenCode `1.18.31`; they were not treated as tested clients.
@@ -39,6 +49,8 @@ No external-client row has complete same-session evidence on both required platf
 ## Reproducible, non-invasive checks
 
 `node scripts/probe-session-capabilities.mjs` records only availability and documented help markers; it suppresses raw provider output, paths, credentials and session data. `node --test tests/session-contracts.test.mjs` exercises the agreed reference semantics for composite identity, stale/foreign events, FIFO, duplicate acknowledgements, uncertain delivery and restart suspension. These are contract fixtures, not live integration evidence.
+
+`tests/unit/sessions.test.ts` covers supervised adapter lifecycle, exact per-instance routing, FIFO/cancellation, duplicate terminal events, lost receipts and suspended queues. `tests/unit/session-recovery.test.ts` covers atomic restart data and corrupt-file preservation. `tests/sessions-ui.test.mjs` exercises keyboard selection, double-click protection, multiline Unicode delivery and a real Localino restart with no replacement session. Fixtures validate Localino's contract and error handling; they do not prove an unavailable provider or macOS integration.
 
 ## Safety rules
 

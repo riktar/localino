@@ -14,6 +14,7 @@ The central panel replaces Home, the separate quota panel, standalone Clipboard 
 | Agent synchronization, source isolation, privacy, large archives | `agents`, `local-history`, `pi-history`, `opencode-history` |
 | Claude status-line preservation, concurrent settings edits, cache privacy | `bridge` desktop and unit tests |
 | Capture protocol, one save, manual-draft recovery, missing helper | `capture` desktop and unit tests |
+| Supervised CLI identity/lifecycle, exact Send, FIFO Queue, duplicate events, uncertain receipt and suspended restart recovery | `sessions-ui`, `session-contracts`, `sessions` and `session-recovery` unit tests |
 | Live Codex account, quotas and usage comparison | `test:account`, `test:rates`, `test:dashboard`; require an opted-in signed-in CLI |
 
 Run desktop suites serially: they share system focus and global shortcut registration. Synthetic fixtures are not evidence that every external editor or agent version is supported. Real macOS capture, permissions, focus, signing and packaged lifecycle results belong in the [Mac report](mac-test-report.md), tied to the exact commit and artifact.

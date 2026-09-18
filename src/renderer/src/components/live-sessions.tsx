@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Square, Play, X } from 'lucide-react'
 import type { AgentId } from '../../../shared/agents'
 import { initialLiveSessions, type LiveSessionsState } from '../../../shared/sessions'
@@ -17,7 +17,7 @@ function elapsed(start:number|null,now:number):string{
 }
 
 export function LiveSessions({agent}:{agent:AgentId}):React.JSX.Element{
-  const state=useLiveSessions(),capability=state.capabilities[agent],[now,setNow]=useState(Date.now()),[error,setError]=useState<string>(),[selected,setSelected]=useState<string>(),[drafts,setDrafts]=useState<Record<string,string>>({})
+  const state=useLiveSessions(),capability=state.capabilities[agent],[now,setNow]=useState(Date.now()),[error,setError]=useState<string>(),[selected,setSelected]=useState<string>(),[drafts,setDrafts]=useState<Record<string,string>>({}),[submitting,setSubmitting]=useState<Set<string>>(()=>new Set()),sendLocks=useRef(new Set<string>())
   const sessions=state.sessions.filter(session=>session.agent===agent&&session.status!=='stopped'),recovered=state.recovered.filter(session=>session.agent===agent)
   useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer)},[])
   useEffect(()=>{setDrafts(previous=>{let changed=false;const next={...previous};for(const session of state.sessions)if(next[session.id]===undefined){next[session.id]=session.draft;changed=true}return changed?next:previous})},[state.sessions])
@@ -26,7 +26,7 @@ export function LiveSessions({agent}:{agent:AgentId}):React.JSX.Element{
   const start=async()=>{const result=await window.localino.startLiveSession(agent);if(!result.ok&&result.error!=='No project selected.')setError(result.error)}
   const stop=(id:string)=>act(()=>window.localino.stopLiveSession(id))
   const updateDraft=(id:string,text:string)=>{setDrafts(value=>({...value,[id]:text}));void act(()=>window.localino.setLiveSessionDraft(id,text))}
-  const send=async(id:string)=>{const text=drafts[id]??'';if(await act(()=>window.localino.sendLiveSession(id,text)))setDrafts(value=>({...value,[id]:''}))}
+  const send=async(id:string)=>{if(sendLocks.current.has(id))return;sendLocks.current.add(id);setSubmitting(value=>new Set(value).add(id));const text=drafts[id]??'';try{if(await act(()=>window.localino.sendLiveSession(id,text)))setDrafts(value=>({...value,[id]:''}))}finally{sendLocks.current.delete(id);setSubmitting(value=>{const next=new Set(value);next.delete(id);return next})}}
   const cancel=(sessionId:string,deliveryId:string)=>act(()=>window.localino.cancelLiveDelivery(sessionId,deliveryId))
   return <section aria-labelledby="live-sessions-title" className="mx-auto max-w-[1440px] space-y-3 px-6 pt-5 lg:px-8" data-live-sessions={agent}>
     <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 id="live-sessions-title" className="font-medium">Sessions</h2><p className="text-xs text-muted-foreground">CLI processes supervised by Localino.</p></div><Button size="sm" disabled={capability.status!=='available'} onClick={()=>void start()}><Play aria-hidden="true"/>Start session</Button></div>
@@ -41,7 +41,7 @@ export function LiveSessions({agent}:{agent:AgentId}):React.JSX.Element{
         {open&&<div className="mt-3 space-y-2 border-t pt-3" onClick={event=>event.stopPropagation()} onKeyDown={event=>event.stopPropagation()}>
           <p className="text-xs text-muted-foreground">Message to {session.projectName} - instance {session.id.slice(0,8)}</p>
           <textarea aria-label={`Message for ${session.projectName} instance ${session.id.slice(0,8)}`} className="min-h-24 w-full resize-y rounded-md border bg-background p-2 text-sm" maxLength={100_000} value={draft} onChange={event=>updateDraft(session.id,event.target.value)}/>
-          <div className="flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{draft.length.toLocaleString()} / 100,000 characters</span><Button size="sm" disabled={!canSend} onClick={()=>void send(session.id)}>{busy?'Queue':'Send'}</Button></div>
+          <div className="flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{draft.length.toLocaleString()} / 100,000 characters</span><Button size="sm" disabled={!canSend||submitting.has(session.id)} onClick={()=>void send(session.id)}>{busy?'Queue':'Send'}</Button></div>
           {session.deliveries.length>0&&<ul aria-label="Message deliveries" className="space-y-1">{session.deliveries.map(delivery=><li key={delivery.id} className="flex items-center gap-2 rounded bg-muted/50 px-2 py-1 text-xs"><span className="min-w-0 flex-1 truncate" title={delivery.text}>{delivery.text}</span><span data-delivery-status={delivery.status}>{delivery.status}</span>{delivery.status==='queued'&&<Button size="icon" variant="ghost" aria-label="Cancel queued message" onClick={()=>void cancel(session.id,delivery.id)}><X aria-hidden="true"/></Button>}</li>)}</ul>}
         </div>}
       </article>})}</div>}

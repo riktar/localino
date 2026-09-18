@@ -17,6 +17,14 @@ Drag the app header to move either window. Choose **Settings → Theme → Syste
 
 Notes live in the versioned `notes.json` under Electron's user-data directory. Unicode, whitespace and line endings are preserved; the limit is 100,000 UTF-16 code units. Empty or whitespace-only notes are rejected. Corrupt libraries are preserved and can be reloaded after repair. Notes are plain text on disk and are never sent to agents, network services, logs or telemetry.
 
+## Supervised CLI sessions
+
+For the selected agent, **Start session** chooses a project and launches an installed Codex, Claude Code, Pi or OpenCode CLI through its machine protocol. Select the resulting card with click or Enter to open the composer. **Send** hands exact multiline Unicode text to that instance when idle; **Queue** keeps later messages local and FIFO until its current turn ends. A `Sent` receipt means the CLI accepted the message, not that the model finished it. Queued messages can be cancelled.
+
+Localino never retries an uncertain delivery. A lost receipt becomes `Unknown`; later queued text becomes `Suspended` and is not sent during reconnect or restart. Drafts and unresolved messages are stored as plain text in `sessions.json` under Electron's user-data directory and can be reviewed or discarded after restart. The 100,000-character limit is enforced without truncation. Localino does not copy Clipboard content, credentials or transcripts into a message, and does not log message text.
+
+This feature owns only CLI processes started by Localino. It does not attach to VS Code extensions, desktop clients, ordinary existing terminal sessions, remote/WSL agents or persisted history. See [live sessions](docs/sessions.md) for protocol, setup and delivery limits.
+
 ## Capture selected text
 
 Select text in another app, then press and release **Shift twice within 350 ms**, without other keys. The alternative is Ctrl+Alt+P on Windows or Cmd+Alt+P on a fresh Mac profile. Configure both in Settings.
@@ -47,7 +55,7 @@ Custom and disabled bindings are preserved during migration. Imported Ctrl bindi
 
 See [sources and metric semantics](docs/agents.md) for connection requirements, recorded fixture versions, polling, privacy, partial history and the optional Claude bridge. Local history is not an account quota; estimated costs are not invoices. Missing days are not measured zeroes.
 
-Localino does not currently attach to arbitrary live sessions opened in another client. The [live-session feasibility matrix](docs/sessions.md) records the upstream transports, required startup setup and current blockers. Historical files never enable Send or imply that a turn is running.
+Localino does not attach to arbitrary live sessions opened in another client. The [live-session guide and feasibility matrix](docs/sessions.md) distinguish supported supervised CLIs from evaluated external transports. Historical files never enable Send or imply that a turn is running.
 
 ## Develop and verify
 
