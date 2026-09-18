@@ -19,6 +19,9 @@ const setup=async(previous?:unknown)=>{
   const root=await mkdtemp(join(tmpdir(),"localino-bridge-è ' ")),settings=join(root,'settings.json'),dir=join(root,'localino')
   await writeFile(settings,JSON.stringify({env:{SECRET:'must-not-be-backed-up'},...(previous?{statusLine:previous}:{})}))
   const bridge=new ClaudeBridge(dir,settings,helper);await bridge.start()
+  // Unit cases drive refresh explicitly; an overlapping background poll can
+  // make an awaited refresh coalesce before that poll has completed.
+  bridge.dispose()
   return {root,settings,dir,bridge}
 }
 
