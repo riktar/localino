@@ -16,7 +16,7 @@ input.on('line',line=>{
     if(value.type==='get_state')send({id:value.id,type:'response',command:'get_state',success:true,data:{sessionId:'fixture-pi-session'}})
     else if(value.type==='prompt'){send({id:value.id,type:'response',command:'prompt',success:true});send({type:'agent_start'});setTimeout(()=>send({type:'agent_settled'}),150)}
   }else if(claude&&value.type==='user'){
-    send({type:'system',subtype:'init',session_id:claudeSession});send({type:'user',message:value.message});send({type:'assistant',message:{role:'assistant',content:[]}});setTimeout(()=>send({type:'result',subtype:'success',is_error:false,session_id:claudeSession}),150)
+    send({type:'system',subtype:'init',session_id:claudeSession});send({type:'user',session_id:claudeSession,message:value.message});send({type:'assistant',session_id:claudeSession,message:{role:'assistant',content:[]}});setTimeout(()=>send({type:'result',subtype:'success',is_error:false,session_id:claudeSession}),150)
   }
 })
 input.on('close',()=>process.exit(0))

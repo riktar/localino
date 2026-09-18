@@ -7,6 +7,7 @@ import { spawn, spawnSync, type ChildProcessWithoutNullStreams, type SpawnOption
 import { StringDecoder } from 'node:string_decoder'
 import { agentIds, type AgentId } from '../../shared/agents'
 import { initialLiveSessions, sessionProtocols, type LiveSession, type LiveSessionsState, type SessionCapability, type SessionDelivery, type SessionResult } from '../../shared/sessions'
+import { SessionRecoveryStore } from './recovery'
 
 type SpawnAgent = (command:string,args:string[],options:SpawnOptionsWithoutStdio)=>ChildProcessWithoutNullStreams
 type ResolveAgent = (agent:AgentId)=>Promise<{path:string;version:string|null}|null>
@@ -22,6 +23,7 @@ interface ManagedSession {
   poll?: NodeJS.Timeout
   health?: NodeJS.Timeout
   deadline?: NodeJS.Timeout
+  deliveryDeadlines: Map<string,NodeJS.Timeout>
   lastContactAt: number
   generation: number
   pollingGeneration?: number
@@ -100,9 +102,11 @@ async function freePort():Promise<number>{
   return new Promise((resolvePort,reject)=>{const server=createServer();server.unref();server.once('error',reject);server.listen(0,'127.0.0.1',()=>{const address=server.address();const port=typeof address==='object'&&address?address.port:0;server.close(error=>error?reject(error):resolvePort(port))})})
 }
 
-const copyState=(capabilities:Record<AgentId,SessionCapability>,sessions:Map<string,ManagedSession>):LiveSessionsState=>({
+const copyState=(capabilities:Record<AgentId,SessionCapability>,sessions:Map<string,ManagedSession>,recovery:SessionRecoveryStore):LiveSessionsState=>({
   capabilities:Object.fromEntries(agentIds.map(id=>[id,{...capabilities[id]}])) as Record<AgentId,SessionCapability>,
   sessions:[...sessions.values()].map(item=>({...item.view,deliveries:item.view.deliveries.map(delivery=>({...delivery}))})).sort((a,b)=>a.createdAt-b.createdAt),
+  recovered:recovery.state.filter(item=>!sessions.has(item.id)),
+  persistenceError:recovery.error,
 })
 
 export class SessionSupervisor extends EventEmitter {
@@ -110,8 +114,8 @@ export class SessionSupervisor extends EventEmitter {
   private readonly binaries=new Map<AgentId,string>()
   private readonly sessions=new Map<string,ManagedSession>()
   private disposed=false
-  constructor(private readonly spawnProcess:SpawnAgent=spawnAgent,private readonly resolver:ResolveAgent=resolveAgentBinary){super()}
-  get state():LiveSessionsState{return copyState(this.capabilities,this.sessions)}
+  constructor(private readonly spawnProcess:SpawnAgent=spawnAgent,private readonly resolver:ResolveAgent=resolveAgentBinary,private readonly recovery=new SessionRecoveryStore()){super()}
+  get state():LiveSessionsState{return copyState(this.capabilities,this.sessions,this.recovery)}
   async refreshCapabilities():Promise<LiveSessionsState>{
     await Promise.all(agentIds.map(async agent=>{
       try{
@@ -131,14 +135,14 @@ export class SessionSupervisor extends EventEmitter {
     const binary=this.binaries.get(agent)
     if(!binary)return {ok:false,error:`${executableNames[agent]} binary is unavailable.`}
     const id=randomUUID(),now=Date.now(),providerSessionId=agent==='claude'?randomUUID():null
-    const view:LiveSession={id,agent,protocol:sessionProtocols[agent],projectPath:directory,projectName:basename(directory)||directory,providerSessionId,status:'starting',createdAt:now,turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,updatedAt:now,error:null,deliveries:[]}
+    const view:LiveSession={id,agent,protocol:sessionProtocols[agent],projectPath:directory,projectName:basename(directory)||directory,providerSessionId,status:'starting',createdAt:now,turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,updatedAt:now,error:null,deliveries:[],draft:''}
     try{
       const port=agent==='opencode'?await freePort():null
       const password=agent==='opencode'?randomBytes(24).toString('base64url'):null
       const args=agent==='opencode'?['serve','--hostname','127.0.0.1','--port',String(port)]:commandFor(agent,providerSessionId??undefined)
       const env=agent==='opencode'?{...process.env,OPENCODE_SERVER_USERNAME:'localino',OPENCODE_SERVER_PASSWORD:password!}:process.env
       const child=this.spawnProcess(binary,args,{cwd:directory,env,stdio:['pipe','pipe','pipe']})
-      const managed:ManagedSession={view,child,buffer:new JsonlBuffer(),requestSequence:0,pending:new Map(),lastContactAt:now,generation:0,stopping:false,...(port&&password?{endpoint:`http://127.0.0.1:${port}`,authorization:`Basic ${Buffer.from(`localino:${password}`).toString('base64')}`}:{})}
+      const managed:ManagedSession={view,child,buffer:new JsonlBuffer(),requestSequence:0,pending:new Map(),deliveryDeadlines:new Map(),lastContactAt:now,generation:0,stopping:false,...(port&&password?{endpoint:`http://127.0.0.1:${port}`,authorization:`Basic ${Buffer.from(`localino:${password}`).toString('base64')}`}:{})}
       this.sessions.set(id,managed);this.attach(managed);this.changed()
       return {ok:true,sessionId:id}
     }catch{return {ok:false,error:'Could not start the agent process.'}}
@@ -162,16 +166,30 @@ export class SessionSupervisor extends EventEmitter {
     const clean=text.trim();if(!clean)return {ok:false,error:'Message is empty.'}
     if(text.length>100_000)return {ok:false,error:'Message is too large.'}
     if(['stopped','stopping','error','unknown','starting'].includes(session.view.status))return {ok:false,error:'Session is not ready.'}
-    const delivery:SessionDelivery={id:randomUUID(),text,createdAt:Date.now(),status:session.view.status==='idle'||session.view.status==='ready'?'sending':'queued',error:null}
-    session.view.deliveries=[...session.view.deliveries,delivery];session.view.updatedAt=Date.now();this.changed()
+    const hasPending=session.view.deliveries.some(item=>item.status==='sending')
+    const delivery:SessionDelivery={id:randomUUID(),text,createdAt:Date.now(),status:!hasPending&&(session.view.status==='idle'||session.view.status==='ready')?'sending':'queued',error:null}
+    const draft=session.view.draft
+    session.view.deliveries=[...session.view.deliveries,delivery];session.view.draft='';session.view.updatedAt=Date.now()
+    if(!this.persist(session)){session.view.deliveries=session.view.deliveries.filter(item=>item.id!==delivery.id);session.view.draft=draft;this.changed();return {ok:false,error:this.recovery.error??'Could not save the message safely.'}}
+    this.changed()
     if(delivery.status==='sending')void this.dispatch(session,delivery)
     return {ok:true,sessionId:delivery.id}
+  }
+  setDraft(id:string,text:string):SessionResult{
+    const session=this.sessions.get(id);if(!session)return {ok:false,error:'Session not found.'}
+    if(text.length>100_000)return {ok:false,error:'Draft is too large.'}
+    session.view.draft=text;session.view.updatedAt=Date.now();const saved=this.persist(session);this.changed()
+    return saved?{ok:true,sessionId:id}:{ok:false,error:this.recovery.error??'Could not save the draft.'}
+  }
+  discardRecovered(id:string):SessionResult{
+    if(!this.recovery.state.some(item=>item.id===id))return {ok:false,error:'Recovered session not found.'}
+    const saved=this.recovery.discard(id);this.changed();return saved?{ok:true,sessionId:id}:{ok:false,error:this.recovery.error??'Could not discard recovered text.'}
   }
   cancel(sessionId:string,deliveryId:string):SessionResult{
     const session=this.sessions.get(sessionId);if(!session)return {ok:false,error:'Session not found.'}
     const delivery=session.view.deliveries.find(item=>item.id===deliveryId)
     if(!delivery||delivery.status!=='queued')return {ok:false,error:'Only queued messages can be cancelled.'}
-    delivery.status='cancelled';session.view.updatedAt=Date.now();this.changed();return {ok:true,sessionId:deliveryId}
+    delivery.status='cancelled';session.view.updatedAt=Date.now();const saved=this.persist(session);this.changed();return saved?{ok:true,sessionId:deliveryId}:{ok:false,error:this.recovery.error??'Could not save the cancellation.'}
   }
   suspend():void{
     for(const session of this.sessions.values()){
@@ -207,7 +225,8 @@ export class SessionSupervisor extends EventEmitter {
     session.child.once('error',()=>this.fail(session,'Agent process could not be started.'))
     session.child.once('exit',code=>{
       session.generation++;this.clearTimers(session)
-      for(const delivery of session.view.deliveries){if(delivery.status==='sending')delivery.status='unknown';else if(delivery.status==='queued')delivery.status='cancelled'}
+      for(const delivery of session.view.deliveries){if(delivery.status==='sending'){delivery.status='unknown';delivery.error='Delivery outcome is unknown.'}else if(delivery.status==='queued')delivery.status='suspended'}
+      this.persist(session)
       const terminal=session.view.status==='error'||session.view.status==='unknown'
       this.update(session,{status:terminal?session.view.status:session.stopping||code===0?'stopped':'error',turnStartedAt:null,error:terminal?session.view.error:session.stopping||code===0?null:'Agent process exited unexpectedly.'})
     })
@@ -256,12 +275,12 @@ export class SessionSupervisor extends EventEmitter {
         else if(type==='systemError')this.update(session,{status:'idle',lastTurnOutcome:'failed',error:'The last Codex turn failed.'})
         else this.idle(session,session.view.lastTurnOutcome)
       }else if(pending?.startsWith('delivery:')){
-        const delivery=this.delivery(session,pending.slice(9));if(value.error&&delivery){delivery.status='failed';delivery.error='Codex rejected the message.';this.update(session,{status:'idle',turnStartedAt:null})}
-        else if(delivery){delivery.status='sent';this.touch(session)}
+        const delivery=this.delivery(session,pending.slice(9));if(value.error&&delivery){this.confirmDelivery(session,delivery,false,'Codex rejected the message.');this.update(session,{status:'idle',turnStartedAt:null})}
+        else if(delivery)this.confirmDelivery(session,delivery,true)
       }
     }
     const params=value.params as Record<string,unknown>|undefined
-    if(value.method==='turn/started')this.update(session,{status:'running',turnStartedAt:this.codexStartedAt(params),turnElapsedMs:null,lastTurnOutcome:null,error:null})
+    if(value.method==='turn/started'){this.confirmSendingFromLifecycle(session);this.update(session,{status:'running',turnStartedAt:this.codexStartedAt(params),turnElapsedMs:null,lastTurnOutcome:null,error:null})}
     if(['item/commandExecution/requestApproval','item/fileChange/requestApproval','item/tool/requestUserInput','item/permissions/requestApproval'].includes(String(value.method)))this.update(session,{status:'waiting'})
     if(value.method==='serverRequest/resolved'&&session.view.status==='waiting')this.update(session,{status:'running'})
     if(value.method==='turn/completed'){
@@ -290,10 +309,10 @@ export class SessionSupervisor extends EventEmitter {
         else if(data.isStreaming===true)this.update(session,{status:'running',turnStartedAt:session.view.turnStartedAt,lastTurnOutcome:null,error:null})
         else this.idle(session,session.piTurnOutcome??session.view.lastTurnOutcome)
       }else if(pending?.startsWith('delivery:')){
-        const delivery=this.delivery(session,pending.slice(9));if(delivery){delivery.status=value.success===true?'sent':'failed';delivery.error=value.success===true?null:'Pi rejected the message.';this.touch(session)}
+        const delivery=this.delivery(session,pending.slice(9));if(delivery)this.confirmDelivery(session,delivery,value.success===true,value.success===true?undefined:'Pi rejected the message.')
       }
     }
-    if(value.type==='agent_start'){session.piTurnOutcome=undefined;this.update(session,{status:'running',turnStartedAt:Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})}
+    if(value.type==='agent_start'){this.confirmSendingFromLifecycle(session);session.piTurnOutcome=undefined;this.update(session,{status:'running',turnStartedAt:Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})}
     if(value.type==='turn_end'){
       const message=value.message as {stopReason?:unknown}|undefined
       session.piTurnOutcome=message?.stopReason==='error'?'failed':message?.stopReason==='aborted'?'interrupted':'completed'
@@ -306,8 +325,11 @@ export class SessionSupervisor extends EventEmitter {
       if(value.session_id!==session.view.providerSessionId)return this.fail(session,'Claude returned a different session identity.')
       if(session.view.status==='starting'||session.view.status==='unknown')this.update(session,{status:'idle',error:null})
     }
-    if(value.type==='user'){
-      const delivery=session.view.deliveries.find(item=>item.status==='sending');if(delivery){delivery.status='sent';this.touch(session)}
+    if(value.type!=='system'&&value.session_id!==session.view.providerSessionId)return
+    if(value.type==='user'&&value.session_id===session.view.providerSessionId){
+      const delivery=session.view.deliveries.find(item=>item.status==='sending'),message=value.message as {content?:unknown}|undefined
+      const content=Array.isArray(message?.content)?message.content:[],text=content.filter((item):item is {type:'text';text:string}=>Boolean(item)&&typeof item==='object'&&(item as {type?:unknown}).type==='text'&&typeof (item as {text?:unknown}).text==='string').map(item=>item.text).join('')
+      if(delivery&&text===delivery.text)this.confirmDelivery(session,delivery,true)
     }
     if(value.type==='assistant'&&session.view.status!=='running')this.update(session,{status:'running',turnStartedAt:Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})
     if(value.type==='result')this.idle(session,value.subtype==='success'&&value.is_error!==true?'completed':value.subtype==='interrupted'?'interrupted':'failed')
@@ -349,23 +371,24 @@ export class SessionSupervisor extends EventEmitter {
   private async dispatch(session:ManagedSession,delivery:SessionDelivery):Promise<void>{
     try{
       if(session.view.agent==='codex'){
-        const id=++session.requestSequence;session.pending.set(id,`delivery:${delivery.id}`);this.write(session,{id,method:'turn/start',params:{threadId:session.view.providerSessionId,input:[{type:'text',text:delivery.text}]}})
+        const id=++session.requestSequence;session.pending.set(id,`delivery:${delivery.id}`);this.write(session,{id,method:'turn/start',params:{threadId:session.view.providerSessionId,input:[{type:'text',text:delivery.text}]}});this.awaitReceipt(session,delivery);this.update(session,{status:'running',turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,error:null})
       }else if(session.view.agent==='pi'){
-        const id=++session.requestSequence;session.pending.set(id,`delivery:${delivery.id}`);this.write(session,{id,type:'prompt',message:delivery.text})
+        const id=++session.requestSequence;session.pending.set(id,`delivery:${delivery.id}`);this.write(session,{id,type:'prompt',message:delivery.text});this.awaitReceipt(session,delivery);this.update(session,{status:'running',turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,error:null})
       }else if(session.view.agent==='claude'){
         this.write(session,{type:'user',message:{role:'user',content:[{type:'text',text:delivery.text}]},parent_tool_use_id:null,session_id:session.view.providerSessionId??''})
-        delivery.status='sent';this.update(session,{status:'running',turnStartedAt:Date.now(),turnElapsedMs:null})
+        this.awaitReceipt(session,delivery);this.update(session,{status:'running',turnStartedAt:Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})
       }else{
         const provider=session.view.providerSessionId;if(!provider)throw Error()
         await this.request(session,`/session/${encodeURIComponent(provider)}/prompt_async`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({messageID:delivery.id,parts:[{type:'text',text:delivery.text}]}),expectNoContent:true})
-        delivery.status='sent';this.update(session,{status:'running',turnStartedAt:Date.now(),turnElapsedMs:null})
+        this.confirmDelivery(session,delivery,true);this.update(session,{status:'running',turnStartedAt:Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})
       }
-    }catch{delivery.status='unknown';delivery.error='Delivery outcome is unknown.';this.update(session,{status:'unknown',error:'Connection to the agent was lost.'})}
+    }catch{this.clearDeliveryDeadline(session,delivery.id);delivery.status='unknown';delivery.error='Delivery outcome is unknown.';this.persist(session);this.update(session,{status:'unknown',error:'Connection to the agent was lost.'})}
   }
   private idle(session:ManagedSession,outcome:LiveSession['lastTurnOutcome']='completed'):void{
+    this.confirmSendingFromLifecycle(session)
     this.update(session,{status:'idle',turnStartedAt:null,lastTurnOutcome:outcome,error:outcome==='failed'?'The last agent turn failed.':null})
     const queued=session.view.deliveries.find(item=>item.status==='queued')
-    if(queued){queued.status='sending';this.touch(session);void this.dispatch(session,queued)}
+    if(queued){queued.status='sending';this.persist(session);this.touch(session);void this.dispatch(session,queued)}
   }
   private armHealth(session:ManagedSession):void{
     if(session.health||session.stopping)return
@@ -396,6 +419,8 @@ export class SessionSupervisor extends EventEmitter {
     if(session.poll){clearInterval(session.poll);session.poll=undefined}
     if(session.health){clearInterval(session.health);session.health=undefined}
     if(session.deadline){clearTimeout(session.deadline);session.deadline=undefined}
+    for(const timer of session.deliveryDeadlines.values())clearTimeout(timer)
+    session.deliveryDeadlines.clear()
   }
   private request(session:ManagedSession,path:string,init:RequestInit&{expectNoContent?:boolean}={}):Promise<unknown>{
     if(!session.endpoint||!session.authorization)return Promise.reject(Error())
@@ -411,6 +436,21 @@ export class SessionSupervisor extends EventEmitter {
     session.child.stdin.write(`${JSON.stringify(value)}\n`)
   }
   private delivery(session:ManagedSession,id:string):SessionDelivery|undefined{return session.view.deliveries.find(item=>item.id===id)}
+  private awaitReceipt(session:ManagedSession,delivery:SessionDelivery):void{
+    const generation=session.generation,timer=setTimeout(()=>{
+      session.deliveryDeadlines.delete(delivery.id)
+      if(session.stopping||generation!==session.generation||delivery.status!=='sending')return
+      delivery.status='unknown';delivery.error='Delivery receipt was not received; Localino will not retry.';this.persist(session);this.update(session,{status:'unknown',error:'Message delivery is unknown. It was not retried.'})
+    },15_000)
+    timer.unref();session.deliveryDeadlines.set(delivery.id,timer)
+  }
+  private clearDeliveryDeadline(session:ManagedSession,id:string):void{const timer=session.deliveryDeadlines.get(id);if(timer)clearTimeout(timer);session.deliveryDeadlines.delete(id)}
+  private confirmDelivery(session:ManagedSession,delivery:SessionDelivery,accepted:boolean,error?:string):void{
+    if(delivery.status!=='sending')return
+    this.clearDeliveryDeadline(session,delivery.id);delivery.status=accepted?'sent':'failed';delivery.error=accepted?null:error??'The agent rejected the message.';this.persist(session);this.touch(session)
+  }
+  private confirmSendingFromLifecycle(session:ManagedSession):void{const delivery=session.view.deliveries.find(item=>item.status==='sending');if(delivery)this.confirmDelivery(session,delivery,true)}
+  private persist(session:ManagedSession):boolean{return this.recovery.save(session.view)}
   private fail(session:ManagedSession,error:string):void{this.update(session,{status:'error',turnStartedAt:null,error})}
   private touch(session:ManagedSession):void{session.view.updatedAt=Date.now();this.changed()}
   private update(session:ManagedSession,change:Partial<Pick<LiveSession,'providerSessionId'|'status'|'turnStartedAt'|'turnElapsedMs'|'lastTurnOutcome'|'error'>>):void{

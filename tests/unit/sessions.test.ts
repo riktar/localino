@@ -189,3 +189,44 @@ test('OpenCode owns an authenticated loopback server and creates its session',as
     assert.equal(supervisor.state.sessions[0].status,'idle');assert.ok(managed.poll)
   }finally{await supervisor.dispose();globalThis.fetch=originalFetch}
 })
+
+test('messages stay on the selected instance and queued messages dispatch FIFO',async()=>{
+  const {supervisor,children}=fixture();await supervisor.refreshCapabilities();const project=mkdtempSync(join(tmpdir(),'localino-delivery-'))
+  const first=await supervisor.start('codex',project),second=await supervisor.start('codex',project);await wait()
+  line(children[0],{id:1,result:{}});line(children[0],{id:2,result:{thread:{id:'thread-first'}}})
+  line(children[1],{id:1,result:{}});line(children[1],{id:2,result:{thread:{id:'thread-second'}}});await wait()
+  const writes:string[]=[];children[0].stdin.on('data',chunk=>writes.push(String(chunk)))
+  assert.equal((await supervisor.send(first.sessionId!,'   ')).ok,false);assert.equal((await supervisor.send(first.sessionId!,'x'.repeat(100_001))).ok,false)
+  const exact='prima riga\nUnicode 🧪';assert.equal((await supervisor.send(first.sessionId!,exact)).ok,true)
+  assert.equal((await supervisor.send(first.sessionId!,'annulla')).ok,true)
+  assert.equal((await supervisor.send(first.sessionId!,'terzo')).ok,true)
+  const queued=supervisor.state.sessions.find(item=>item.id===first.sessionId)!.deliveries
+  assert.deepEqual(queued.map(item=>item.status),['sending','queued','queued'])
+  assert.equal(supervisor.cancel(first.sessionId!,queued[1].id).ok,true)
+  assert.equal(supervisor.state.sessions.find(item=>item.id===second.sessionId)!.deliveries.length,0)
+  line(children[0],{id:3,result:{turn:{id:'one'}}});line(children[0],{method:'turn/started',params:{turn:{startedAt:Date.now()/1000}}});line(children[0],{method:'turn/completed',params:{turn:{status:'completed'}}});await wait()
+  const requests=writes.flatMap(value=>value.trim().split('\n')).filter(Boolean).map(value=>JSON.parse(value) as {method?:string;params?:{input?:{text?:string}[]}}).filter(value=>value.method==='turn/start')
+  assert.deepEqual(requests.map(value=>value.params?.input?.[0].text),[exact,'terzo'])
+  await supervisor.stop(second.sessionId!);children[1].kill();await wait();assert.deepEqual(await supervisor.send(second.sessionId!,'closed'),{ok:false,error:'Session is not ready.'})
+  await supervisor.dispose()
+})
+
+test('a lost delivery receipt becomes unknown and is never retried',async context=>{
+  const {supervisor,children}=fixture();await supervisor.refreshCapabilities();const project=mkdtempSync(join(tmpdir(),'localino-receipt-'))
+  const started=await supervisor.start('pi',project);await wait();line(children[0],{id:1,type:'response',success:true,data:{sessionId:'pi-receipt'}});await wait()
+  const writes:string[]=[];children[0].stdin.on('data',chunk=>writes.push(String(chunk)));context.mock.timers.enable({apis:['setTimeout']})
+  try{
+    assert.equal((await supervisor.send(started.sessionId!,'once only')).ok,true);await new Promise(resolveImmediate=>setImmediate(resolveImmediate));context.mock.timers.tick(15_000);await Promise.resolve()
+    const session=supervisor.state.sessions[0];assert.equal(session.status,'unknown');assert.equal(session.deliveries[0].status,'unknown');assert.match(session.deliveries[0].error!,/not retry/i)
+    assert.equal(writes.join('').match(/"type":"prompt"/g)?.length,1)
+  }finally{context.mock.timers.reset();await supervisor.dispose()}
+})
+
+test('Claude accepts a receipt only when session identity and exact text match',async()=>{
+  const {supervisor,children}=fixture();await supervisor.refreshCapabilities();const project=mkdtempSync(join(tmpdir(),'localino-claude-receipt-'))
+  const started=await supervisor.start('claude',project);await wait(300);const identity=supervisor.state.sessions[0].providerSessionId!,text='exact\n🌍'
+  await supervisor.send(started.sessionId!,text);line(children[0],{type:'user',session_id:'other',message:{content:[{type:'text',text}]}});await wait();assert.equal(supervisor.state.sessions[0].deliveries[0].status,'sending')
+  line(children[0],{type:'user',session_id:identity,message:{content:[{type:'text',text:'changed'}]}});await wait();assert.equal(supervisor.state.sessions[0].deliveries[0].status,'sending')
+  line(children[0],{type:'user',session_id:identity,message:{content:[{type:'text',text}]}});await wait();assert.equal(supervisor.state.sessions[0].deliveries[0].status,'sent')
+  await supervisor.dispose()
+})

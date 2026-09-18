@@ -3,7 +3,7 @@ import { agentIds, isAgentId, type AgentId } from './agents'
 export const sessionStatuses = ['starting','ready','idle','running','waiting','stopping','stopped','unknown','error'] as const
 export type SessionStatus = typeof sessionStatuses[number]
 export type SessionProtocol = 'codex-app-server'|'claude-stream-json'|'pi-rpc'|'opencode-server'
-export type DeliveryStatus = 'queued'|'sending'|'sent'|'failed'|'unknown'|'cancelled'
+export type DeliveryStatus = 'queued'|'sending'|'sent'|'failed'|'unknown'|'suspended'|'cancelled'
 export type TurnOutcome = 'completed'|'interrupted'|'failed'
 
 export interface SessionCapability {
@@ -37,11 +37,25 @@ export interface LiveSession {
   updatedAt: number
   error: string|null
   deliveries: SessionDelivery[]
+  draft: string
+}
+
+export interface RecoveredSession {
+  id: string
+  agent: AgentId
+  projectPath: string
+  projectName: string
+  providerSessionId: string|null
+  updatedAt: number
+  draft: string
+  deliveries: SessionDelivery[]
 }
 
 export interface LiveSessionsState {
   capabilities: Record<AgentId,SessionCapability>
   sessions: LiveSession[]
+  recovered: RecoveredSession[]
+  persistenceError: string|null
 }
 
 export interface SessionResult { ok: boolean; sessionId?: string; error?: string }
@@ -51,7 +65,7 @@ export const sessionProtocols: Record<AgentId,SessionProtocol> = {
 }
 
 export function initialLiveSessions(): LiveSessionsState {
-  return {capabilities:Object.fromEntries(agentIds.map(agent=>[agent,{agent,status:'checking',protocol:sessionProtocols[agent],version:null,error:null}])) as Record<AgentId,SessionCapability>,sessions:[]}
+  return {capabilities:Object.fromEntries(agentIds.map(agent=>[agent,{agent,status:'checking',protocol:sessionProtocols[agent],version:null,error:null}])) as Record<AgentId,SessionCapability>,sessions:[],recovered:[],persistenceError:null}
 }
 
 export function isSessionStart(value:unknown):value is {agent:AgentId;projectPath:string} {
@@ -70,4 +84,10 @@ export function isSessionDelivery(value:unknown):value is {sessionId:string;deli
   if(!value||typeof value!=='object')return false
   const item=value as {sessionId?:unknown;deliveryId?:unknown}
   return typeof item.sessionId==='string'&&item.sessionId.length>0&&item.sessionId.length<=128&&typeof item.deliveryId==='string'&&item.deliveryId.length>0&&item.deliveryId.length<=128
+}
+
+export function isSessionDraft(value:unknown):value is {sessionId:string;text:string} {
+  if(!value||typeof value!=='object')return false
+  const item=value as {sessionId?:unknown;text?:unknown}
+  return typeof item.sessionId==='string'&&item.sessionId.length>0&&item.sessionId.length<=128&&typeof item.text==='string'&&item.text.length<=100_000
 }
