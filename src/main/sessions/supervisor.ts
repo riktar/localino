@@ -29,8 +29,12 @@ interface ManagedSession {
   pollingGeneration?: number
   resumeStatus?: LiveSession['status']
   piTurnOutcome?: LiveSession['lastTurnOutcome']
-  piTurnActive: boolean
-  claudeTurnActive: boolean
+  activePiTurn?: number
+  completedPiTurns: Set<number>
+  piCanSettle: boolean
+  activeClaudeMessage?: string
+  completedClaudeMessages: Set<string>
+  completedClaudeResults: Set<string>
   activeCodexTurn?: string
   completedCodexTurns: Set<string>
   stopping: boolean
@@ -146,7 +150,7 @@ export class SessionSupervisor extends EventEmitter {
       const args=agent==='opencode'?['serve','--hostname','127.0.0.1','--port',String(port)]:commandFor(agent,providerSessionId??undefined)
       const env=agent==='opencode'?{...process.env,OPENCODE_SERVER_USERNAME:'localino',OPENCODE_SERVER_PASSWORD:password!}:process.env
       const child=this.spawnProcess(binary,args,{cwd:directory,env,stdio:['pipe','pipe','pipe']})
-      const managed:ManagedSession={view,child,buffer:new JsonlBuffer(),requestSequence:0,pending:new Map(),deliveryDeadlines:new Map(),lastContactAt:now,generation:0,piTurnActive:false,claudeTurnActive:false,completedCodexTurns:new Set(),stopping:false,...(port&&password?{endpoint:`http://127.0.0.1:${port}`,authorization:`Basic ${Buffer.from(`localino:${password}`).toString('base64')}`}:{})}
+      const managed:ManagedSession={view,child,buffer:new JsonlBuffer(),requestSequence:0,pending:new Map(),deliveryDeadlines:new Map(),lastContactAt:now,generation:0,completedPiTurns:new Set(),piCanSettle:false,completedClaudeMessages:new Set(),completedClaudeResults:new Set(),completedCodexTurns:new Set(),stopping:false,...(port&&password?{endpoint:`http://127.0.0.1:${port}`,authorization:`Basic ${Buffer.from(`localino:${password}`).toString('base64')}`}:{})}
       this.sessions.set(id,managed);this.attach(managed);this.changed()
       return {ok:true,sessionId:id}
     }catch{return {ok:false,error:'Could not start the agent process.'}}
@@ -321,12 +325,17 @@ export class SessionSupervisor extends EventEmitter {
         const delivery=this.delivery(session,pending.slice(9));if(delivery)this.confirmDelivery(session,delivery,value.success===true,value.success===true?undefined:'Pi rejected the message.')
       }
     }
-    if(value.type==='agent_start'){if(session.piTurnActive)return;session.piTurnActive=true;this.confirmSendingFromLifecycle(session);session.piTurnOutcome=undefined;this.update(session,{status:'running',turnStartedAt:Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})}
-    if(value.type==='turn_end'){
-      const message=value.message as {stopReason?:unknown}|undefined
-      session.piTurnOutcome=message?.stopReason==='error'?'failed':message?.stopReason==='aborted'?'interrupted':'completed'
+    if(value.type==='agent_start')this.update(session,{status:'running',turnStartedAt:session.view.turnStartedAt??Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})
+    if(value.type==='turn_start'&&Number.isSafeInteger(value.turnIndex)){
+      const index=value.turnIndex as number;if(session.completedPiTurns.has(index)||session.activePiTurn!==undefined&&session.activePiTurn!==index)return
+      session.activePiTurn=index;session.piCanSettle=false;session.piTurnOutcome=undefined;this.update(session,{status:'running',turnStartedAt:typeof value.timestamp==='number'&&value.timestamp>0?value.timestamp:session.view.turnStartedAt??Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})
     }
-    if(value.type==='agent_settled'&&session.piTurnActive){session.piTurnActive=false;this.confirmSendingFromLifecycle(session);this.idle(session,session.piTurnOutcome??'completed')}
+    if(value.type==='turn_end'){
+      const index=value.turnIndex;if(!Number.isSafeInteger(index)||session.activePiTurn!==index||session.completedPiTurns.has(index as number))return
+      const message=value.message as {stopReason?:unknown}|undefined
+      session.completedPiTurns.add(index as number);if(session.completedPiTurns.size>32)session.completedPiTurns.delete(session.completedPiTurns.values().next().value!);session.activePiTurn=undefined;session.piCanSettle=true;session.piTurnOutcome=message?.stopReason==='error'?'failed':message?.stopReason==='aborted'?'interrupted':'completed'
+    }
+    if(value.type==='agent_settled'&&session.piCanSettle){session.piCanSettle=false;this.idle(session,session.piTurnOutcome??'completed')}
     if(value.type==='extension_ui_request'&&['select','confirm','input','editor'].includes(String(value.method)))this.update(session,{status:'waiting'})
   }
   private claudeRecord(session:ManagedSession,value:Record<string,unknown>):void{
@@ -338,10 +347,17 @@ export class SessionSupervisor extends EventEmitter {
     if(value.type==='user'&&value.session_id===session.view.providerSessionId){
       const delivery=session.view.deliveries.find(item=>item.status==='sending'),message=value.message as {content?:unknown}|undefined
       const content=Array.isArray(message?.content)?message.content:[],text=content.filter((item):item is {type:'text';text:string}=>Boolean(item)&&typeof item==='object'&&(item as {type?:unknown}).type==='text'&&typeof (item as {text?:unknown}).text==='string').map(item=>item.text).join('')
-      if(delivery&&text===delivery.text){session.claudeTurnActive=true;this.confirmDelivery(session,delivery,true)}
+      if(delivery&&text===delivery.text)this.confirmDelivery(session,delivery,true)
     }
-    if(value.type==='assistant'){session.claudeTurnActive=true;if(session.view.status!=='running')this.update(session,{status:'running',turnStartedAt:Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})}
-    if(value.type==='result'&&session.claudeTurnActive){session.claudeTurnActive=false;this.confirmSendingFromLifecycle(session);this.idle(session,value.subtype==='success'&&value.is_error!==true?'completed':value.subtype==='interrupted'?'interrupted':'failed')}
+    if(value.type==='assistant'){
+      const message=value.message as {id?:unknown}|undefined,id=message?.id;if(typeof id!=='string'||session.completedClaudeMessages.has(id))return
+      session.activeClaudeMessage=id;if(session.view.status!=='running')this.update(session,{status:'running',turnStartedAt:Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})
+    }
+    if(value.type==='result'){
+      const id=value.uuid;if(typeof id!=='string'||session.completedClaudeResults.has(id)||!session.activeClaudeMessage)return
+      session.completedClaudeResults.add(id);session.completedClaudeMessages.add(session.activeClaudeMessage);if(session.completedClaudeResults.size>32)session.completedClaudeResults.delete(session.completedClaudeResults.values().next().value!);if(session.completedClaudeMessages.size>32)session.completedClaudeMessages.delete(session.completedClaudeMessages.values().next().value!);session.activeClaudeMessage=undefined
+      this.idle(session,value.subtype==='success'&&value.is_error!==true?'completed':value.subtype==='interrupted'?'interrupted':'failed')
+    }
     if(value.type==='control_request')this.update(session,{status:'waiting'})
   }
   private async startOpenCode(session:ManagedSession):Promise<void>{
@@ -382,9 +398,9 @@ export class SessionSupervisor extends EventEmitter {
       if(session.view.agent==='codex'){
         const id=++session.requestSequence;session.pending.set(id,`delivery:${delivery.id}`);this.write(session,{id,method:'turn/start',params:{threadId:session.view.providerSessionId,input:[{type:'text',text:delivery.text}]}});this.awaitReceipt(session,delivery);this.update(session,{status:'running',turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,error:null})
       }else if(session.view.agent==='pi'){
-        session.piTurnActive=false;const id=++session.requestSequence;session.pending.set(id,`delivery:${delivery.id}`);this.write(session,{id,type:'prompt',message:delivery.text});this.awaitReceipt(session,delivery);this.update(session,{status:'running',turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,error:null})
+        session.activePiTurn=undefined;session.piCanSettle=false;const id=++session.requestSequence;session.pending.set(id,`delivery:${delivery.id}`);this.write(session,{id,type:'prompt',message:delivery.text});this.awaitReceipt(session,delivery);this.update(session,{status:'running',turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,error:null})
       }else if(session.view.agent==='claude'){
-        session.claudeTurnActive=false
+        session.activeClaudeMessage=undefined
         this.write(session,{type:'user',message:{role:'user',content:[{type:'text',text:delivery.text}]},parent_tool_use_id:null,session_id:session.view.providerSessionId??''})
         this.awaitReceipt(session,delivery);this.update(session,{status:'running',turnStartedAt:Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})
       }else{
