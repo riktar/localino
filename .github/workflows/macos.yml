@@ -1,11 +1,11 @@
 name: macOS validation
 
-on:
-  push:
-    branches: [main, sprint/SPRINT-004]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
+# on:
+#   push:
+#     branches: [main]
+#   pull_request:
+#     branches: [main]
+#   workflow_dispatch:
 
 permissions:
   contents: read
