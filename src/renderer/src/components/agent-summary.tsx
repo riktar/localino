@@ -17,7 +17,6 @@ import { AgentSwitcher } from './agent-switcher'
 export function AgentSummary(): React.JSX.Element {
   const agents=useAgents(),[error,setError]=useState<string>()
   return <section className="agent-summary" aria-label="Agent">
-    <div className="agent-summary-glow" aria-hidden="true"/>
     <div className="agent-summary-top"><AgentSwitcher compact selected={agents.selected} onSelect={(id:AgentId)=>void window.localino.selectAgent(id).then(result=>setError(result.error))}/><span className="agent-ready"><Sparkles/>Live</span></div>
     {(agents.error||error)&&<p role="alert" className="text-sm text-destructive">{agents.error||error}</p>}
     {agents.selected==='codex'?<CodexSummary/>:<LocalSummary key={agents.selected} id={agents.selected}/>}

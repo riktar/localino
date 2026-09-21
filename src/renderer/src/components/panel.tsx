@@ -68,7 +68,7 @@ function PanelContent(): React.JSX.Element {
   return <div className="panel" data-destination={destination} onKeyDown={event=>{if(!event.defaultPrevented&&event.key==='Escape'&&!document.querySelector('dialog[open]')&&dismiss.current&&destination==='panel'&&!recovering){event.preventDefault();event.stopPropagation();void dismiss.current()}}}>
     <AgentCommands/>
     <header className="panel-header">
-      {destination==='settings'?<Button size="icon" variant="ghost" aria-label="Back" onClick={()=>void window.localino.navigate('panel')}><ArrowLeft/></Button>:<span className="brand-mark" aria-hidden="true"><i/>l</span>}
+      {destination==='settings'?<Button size="icon" variant="ghost" aria-label="Back" onClick={()=>void window.localino.navigate('panel')}><ArrowLeft/></Button>:<span className="brand-mark" aria-hidden="true">l</span>}
       <div className="title-stack"><h1>{destination==='settings'?'Settings':'Localino'}</h1><span>{destination==='settings'?'Preferences':'Local workspace'}</span></div>
       <div className="ml-auto flex">
         <Button size="icon" variant="ghost" aria-label="Commands" title="Commands" onClick={registry.open}><Command/></Button>
