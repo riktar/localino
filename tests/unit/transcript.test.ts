@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { appendFileSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import { TranscriptStore } from '../../src/main/sessions/transcript-store'
 import { cleanTranscriptInput, projectTranscriptPage, reduceTranscriptItem, transcriptKinds, type TranscriptInput, type TranscriptItemState } from '../../src/shared/transcript'
 
@@ -51,12 +52,16 @@ test('truncated tail and corrupt complete record remain byte-for-byte intact, in
   const file=join(root,'one','events-00000001.jsonl')
   appendFileSync(file,'{"event":')
   writeFileSync(join(root,'one','manifest.json'),'{broken')
+  writeFileSync(join(root,'one','snapshot.json'),'{broken-snapshot')
   const original=readFileSync(file)
   const recovered=new TranscriptStore(root)
   const page=recovered.page('one')
   assert.equal(page.events.length,2);assert.equal(page.info.interrupted,true);assert.match(page.info.error!,/tail/)
   recovered.append([event('new',{turnId:'new-turn',text:'new'})])
   assert.deepEqual(readFileSync(file),original)
+  const preserved=readdirSync(join(root,'one'))
+  assert.equal(readFileSync(join(root,'one',preserved.find(name=>name.startsWith('manifest.json.corrupt-'))!),'utf8'),'{broken')
+  assert.equal(readFileSync(join(root,'one',preserved.find(name=>name.startsWith('snapshot.json.corrupt-'))!),'utf8'),'{broken-snapshot')
   assert.equal(readdirSync(join(root,'one')).filter(name=>name.endsWith('.jsonl')).length,2)
   const second=join(root,'one','events-00000002.jsonl')
   writeFileSync(second,readFileSync(second,'utf8').replace('"text":"new"','"text":"tampered"'))
@@ -89,4 +94,39 @@ test('all observable kinds persist; conflicting offset is a gap and final cannot
   assert.equal(reopened.page('one').events.at(-1)!.outcome,'unknown')
   assert.equal(reopened.page('one').info.reasoning,'published-summary')
   assert.equal(projectTranscriptPage(reopened.page('one')).at(-1)!.text,'λ')
+})
+
+test('every terminal outcome resists late notices, replacement text and kind changes before and after restart',()=>{
+  for(const outcome of ['completed','interrupted','failed','unknown'] as const) {
+    const {root,store}=fixture()
+    store.append([event('done',{operation:'snapshot',text:'Confirmed final',outcome})])
+    const late=store.append([
+      event('notice',{operation:'notice',text:'Late replacement',outcome:'streaming'}),
+      event('different-kind',{kind:'status',operation:'notice',text:'Other kind',outcome:'streaming'}),
+      event('snapshot-late',{operation:'snapshot',text:'Replacement snapshot',outcome:'completed'}),
+    ])
+    assert.ok(late.every(item=>item.disposition==='late'))
+    for(const source of [store,new TranscriptStore(root)]) {
+      const page=source.page('one'),projection=projectTranscriptPage(page)
+      assert.equal(projection.length,1);assert.equal(projection[0].text,'Confirmed final');assert.equal(projection[0].outcome,outcome)
+      assert.equal(page.info.interrupted,false)
+    }
+  }
+})
+
+test('pages and identity lookups exclude checksum-valid records rejected by recovery ownership and order',()=>{
+  const {root,store}=fixture()
+  const originalEvents=[event('a',{text:'A'}),event('b',{offset:1,text:'B'})]
+  store.append(originalEvents)
+  const file=join(root,'one','events-00000001.jsonl'),records=readFileSync(file,'utf8').trimEnd().split('\n')
+  const foreign=JSON.parse(records[1]);foreign.event.provider='claude';foreign.event.text='FOREIGN'
+  foreign.checksum=createHash('sha256').update(JSON.stringify(foreign.event)).digest('hex')
+  writeFileSync(file,[records[0],JSON.stringify(foreign),records[1],records[0]].join('\n')+'\n')
+  const corrupted=readFileSync(file),reopened=new TranscriptStore(root),page=reopened.page('one')
+  assert.equal(page.info.events,2);assert.match(page.info.error!,/corrupt/)
+  assert.deepEqual(page.events.map(item=>item.sequence),[1,2]);assert.equal(projectTranscriptPage(page)[0].text,'AB')
+  assert.deepEqual(reopened.page('one',2).events.map(item=>item.sequence),[1])
+  assert.equal(reopened.page('one',1).events.length,0)
+  assert.equal(reopened.append(originalEvents).length,0) // The rejected same-ID foreign row must not poison lookup.
+  assert.deepEqual(readFileSync(file),corrupted)
 })

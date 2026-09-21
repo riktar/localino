@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
+import { closeSync, copyFileSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import { cleanTranscriptInput, reduceTranscriptItem, transcriptId, transcriptItemKey, transcriptLimits, type TranscriptEvent, type TranscriptInfo, type TranscriptInput, type TranscriptItemState, type TranscriptPage } from '../../shared/transcript'
 import { isAgentId } from '../../shared/agents'
@@ -64,7 +64,16 @@ export class TranscriptStore {
           const saved=metadata(manifest.info,id)
           if(saved.provider!==info.provider||saved.projectPath!==info.projectPath)throw Error()
           data.info = {...saved,interrupted:saved.interrupted || (manifest as {active?:boolean}).active === true}
-        } catch { data.info.error = 'Transcript index is unavailable. Original files are preserved and will be scanned.' }
+        } catch {
+          data.info.error = 'Transcript index is unavailable. Original files are preserved and will be scanned.'
+          const file=join(root,id,'manifest.json')
+          if(existsSync(file))try{copyFileSync(file,`${file}.corrupt-${randomUUID()}`)}catch{data.writable=false}
+        }
+        const snapshot=join(root,id,'snapshot.json')
+        if(existsSync(snapshot))try{const value=JSON.parse(readFileSync(snapshot,'utf8'));if(value.version!==1||!Array.isArray(value.recent))throw Error()}catch{
+          data.info.error='Transcript snapshot is unavailable. Original files are preserved and will be scanned.'
+          try{copyFileSync(snapshot,`${snapshot}.corrupt-${randomUUID()}`)}catch{data.writable=false}
+        }
         this.sessions.set(id,data)
       } catch { this.error = 'A transcript has unreadable session metadata. Its directory was preserved; it cannot be opened until the metadata is repaired.' }
     }
@@ -115,7 +124,7 @@ export class TranscriptStore {
       data.info.interrupted = true
       for (const item of data.items.values()) if (item.outcome === 'streaming') item.outcome = 'interrupted'
     }
-    try { this.checkpoint(data) } catch { data.writable = false;data.info.error = 'Transcript index could not be saved. Existing output remains readable; new writes are disabled.' }
+    if(data.writable)try { this.checkpoint(data) } catch { data.writable = false;data.info.error = 'Transcript index could not be saved. Existing output remains readable; new writes are disabled.' }
     return data
   }
   append(values:TranscriptInput[]):TranscriptEvent[] {
@@ -181,9 +190,9 @@ export class TranscriptStore {
     for (const segment of [...data.segments].reverse()) {
       if (segment.first >= end) continue
       const candidates:TranscriptEvent[] = []
-      try { for (const line of lines(join(this.root,id,segment.name))) {
-        try { const event = decode(line);if (event.sessionId === id && event.sequence < end) { candidates.push(event);if (candidates.length > transcriptLimits.pageEvents) candidates.shift() } } catch { /* Visible corruption warning is set during load. */ }
-      } } catch { /* Preserve tail. */ }
+      for (const event of this.acceptedRecords(data,segment)) {
+        if (event.sequence < end) { candidates.push(event);if (candidates.length > transcriptLimits.pageEvents) candidates.shift() }
+      }
       for (const event of candidates.reverse()) {
         const bytes = Buffer.byteLength(JSON.stringify(event))
         if (events.length >= transcriptLimits.pageEvents || total+bytes > transcriptLimits.pageBytes) break
@@ -201,13 +210,24 @@ export class TranscriptStore {
     // The only recursive deletion target is a validated, known child of the fixed store root.
     rmSync(join(this.root,id),{recursive:true});this.sessions.delete(id)
   }
-  flush():void { for (const data of this.sessions.values()) if (data.loaded) this.checkpoint(data) }
+  flush():void { for (const data of this.sessions.values()) if (data.loaded&&data.writable) this.checkpoint(data) }
   private find(data:SessionData,predicate:(event:TranscriptEvent)=>boolean):TranscriptEvent|undefined {
     // Bloom positives are always checked against exact durable records. False positives never discard output.
     for(const segment of [...data.segments].reverse()) {
-      try {for(const line of lines(join(this.root,data.info.sessionId,segment.name))) {try {const event=decode(line);if(predicate(event))return event} catch {/* Corruption is visible in the manifest. */}}} catch {/* Preserve interrupted tail. */}
+      for(const event of this.acceptedRecords(data,segment))if(predicate(event))return event
     }
     return undefined
+  }
+  private *acceptedRecords(data:SessionData,segment:Segment):Generator<TranscriptEvent> {
+    // Match replay's ownership and strictly increasing sequence, including the preceding segment boundary.
+    let sequence=segment.first-1
+    try {for(const line of lines(join(this.root,data.info.sessionId,segment.name))) {
+      try {
+        const event=decode(line)
+        if(event.sessionId!==data.info.sessionId||event.provider!==data.info.provider||event.sequence<=sequence||event.sequence>segment.last)continue
+        sequence=event.sequence;yield event
+      } catch {/* Rejected records remain on disk, outside the readable stream. */}
+    }} catch {/* Preserve interrupted tail. */}
   }
   private remember(data:SessionData,event:TranscriptEvent):void {
     data.recent.push(event);data.recentBytes+=Buffer.byteLength(JSON.stringify(event))

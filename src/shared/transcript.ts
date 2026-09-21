@@ -78,8 +78,8 @@ export function projectTranscriptPage(page:TranscriptPage):TranscriptViewItem[] 
 export function transcriptItemKey(event: TranscriptInput): string { return JSON.stringify([event.provider, event.providerSessionId, event.turnId, event.itemId]) }
 export function reduceTranscriptItem(previous: TranscriptItemState | undefined, event: TranscriptInput): { state: TranscriptItemState; disposition: TranscriptEvent['disposition'] } {
   const state = {...(previous ?? {length:0, outcome:'streaming' as const, gap:false, kind:event.kind})}
+  if (previous && previous.outcome !== 'streaming') return {state,disposition:'late'}
   if (previous && previous.kind !== event.kind) return {state:{...state,gap:true,outcome:'unknown'},disposition:'gap'}
-  if (previous && previous.outcome !== 'streaming' && event.operation !== 'notice') return {state,disposition:'late'}
   if (event.operation === 'append') {
     if (event.offset! < state.length) return {state,disposition:'duplicate'}
     if (event.offset! > state.length) return {state:{...state,gap:true},disposition:'gap'}

@@ -91,7 +91,10 @@ while this happens. Interrupted tails and corrupt records are preserved, skipped
 with a visible completeness warning, and never overwritten by new segments.
 Items still streaming after restart become interrupted; a sequence/content gap
 prevents a completed label. A final snapshot replaces streamed text rather than
-adding a second copy. A late delta cannot reopen a terminal item.
+adding a second copy. No late operation, including a notice, can reopen a terminal
+item. Notices about later activity use a separate item. Pages and duplicate
+lookups apply the same ownership and sequence checks as recovery. Corrupt derived
+manifests/snapshots are copied to `.corrupt-<uuid>` files before rebuilding them.
 
 There is no automatic expiry or total session-size cap. Individual events over
 1 MiB and a pending write queue over 8 MiB are rejected with an explicit error,
