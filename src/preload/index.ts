@@ -45,6 +45,7 @@ const api: LocalinoApi = {
   stopLiveSession:sessionId=>ipcRenderer.invoke('localino:stop-live-session',sessionId),
   getChatHistory:sessionId=>ipcRenderer.invoke('localino:chat-history',sessionId),
   loadEarlierChat:sessionId=>ipcRenderer.invoke('localino:load-earlier-chat',sessionId),
+  loadLatestChat:sessionId=>ipcRenderer.invoke('localino:load-latest-chat',sessionId),
   onChatHistory:listener=>{
     const callback=(_event:Electron.IpcRendererEvent,history:import('../shared/terminal').ChatHistory)=>listener(history)
     ipcRenderer.on('localino:chat-history-changed',callback)

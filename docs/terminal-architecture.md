@@ -59,10 +59,12 @@ the transcript story adds an equivalent semantic ordered list with explicit user
 and model labels. Semantic updates are coalesced to 200 ms during a burst while
 the visible terminal retains the 34 ms schedule.
 
-The live projection starts with 12 messages and loads older messages explicitly.
-It keeps user prompts intact and bounds visible model text to 4,000 characters,
-marking an omitted prefix with an ellipsis. Manual upward scrolling suspends
-auto-follow; the New messages action restores the live end.
+The live projection starts with a page of up to 12 messages and loads older pages
+explicitly. It keeps user prompts intact and pages long model text in Unicode-safe
+4,000-character chunks, marking adjacent text with ellipses. The in-memory cache
+remains at 100 events / 2 MiB while moving backward; Latest messages reloads the
+bounded live end. Manual upward scrolling suspends auto-follow and retains its line
+anchor across Ink repaints; the New messages action restores the live end.
 
 ## Reproducing the spike
 

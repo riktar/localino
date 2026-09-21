@@ -8,7 +8,7 @@ import '@xterm/xterm/css/xterm.css'
 export function SessionTerminal({ sessionId }: { sessionId: string }): React.JSX.Element {
   const container = useRef<HTMLDivElement>(null)
   const [error, setError] = useState<string>()
-  const [history,setHistory]=useState<ChatHistory>({sessionId,messages:[],hasEarlier:false})
+  const [history,setHistory]=useState<ChatHistory>({sessionId,messages:[],hasEarlier:false,hasLater:false})
   const [loadingEarlier,setLoadingEarlier]=useState(false)
   const [newOutput,setNewOutput]=useState(false)
   const terminalRef=useRef<Terminal|null>(null),followRef=useRef(true)
@@ -45,8 +45,9 @@ export function SessionTerminal({ sessionId }: { sessionId: string }): React.JSX
       // xterm parses writes asynchronously; finish old bytes before a repaint.
       writes = writes.then(() => new Promise<void>(resolveWrite => {
         if (disposed) { resolveWrite(); return }
+        const anchor=followRef.current?null:terminal.buffer.active.viewportY
         if (frame.reset) { terminal.reset(); terminal.resize(frame.columns!, frame.rows!) }
-        terminal.write(frame.data,()=>{if(followRef.current)terminal.scrollToBottom();else setNewOutput(true);resolveWrite()})
+        terminal.write(frame.data,()=>{if(followRef.current)terminal.scrollToBottom();else{if(anchor!==null)terminal.scrollToLine(Math.min(anchor,terminal.buffer.active.baseY));setNewOutput(true)}resolveWrite()})
       }))
     })
     const offHistory=window.localino.onChatHistory(next=>{if(next.sessionId===sessionId)setHistory(next)})
@@ -63,11 +64,11 @@ export function SessionTerminal({ sessionId }: { sessionId: string }): React.JSX
     }
   }, [sessionId])
   const earlier=async()=>{setLoadingEarlier(true);try{setHistory(await window.localino.loadEarlierChat(sessionId))}catch{setError('Earlier messages could not be loaded.')}finally{setLoadingEarlier(false)}}
-  const latest=()=>{followRef.current=true;terminalRef.current?.scrollToBottom();setNewOutput(false)}
+  const latest=async()=>{followRef.current=true;try{if(history.hasLater)setHistory(await window.localino.loadLatestChat(sessionId));terminalRef.current?.scrollToBottom();setNewOutput(false)}catch{setError('Latest messages could not be loaded.')}}
   return <div className="session-terminal" aria-label="Session conversation">
-    {history.hasEarlier&&<Button size="sm" variant="ghost" disabled={loadingEarlier} onClick={()=>void earlier()}>{loadingEarlier?'Loading…':'Load earlier messages'}</Button>}
+    <div className="flex gap-2">{history.hasEarlier&&<Button size="sm" variant="ghost" disabled={loadingEarlier} onClick={()=>void earlier()}>{loadingEarlier?'Loading…':'Load earlier messages'}</Button>}{history.hasLater&&<Button size="sm" variant="ghost" onClick={()=>void latest()}>Latest messages</Button>}</div>
     <div ref={container} className="session-terminal-viewport" />
-    {newOutput&&<Button size="sm" className="mt-2" onClick={latest}>New messages</Button>}
+    {newOutput&&<Button size="sm" className="mt-2" onClick={()=>void latest()}>New messages</Button>}
     <ol className="sr-only" aria-label="Conversation messages">{history.messages.map((message,index)=><li key={`${message.role}-${index}`}><strong>{message.label}</strong><span>{message.text}</span></li>)}</ol>
     {error && <p role="alert">{error}</p>}
   </div>

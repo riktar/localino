@@ -54,7 +54,7 @@ const terminalLines = (sessionId:string):TerminalLine[] => {
   if(!session)throw Error('Session not found')
   return transcriptWindows.get(sessionId)?.lines(agentLabels[session.agent])??[]
 }
-const chatHistory = (sessionId:string):ChatHistory => ({sessionId,messages:terminalLines(sessionId),hasEarlier:transcriptWindows.get(sessionId)?.hasEarlier()??false})
+const chatHistory = (sessionId:string):ChatHistory => ({sessionId,messages:terminalLines(sessionId),hasEarlier:transcriptWindows.get(sessionId)?.hasEarlier()??false,hasLater:transcriptWindows.get(sessionId)?.hasLater()??false})
 const scheduleChatHistory = (sessionId:string):void => {
   if(chatHistoryTimers.has(sessionId))return
   const timer=setTimeout(()=>{chatHistoryTimers.delete(sessionId);broadcast('localino:chat-history-changed',chatHistory(sessionId))},200)
@@ -424,18 +424,17 @@ if (!app.requestSingleInstanceLock()) {
       const projection=transcriptWindows.get(value)
       if(!projection)throw Error('Session history is unavailable')
       if(!projection.revealLoadedEarlier()){
-        const session=liveSessions.state.sessions.find(candidate=>candidate.id===value)
-        if(!session)throw Error('Session not found')
-        const previous=JSON.stringify(projection.lines(agentLabels[session.agent]))
-        for(let pageCount=0;pageCount<64;pageCount++){
-          const before=projection.before()
-          if(before===undefined)break
-          const page=await transcripts.page(value,before)
-          if(!page.events.length)break
-          projection.prepend(page.events)
-          if(projection.revealLoadedEarlier()||JSON.stringify(projection.lines(agentLabels[session.agent]))!==previous)break
-        }
+        const before=projection.before()
+        if(before!==undefined){const page=await transcripts.page(value,before);if(page.events.length)projection.prepend(page.events)}
       }
+      terminals.update(value,terminalLines(value));broadcast('localino:chat-history-changed',chatHistory(value))
+      return chatHistory(value)
+    })
+    handle('localino:load-latest-chat',async(_owner,value)=>{
+      if(typeof value!=='string'||!/^[\w-]{1,128}$/.test(value))throw Error('Invalid session')
+      const projection=transcriptWindows.get(value)
+      if(!projection)throw Error('Session history is unavailable')
+      projection.replaceLatest((await transcripts.page(value)).events)
       terminals.update(value,terminalLines(value));broadcast('localino:chat-history-changed',chatHistory(value))
       return chatHistory(value)
     })

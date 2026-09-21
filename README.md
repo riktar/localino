@@ -121,5 +121,5 @@ Live sessions show one conversation history with clearly separated **You** and
 model messages. Localino does not expose a separate transcript archive or show
 tool, status and protocol events in the conversation. Use **Load earlier messages**
 to move back through long sessions; when manual scrolling pauses follow mode,
-**New messages** returns to the live end. See
+**Latest messages** or **New messages** returns to the live end. See
 [storage and privacy](docs/sessions.md#local-conversation-history).

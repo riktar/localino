@@ -77,12 +77,12 @@ text emitted by the selected model. **You** and the model name use different
 labels and colors. Delivery rows, status events, tool activity, command output,
 reasoning, protocol notices and turn outcomes are not part of this view. There is
 no separate transcript archive, reader or delete control in the renderer.
-The view opens on the latest 12 messages. **Load earlier messages** expands it in
-12-message steps and scans across streamed delta pages so one long response does
-not masquerade as many chat entries. User prompts are kept intact. Very long model
-messages use a bounded 4,000-character projection shared across the visible model
-messages; a leading ellipsis marks omitted earlier text while the durable record
-remains unchanged.
+The view opens on the latest page of up to 12 messages. **Load earlier messages**
+moves backward through message pages and through 4,000-character chunks of a long
+model response. **Latest messages** returns to the live page. User prompts are kept
+intact. Leading or trailing ellipses mark adjacent model text on another page while
+the durable record remains unchanged. Each loaded cache stays limited to 100 events
+or 2 MiB, including while browsing older pages.
 
 The terminal follows new output while it is at the bottom. Scrolling upward pauses
 follow mode without moving the viewport; **New messages** appears when more output

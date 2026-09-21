@@ -41,13 +41,22 @@ test('chat projection shows only user and model text with distinct roles',()=>{
     {label:'Codex',text:'Hello from the model',role:'assistant'},
   ])
 })
-test('chat projection keeps complete loaded messages and expands earlier pages in order',()=>{
+test('chat projection pages every message, preserves Unicode and keeps its cache bounded',()=>{
   const window=new TranscriptWindow(),base={version:1 as const,sessionId:'one',provider:'codex' as const,providerSessionId:'owned',turnId:'turn',operation:'snapshot' as const,outcome:'completed' as const,inputHash:'hash',timestamp:1,disposition:'applied' as const}
   const long=`START-${'x'.repeat(9000)}-END`
   window.append(Array.from({length:14},(_,index)=>({...base,eventId:`event-${index+10}`,itemId:`message-${index+10}`,kind:index===0?'prompt' as const:'assistant' as const,text:index===0?long:`Message ${index+10}`,sequence:index+10})))
-  assert.equal(window.lines('Codex').length,12);assert.equal(window.hasEarlier(),true);assert.equal(window.before(),10);assert.equal(window.revealLoadedEarlier(),true);assert.equal(window.lines('Codex')[0].text,long)
+  assert.equal(window.lines('Codex').length,12);assert.equal(window.hasEarlier(),true);assert.equal(window.before(),10);assert.equal(window.revealLoadedEarlier(),true);assert.equal(window.lines('Codex')[0].text,long);assert.equal(window.hasLater(),true)
   window.prepend(Array.from({length:9},(_,index)=>({...base,eventId:`event-${index+1}`,itemId:`message-${index+1}`,kind:'assistant' as const,text:`Message ${index+1}`,sequence:index+1})))
-  assert.equal(window.revealLoadedEarlier(),true);assert.equal(window.lines('Codex').length,23);assert.equal(window.lines('Codex')[0].text,'Message 1');assert.equal(window.lines('Codex').at(-1)?.text,'Message 23');assert.equal(window.hasEarlier(),false)
+  assert.equal(window.revealLoadedEarlier(),true);assert.equal(window.lines('Codex').length,11);assert.equal(window.lines('Codex')[0].text,'Message 1');assert.equal(window.lines('Codex').at(-1)?.text,'Message 11');assert.equal(window.hasEarlier(),false)
+  const assistant=new TranscriptWindow(),text=`BEGIN-${'x'.repeat(3992)}🌍-${'y'.repeat(1000)}-END`
+  assistant.append([{...base,eventId:'long',itemId:'long',kind:'assistant',text,sequence:1}])
+  assert.match(assistant.lines('Codex')[0].text,/^…\n/);assert.equal(assistant.hasEarlier(),true);assert.equal(assistant.revealLoadedEarlier(),true)
+  const earlier=assistant.lines('Codex')[0].text;assert.match(earlier,/^BEGIN-/);assert.match(earlier,/\n…$/);assert.equal([...earlier].some(character=>character.length===1&&/[\uD800-\uDFFF]/.test(character)),false);assert.equal(assistant.hasLater(),true)
+  const bounded=new TranscriptWindow();bounded.append(Array.from({length:150},(_,index)=>({...base,eventId:`new-${index}`,itemId:`new-${index}`,kind:'assistant' as const,text:'x',sequence:index+200})))
+  bounded.prepend(Array.from({length:100},(_,index)=>({...base,eventId:`old-${index}`,itemId:`old-${index}`,kind:'assistant' as const,text:'y',sequence:index+1})))
+  const retained=bounded.cacheStats();bounded.append(Array.from({length:1000},(_,index)=>({...base,eventId:`late-${index}`,itemId:`late-${index}`,kind:'assistant' as const,text:'z',sequence:index+1000})))
+  assert.deepEqual(bounded.cacheStats(),retained);assert.ok(retained.events<=100&&retained.bytes<=2*1024*1024)
+  bounded.replaceLatest([{...base,eventId:'latest',itemId:'latest',kind:'assistant',text:'latest',sequence:9999}]);assert.deepEqual(bounded.lines('Codex').map(line=>line.text),['latest']);assert.equal(bounded.hasLater(),false)
 })
 test('append/restart preserves exact Unicode, idempotence, final snapshot and session isolation',()=>{
   const {root,store}=fixture()

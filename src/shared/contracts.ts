@@ -35,6 +35,7 @@ export interface ResourceState<T> {
 export interface LocalinoApi {
   getChatHistory: (sessionId:string) => Promise<import('./terminal').ChatHistory>
   loadEarlierChat: (sessionId:string) => Promise<import('./terminal').ChatHistory>
+  loadLatestChat: (sessionId:string) => Promise<import('./terminal').ChatHistory>
   onChatHistory: (listener:(history:import('./terminal').ChatHistory)=>void) => () => void
   openTerminal: (viewport: import('./terminal').TerminalViewport) => Promise<void>
   closeTerminal: (viewId: string) => Promise<void>
