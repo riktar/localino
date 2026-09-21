@@ -59,17 +59,11 @@ test('owned Codex stream delivers 1000 deltas/s through durable storage and Ink 
     }
     assert.equal(count,5000)
     assert.equal((await readFile(join(root,'session.json'),'utf8')).includes('PRIVATE_STDERR'),false)
+    const conversation=await card.locator('.xterm-accessibility').innerText()
+    assert.ok(conversation.includes('You'));assert.ok(conversation.includes('Codex'))
+    assert.equal(/Turn started|completed|Unsupported event|Tool output/.test(conversation),false)
     await page.evaluate(id=>window.localino.stopLiveSession(id),sessionId)
     await waitFor(page,async()=>(await window.localino.getLiveSessions()).sessions.every(session=>session.status==='stopped'))
-    await app.evaluate(({dialog})=>{dialog.showMessageBox=async()=>({response:1,checkboxChecked:false})})
-    const deletion=await page.evaluate(id=>window.localino.deleteTranscript(id),sessionId)
-    assert.equal(deletion.ok,true,JSON.stringify({deletion,sessions:(await page.evaluate(()=>window.localino.getLiveSessions())).sessions.map(session=>({id:session.id,status:session.status,error:session.error}))}))
-    const deletedProjection=await page.evaluate(sessionId=>new Promise((resolveFrame,reject)=>{
-      const timer=setTimeout(()=>{off();reject(Error('Missing terminal frame after deletion'))},5000)
-      const off=window.localino.onTerminalFrame(frame=>{if(frame.viewId==='after-delete'){clearTimeout(timer);off();resolveFrame(frame.data)}})
-      void window.localino.openTerminal({sessionId,viewId:'after-delete',columns:80,rows:12})
-    }),sessionId)
-    assert.equal(deletedProjection.includes('SEQ'),false);assert.equal(deletedProjection.includes('LOCALINO_STREAM_FIXTURE'),false)
     console.log(JSON.stringify({streamDeltas:count,...result}))
   }finally{await app.close()}
 })

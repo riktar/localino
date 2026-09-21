@@ -13,7 +13,7 @@ import { TranscriptWindow } from '../src/main/sessions/transcript-window'
 test('100,000 provider deltas / 100 MiB survive normalization, batching and disk with bounded projection', {timeout:120000},async()=>{
   const root=await mkdtemp(join(tmpdir(),'localino-provider-volume-')),store=new TranscriptClient(resolve('out/main/transcript-worker.js'),root),window=new TranscriptWindow()
   const errors:string[]=[],pump=new TranscriptPump(store,error=>errors.push(error)),adapter=new CodexTranscript('volume','codex',events=>pump.push(events))
-  let maxProjection=0;store.on('events',events=>{window.append(events);maxProjection=Math.max(maxProjection,JSON.stringify(window.lines()).length)})
+  let maxProjection=0;store.on('events',events=>{window.append(events);maxProjection=Math.max(maxProjection,JSON.stringify(window.lines('Codex')).length)})
   const rss=process.memoryUsage().rss,started=performance.now();let peak=rss,count=0
   try{
     await store.create({sessionId:'volume',provider:'codex',projectPath:root,projectName:'volume'})
@@ -26,7 +26,7 @@ test('100,000 provider deltas / 100 MiB survive normalization, batching and disk
       await pump.flush();peak=Math.max(peak,process.memoryUsage().rss)
     }
     adapter.terminate('done','completed');await pump.flush()
-    const page=await store.page('volume');assert.equal(page.info.events,100101);assert.equal(page.info.error,null)
+    const page=await store.page('volume');assert.equal(page.info.events,100100);assert.equal(page.info.error,null)
   }finally{await store.dispose()}
   let outputBytes=0
   for(const file of (await readdir(join(root,'volume'))).filter(name=>name.endsWith('.jsonl')).sort()){

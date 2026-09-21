@@ -29,8 +29,14 @@ for (const packaged of process.env.LOCALINO_PACKAGED_TEST ? [true] : [false]) {
       const message = 'Hello λ🌍\nsecond line \x1b]52;c;ZXZpbA==\x07'
       await card.getByRole('textbox', { name: /Message for/ }).fill(message)
       await card.getByRole('button', { name: 'Send', exact: true }).click()
-      await page.waitForFunction(() => document.querySelector('.xterm-accessibility')?.textContent.includes('Hello λ🌍'))
-      assert.ok((await card.locator('.xterm-accessibility').innerText()).includes('␛]52'))
+      await page.waitForFunction(() => {const text=document.querySelector('.xterm-accessibility')?.textContent;return text?.includes('Hello λ🌍')&&text.includes('Codex')})
+      const conversation = await card.locator('.xterm-accessibility').innerText()
+      assert.ok(conversation.includes('␛]52'))
+      assert.ok(conversation.includes('You'))
+      assert.ok(conversation.includes('Codex'))
+      assert.equal(/Turn started|completed|Unsupported event|prompt ·|assistant ·/.test(conversation),false)
+      assert.equal(await page.getByRole('heading',{name:'Saved transcripts'}).count(),0)
+      assert.equal(await card.getByRole('list',{name:'Message deliveries'}).count(),0)
       const prefs = await app.evaluate(({ BrowserWindow }) => {
         const prefs = BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('view=usage')).webContents.getLastWebPreferences()
         return { sandbox: prefs.sandbox, nodeIntegration: prefs.nodeIntegration, contextIsolation: prefs.contextIsolation }
@@ -80,7 +86,7 @@ for (const packaged of process.env.LOCALINO_PACKAGED_TEST ? [true] : [false]) {
             if (frame.data.includes('END')) worker.postMessage({ type: 'dispose' })
           })
           worker.once('exit', code => { clearTimeout(timeout); resolveProbe({ code, output, frames }) })
-          for (let i = 1; i <= 5000; i++) worker.postMessage({ type: 'update', viewport: { viewId: 'probe', sessionId: 'probe', columns: 80, rows: 100 }, lines: [{ label: 'Unicode', text: 'λ'.repeat(i) + (i === 5000 ? '🌍 END' : '') }] })
+          for (let i = 1; i <= 5000; i++) worker.postMessage({ type: 'update', viewport: { viewId: 'probe', sessionId: 'probe', columns: 80, rows: 100 }, lines: [{ label: 'Unicode', text: 'λ'.repeat(i) + (i === 5000 ? '🌍 END' : ''), role: 'assistant' }] })
         })
       })
       assert.equal(probe.code, 0); assert.equal(probe.output, ''); assert.ok(probe.frames.length > 0)

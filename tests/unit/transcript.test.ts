@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { TranscriptStore } from '../../src/main/sessions/transcript-store'
-import { cleanTranscriptInput, projectTranscriptPage, reduceTranscriptItem, transcriptKinds, type TranscriptInput, type TranscriptItemState } from '../../src/shared/transcript'
+import { TranscriptWindow } from '../../src/main/sessions/transcript-window'
+import { cleanTranscriptInput, projectTranscriptPage, reduceTranscriptItem, transcriptKinds, type TranscriptEvent, type TranscriptInput, type TranscriptItemState } from '../../src/shared/transcript'
 
 const event=(id:string,change:Partial<TranscriptInput>={}):TranscriptInput=>({eventId:id,sessionId:'one',provider:'codex',providerSessionId:'owned',turnId:'turn',itemId:'answer',kind:'assistant',operation:'append',text:'λ',offset:0,...change})
 function fixture(beforeWrite?:()=>void) {
@@ -25,6 +26,20 @@ test('normalized transcript whitelists observable types and handles offsets, gap
   assert.equal(JSON.stringify(clean).includes('SECRET'),false)
   assert.throws(()=>cleanTranscriptInput(event('bad',{kind:'thinking' as never})))
   assert.throws(()=>cleanTranscriptInput(event('bad',{offset:undefined})))
+})
+test('chat projection shows only user and model text with distinct roles',()=>{
+  const window=new TranscriptWindow(),base={version:1 as const,sessionId:'one',provider:'codex' as const,providerSessionId:'owned',turnId:'turn',operation:'snapshot' as const,outcome:'completed' as const,inputHash:'hash',timestamp:1,disposition:'applied' as const}
+  const events:TranscriptEvent[]=[
+    {...base,eventId:'prompt',itemId:'prompt',kind:'prompt',text:'Hello',sequence:1},
+    {...base,eventId:'status',itemId:'status',kind:'status',text:'Turn started',sequence:2},
+    {...base,eventId:'tool',itemId:'tool',kind:'tool',text:'secret command output',sequence:3},
+    {...base,eventId:'answer',itemId:'answer',kind:'assistant',text:'Hello from the model',sequence:4},
+  ]
+  window.append(events)
+  assert.deepEqual(window.lines('Codex'),[
+    {label:'You',text:'Hello',role:'user'},
+    {label:'Codex',text:'Hello from the model',role:'assistant'},
+  ])
 })
 test('append/restart preserves exact Unicode, idempotence, final snapshot and session isolation',()=>{
   const {root,store}=fixture()

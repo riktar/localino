@@ -25,14 +25,14 @@ Run desktop suites serially: they share system focus and global shortcut registr
 - `tests/terminal-ui.test.mjs`: embedded xterm, Unicode, sandbox, invalid IPC, resizing and packaged ASAR worker.
 - `tests/terminal-dev.test.mjs`: cold `npm run dev` and automatic worker regeneration after a source change (`npm run test:terminal:dev`, run serially because it rebuilds generated output).
 - These are feasibility checks. Full transcript retention, provider streaming and the large-dataset acceptance are separate sprint checks.
-# Transcript persistence
+# Conversation persistence
 
 `tests/unit/transcript.test.ts`: normalized observable kinds, exact event identity,
 offset duplicates/conflicts, late/final states, unknown/gap handling, restart,
 checksums, corrupt/torn file preservation, disk-full, oversize and selective delete.
 `tests/transcripts.test.mjs`: 100,000 events / >100 MiB independently checked,
-segmentation, bounded pages, responsive Electron during worker replay, interrupted
-recovery with no provider start, Clipboard privacy and native delete confirmation.
+segmentation and interrupted recovery, plus confirmation that Electron exposes no
+standalone archive UI or renderer API.
 # Provider streaming
 
 - `tests/unit/provider-transcript.test.ts`: frozen Codex/Claude/Pi/OpenCode contracts, source identities, delta/final replacement, stale messages, published reasoning and field selection.

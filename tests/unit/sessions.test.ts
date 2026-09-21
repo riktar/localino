@@ -265,7 +265,7 @@ for(const completedOffline of [false,true])test(`OpenCode SSE reconnect uses the
     assert.equal(text,'ABC');assert.equal(prompts,1);assert.equal(new Set(urls.map(url=>new URL(url).origin)).size,1)
     assert.equal(new Set(auth).size,1);assert.match(auth[0],/^Basic /);assert.equal(JSON.stringify(events).includes(auth[0]),false)
     assert.equal(supervisor.state.sessions[0].status,'idle');assert.equal(supervisor.state.sessions[0].lastTurnOutcome,null)
-    assert.ok(events.some(event=>event.label==='Output gap'));assert.equal(events.findLast(event=>event.itemId==='text')?.outcome,'unknown')
+    assert.equal(events.some(event=>event.label==='Output gap'),false);assert.ok(events.every(event=>event.kind==='prompt'||event.kind==='assistant'));assert.equal(events.findLast(event=>event.itemId==='text')?.outcome,'unknown')
     assert.equal((await supervisor.send(result.sessionId!,'Another explicit read')).ok,true);await wait(20);assert.equal(prompts,2)
   }finally{await supervisor.dispose();globalThis.fetch=originalFetch}
 })

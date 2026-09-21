@@ -33,10 +33,6 @@ export interface ResourceState<T> {
 }
 
 export interface LocalinoApi {
-  getTranscripts: () => Promise<{sessions:import('./transcript').TranscriptInfo[];error:string|null}>
-  getTranscriptPage: (sessionId:string,before?:number) => Promise<import('./transcript').TranscriptPage>
-  deleteTranscript: (sessionId:string) => Promise<{ok:boolean;error?:string}>
-  onTranscripts: (listener:()=>void) => () => void
   openTerminal: (viewport: import('./terminal').TerminalViewport) => Promise<void>
   closeTerminal: (viewId: string) => Promise<void>
   onTerminalFrame: (listener: (frame: import('./terminal').TerminalFrame) => void) => () => void

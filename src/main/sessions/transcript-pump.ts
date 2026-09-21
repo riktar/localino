@@ -10,10 +10,11 @@ export class TranscriptPump {
   private failed=false
   constructor(private readonly store:Pick<TranscriptClient,'append'>|undefined,private readonly failure:(message:string)=>void){}
   push(events:TranscriptInput[]):void {
-    if(!this.store||this.failed||!events.length)return
-    const size=Buffer.byteLength(JSON.stringify(events))
+    const messages=events.filter(event=>event.kind==='assistant')
+    if(!this.store||this.failed||!messages.length)return
+    const size=Buffer.byteLength(JSON.stringify(messages))
     if(this.bytes+size>transcriptLimits.pendingBytes){this.fail('Transcript queue is full. Output was not silently shortened; the session was stopped.');return}
-    this.bytes+=size;this.queue.push(...events)
+    this.bytes+=size;this.queue.push(...messages)
     if(!this.timer&&!this.flight)this.timer=setTimeout(()=>{this.timer=undefined;void this.flush()},34)
   }
   async flush():Promise<void> {

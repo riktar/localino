@@ -43,7 +43,7 @@ test('concurrent worker requests retain order and partial output survives an abr
   assert.equal(store.output+recovered.output,'')
 })
 
-test('100,000 events / 50 MiB remain durable and paged while the renderer responds; deletion is confirmed and selective', {timeout:180000}, async()=>{
+test('100,000 events / 50 MiB remain durable without exposing a transcript archive in the renderer', {timeout:180000}, async()=>{
   await mkdir('test-results/profiles',{recursive:true})
   const profile=await mkdtemp(resolve('test-results/profiles/transcripts-')),root=join(profile,'transcripts'),seed=workerStore(root)
   const started=performance.now(),rss=process.memoryUsage().rss
@@ -80,38 +80,11 @@ test('100,000 events / 50 MiB remain durable and paged while the renderer respon
   const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;delete env.ELECTRON_RENDERER_URL
   const app=await electron.launch({args:['.',`--user-data-dir=${profile}`],env})
   try {
-    const page=await mainPage(app),card=page.locator('[data-transcript-id="large"]')
-    await card.waitFor();await app.evaluate(({clipboard})=>clipboard.writeText('explicit-clipboard-sentinel'))
-    const measurement=await page.evaluate(async()=>{
-      const gaps=[];let last=performance.now(),active=true
-      const tick=()=>{const now=performance.now();gaps.push(now-last);last=now;if(active)requestAnimationFrame(tick)}
-      requestAnimationFrame(tick)
-      const started=performance.now(),result=await window.localino.getTranscriptPage('large')
-      active=false;gaps.sort((a,b)=>a-b)
-      return {elapsedMs:performance.now()-started,p95FrameMs:gaps[Math.floor(gaps.length*.95)]??0,count:result.events.length,first:result.events[0].sequence,last:result.events.at(-1).sequence,interrupted:result.info.interrupted,bytes:JSON.stringify(result).length}
-    })
-    assert.equal(measurement.count,100);assert.equal(measurement.first,99901);assert.equal(measurement.last,100000);assert.equal(measurement.interrupted,true)
-    assert.ok(measurement.p95FrameMs<100,JSON.stringify(measurement));assert.ok(measurement.bytes<2*1024*1024)
-    await card.getByRole('button',{name:'Read transcript',exact:true}).click()
-    const content=page.locator('[aria-label="Transcript page"]')
-    await content.getByText(/#100000 assistant/).waitFor()
-    assert.equal(await content.getByRole('listitem').count(),100)
-    await content.getByRole('button',{name:'Earlier events'}).click()
-    await content.getByText(/#99900 assistant/).waitFor()
-    assert.equal(await content.getByRole('listitem').count(),100)
-    assert.equal(await app.evaluate(({clipboard})=>clipboard.readText()),'explicit-clipboard-sentinel')
-    assert.equal(await page.evaluate(()=>window.localino.getTranscriptPage('../escape').then(()=>false,()=>true)),true)
-    await page.reload();await card.waitFor()
-    assert.equal((await page.evaluate(()=>window.localino.getLiveSessions())).sessions.length,0)
-    await app.evaluate(({dialog})=>{dialog.showMessageBox=async()=>({response:0,checkboxChecked:false})})
-    await card.getByRole('button',{name:'Delete transcript',exact:true}).click()
-    await page.getByRole('alert').filter({hasText:'Deletion cancelled.'}).waitFor()
-    assert.equal((await page.evaluate(()=>window.localino.getTranscripts())).sessions.length,2)
-    await app.evaluate(({dialog})=>{dialog.showMessageBox=async()=>({response:1,checkboxChecked:false})})
-    await card.getByRole('button',{name:'Delete transcript',exact:true}).click()
-    await card.waitFor({state:'detached'})
-    assert.deepEqual((await page.evaluate(()=>window.localino.getTranscripts())).sessions.map(item=>item.sessionId),['same-name'])
-    assert.equal((await page.evaluate(()=>window.localino.getTranscriptPage('same-name'))).events.length,1)
-    console.log(JSON.stringify({renderer:measurement,heap:await app.evaluate(()=>process.memoryUsage().heapUsed)}))
+    const page=await mainPage(app)
+    assert.equal(await page.getByRole('heading',{name:'Saved transcripts'}).count(),0)
+    assert.equal(await page.getByRole('button',{name:/Read transcript|Delete transcript/}).count(),0)
+    const api=await page.evaluate(async()=>({getTranscripts:typeof window.localino.getTranscripts,getTranscriptPage:typeof window.localino.getTranscriptPage,deleteTranscript:typeof window.localino.deleteTranscript,sessions:(await window.localino.getLiveSessions()).sessions.length}))
+    assert.deepEqual(api,{getTranscripts:'undefined',getTranscriptPage:'undefined',deleteTranscript:'undefined',sessions:0})
+    console.log(JSON.stringify({archiveExposed:false,heap:await app.evaluate(()=>process.memoryUsage().heapUsed)}))
   } finally {await app.close()}
 })

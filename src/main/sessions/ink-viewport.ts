@@ -32,9 +32,9 @@ export class InkViewport {
   }
   private tree(lines: TerminalLine[]) {
     return createElement(Box, { flexDirection: 'column' }, ...lines.map((line, index) =>
-      createElement(Box, { key: index, flexDirection: 'column' },
-        createElement(Text, { bold: true }, terminalText(line.label)),
-        createElement(Text, { wrap: 'wrap' }, terminalText(line.text)))))
+      createElement(Box, { key: index, flexDirection: 'column', marginBottom: index===lines.length-1?0:1 },
+        createElement(Text, { bold: true, color: line.role==='user'?'cyan':'green' }, `${line.role==='user'?'▌':'◆'} ${terminalText(line.label)}`),
+        createElement(Text, { wrap: 'wrap', color: line.role==='user'?'cyan':undefined }, terminalText(line.text)))))
   }
   update(lines: TerminalLine[]): void { if (!this.disposed) this.instance.rerender(this.tree(lines)) }
   resize(columns: number, rows: number): void {

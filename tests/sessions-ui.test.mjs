@@ -26,9 +26,9 @@ test('supervised session starts for a chosen project, survives window hiding and
     const composer=card.first().getByRole('textbox',{name:/Message for/}),message='prima riga\nUnicode 🧪 🌍'
     await composer.fill(message);assert.equal(await composer.inputValue(),message)
     await card.first().getByRole('button',{name:'Send',exact:true}).dblclick()
-    await card.first().locator('[data-delivery-status="sent"]').waitFor()
-    assert.equal(await card.first().locator('[data-delivery-status]').count(),1)
-    assert.equal(await card.nth(1).locator('[data-delivery-status]').count(),0)
+    await page.waitForFunction(()=>document.querySelector('.xterm-accessibility')?.textContent?.includes('Unicode 🧪 🌍'))
+    assert.equal(await card.first().getByRole('list',{name:'Message deliveries'}).count(),0)
+    assert.equal((await card.first().locator('.xterm-accessibility').innerText()).includes('You'),true)
     await page.waitForFunction(()=>window.localino.getLiveSessions().then(state=>state.sessions.filter(session=>session.status==='idle').length===2))
     await page.evaluate(()=>window.localino.hide())
     assert.equal((await page.evaluate(()=>window.localino.getLiveSessions())).sessions.filter(session=>session.status!=='stopped').length,2)

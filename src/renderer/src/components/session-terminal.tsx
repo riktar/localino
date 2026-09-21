@@ -21,7 +21,12 @@ export function SessionTerminal({ sessionId }: { sessionId: string }): React.JSX
     const guards = [8, 52].map(code => terminal.parser.registerOscHandler(code, () => true))
     const theme = () => {
       const style = getComputedStyle(host)
-      terminal.options.theme = { background: style.getPropertyValue('--card').trim(), foreground: style.getPropertyValue('--foreground').trim(), selectionBackground: '#8587ff55' }
+      terminal.options.theme = {
+        background: style.getPropertyValue('--card').trim(), foreground: style.getPropertyValue('--foreground').trim(),
+        cyan: style.getPropertyValue('--chat-user').trim(), brightCyan: style.getPropertyValue('--chat-user').trim(),
+        green: style.getPropertyValue('--chat-assistant').trim(), brightGreen: style.getPropertyValue('--chat-assistant').trim(),
+        selectionBackground: '#8587ff55',
+      }
     }
     theme()
     const offTheme = window.localino.onTheme(theme)

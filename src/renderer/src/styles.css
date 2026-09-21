@@ -41,6 +41,8 @@
   --border: #d9dfe8;
   --destructive: #c33a48;
   --ring: #5b5ce2;
+  --chat-user: #4f46e5;
+  --chat-assistant: #0f766e;
   --elevated: #ffffff;
   --agent-a: #eff0ff;
   --agent-b: #f8f5ff;
@@ -60,6 +62,8 @@
     --border: #2b3342;
     --destructive: #ff8993;
     --ring: #9293ff;
+    --chat-user: #a5b4fc;
+    --chat-assistant: #5eead4;
     --elevated: #1c212c;
     --agent-a: #20233a;
     --agent-b: #1b1e30;

@@ -32,7 +32,7 @@ import { isTerminalViewport, type TerminalLine } from '../shared/terminal'
 import { TerminalBridge } from './sessions/terminal-bridge'
 import { TranscriptClient } from './sessions/transcript-client'
 import { TranscriptWindow } from './sessions/transcript-window'
-import { transcriptId, type TranscriptEvent } from '../shared/transcript'
+import type { TranscriptEvent } from '../shared/transcript'
 
 const customData = app.commandLine.getSwitchValue('user-data-dir')
 if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPath('userData', resolve(customData)) }
@@ -51,7 +51,7 @@ const transcriptWindows = new Map<string,TranscriptWindow>()
 const terminalLines = (sessionId:string):TerminalLine[] => {
   const session=liveSessions.state.sessions.find(item=>item.id===sessionId)
   if(!session)throw Error('Session not found')
-  return [{label:`${session.agent} · ${session.status}`,text:session.projectName},...(transcriptWindows.get(sessionId)?.lines()??[])]
+  return transcriptWindows.get(sessionId)?.lines(agentLabels[session.agent])??[]
 }
 const defaultSources: Record<LocalAgentId, string> = {
   claude: join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects'), pi: join(process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'), 'sessions'),
@@ -408,24 +408,13 @@ if (!app.requestSingleInstanceLock()) {
     })
     handle('localino:history',(_owner,id)=>histories[localId(id)].state)
     handle('localino:live-sessions',()=>liveSessions.state)
-    handle('localino:transcripts',async()=>({sessions:await transcripts.list(),error:transcripts.error}))
-    handle('localino:transcript-page',(_owner,value)=>{
-      const request=value as {sessionId?:unknown;before?:unknown}|null
-      if(!request||!transcriptId(request.sessionId)||request.before!==undefined&&(!Number.isSafeInteger(request.before)||(request.before as number)<1))throw Error('Invalid transcript page')
-      return transcripts.page(request.sessionId,request.before as number|undefined)
-    })
-    handle('localino:delete-transcript',async(owner,value)=>{
-      if(!transcriptId(value))throw Error('Invalid transcript session')
-      if(liveSessions.state.sessions.some(session=>session.id===value&&session.status!=='stopped'))return {ok:false,error:'Stop the session before deleting its transcript.'}
-      const info=(await transcripts.list()).find(session=>session.sessionId===value)
-      if(!info)return {ok:false,error:'Transcript not found.'}
-      const choice=await dialog.showMessageBox(owner,{type:'warning',title:'Delete transcript',message:`Delete the transcript for ${info.projectName}?`,detail:`Instance ${value}. This permanently deletes this transcript only.`,buttons:['Cancel','Delete transcript'],defaultId:0,cancelId:0,noLink:true})
-      if(choice.response!==1)return {ok:false,error:'Deletion cancelled.'}
-      await transcripts.delete(value,true);transcriptWindows.delete(value)
-      terminals.update(value,[{label:'Transcript deleted',text:''}]);return {ok:true}
-    })
-    handle('localino:open-terminal',(owner,value)=>{
+    handle('localino:open-terminal',async(owner,value)=>{
       if(!isTerminalViewport(value))throw Error('Invalid terminal viewport')
+      if(!transcriptWindows.has(value.sessionId)){
+        const page=await transcripts.page(value.sessionId)
+        const projection=transcriptWindows.get(value.sessionId)??new TranscriptWindow()
+        projection.append(page.events);transcriptWindows.set(value.sessionId,projection)
+      }
       terminals.open(owner.id,value,terminalLines(value.sessionId),frame=>{if(!owner.isDestroyed())owner.webContents.send('localino:terminal-frame',frame)})
     })
     handle('localino:close-terminal',(owner,value)=>{
@@ -480,7 +469,6 @@ if (!app.requestSingleInstanceLock()) {
       for(const event of events){let window=transcriptWindows.get(event.sessionId);if(!window){window=new TranscriptWindow();transcriptWindows.set(event.sessionId,window)}window.append([event]);changed.add(event.sessionId)}
       for(const id of changed)if(liveSessions.state.sessions.some(session=>session.id===id))terminals.update(id,terminalLines(id))
     })
-    transcripts.on('change',()=>{for(const window of BrowserWindow.getAllWindows())if(!window.isDestroyed())window.webContents.send('localino:transcripts-changed')})
     liveSessions.on('change',state=>{
       broadcast('localino:live-sessions-changed',state)
       for(const session of state.sessions)terminals.update(session.id,terminalLines(session.id))

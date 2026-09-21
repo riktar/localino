@@ -138,6 +138,7 @@ test('transcript pump batches ordered output, bounds pending bytes, and exposes 
   const calls:TranscriptInput[][]=[],errors:string[]=[]
   const pump=new TranscriptPump({append:async events=>{calls.push(events);return []}},message=>errors.push(message))
   const input=(i:number):TranscriptInput=>({eventId:String(i),sessionId:'s',provider:'codex',providerSessionId:'p',turnId:'t',itemId:'a',kind:'assistant',operation:'append',text:'λ',offset:i})
+  pump.push([{...input(-1),eventId:'technical',kind:'status',operation:'notice',offset:undefined,text:'Turn started'}])
   for(let i=0;i<1000;i++)pump.push([input(i)])
   await pump.flush();assert.equal(calls.length,8);assert.deepEqual(calls.flat().map(event=>event.eventId),Array.from({length:1000},(_,i)=>String(i)));assert.deepEqual(errors,[])
   const failed=new TranscriptPump({append:async()=>{throw Error('PRIVATE disk path')}},message=>errors.push(message));failed.push([input(0)]);await failed.flush()

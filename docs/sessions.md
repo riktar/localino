@@ -69,19 +69,14 @@ The session terminal uses Ink in an isolated worker and xterm.js inside the
 sandboxed Localino window. See [the architecture decision](terminal-architecture.md)
 for the virtual streams, packaging, safety boundary and feasibility tests.
 
-## Local transcript storage
+## Local conversation history
 
-Saved transcripts belong to the Localino instance UUID, so two sessions in the
-same project remain separate. They are retained under the Electron user-data
-directory in `transcripts/<instance-id>/` until **Delete transcript** is confirmed.
-Stop a live session before deleting its transcript. Deletion affects that
-transcript and its live projection cache; recovered unsent drafts have a separate Discard action.
-
-The archive shows stored bytes, event count, recovery state and storage errors.
-**Read transcript** opens at most 100 events / 2 MiB; **Earlier events** replaces
-the page without loading the whole session into the renderer. Text selection and
-the normal explicit copy gesture are available. Reading never changes Clipboard,
-starts a provider or resends a prompt.
+Conversation history belongs to the Localino instance UUID, so two sessions in
+the same project remain separate. The session view contains only user prompts and
+text emitted by the selected model. **You** and the model name use different
+labels and colors. Delivery rows, status events, tool activity, command output,
+reasoning, protocol notices and turn outcomes are not part of this view. There is
+no separate transcript archive, reader or delete control in the renderer.
 
 Storage uses versioned, checksummed JSONL records in approximately 4 MiB segments,
 an atomically replaced manifest and a disposable snapshot of the recent events.
@@ -96,15 +91,18 @@ item. Notices about later activity use a separate item. Pages and duplicate
 lookups apply the same ownership and sequence checks as recovery. Corrupt derived
 manifests/snapshots are copied to `.corrupt-<uuid>` files before rebuilding them.
 
-There is no automatic expiry or total session-size cap. Individual events over
+The local backing store is an implementation detail used to acknowledge chat
+text before rendering it and to rebuild the current session projection. There is
+no automatic expiry or total session-size cap. Individual events over
 1 MiB and a pending write queue over 8 MiB are rejected with an explicit error,
 not shortened. Disk-full, checkpoint and worker failures are visible. A prompt
-whose transcript cannot be saved is not sent. Provider output may contain secrets
+whose history cannot be saved is not sent. Model output may contain secrets
 the provider actually printed: keep the local user-data directory private.
-Localino selects normalized observable fields; it does not persist raw auth
-envelopes, arbitrary provider objects or private chain-of-thought. Reasoning is
-unavailable unless a provider publishes an allowed summary. Transcripts are not
-sent to telemetry, application logs or Clipboard automatically.
+Localino persists only prompt and assistant text for new conversations. It does
+not persist raw auth envelopes, arbitrary provider objects, private reasoning,
+tool activity or protocol status in chat history. Existing technical records from
+older builds are ignored by the conversation projection. History is not sent to
+telemetry, application logs or Clipboard automatically.
 
 The output cache is bounded (20 recent events / 2 MiB), and event identity uses a
 fixed 1 MiB Bloom index with exact disk lookup for positives. False positives
@@ -114,16 +112,15 @@ require disk scanning on very large sessions and run only in the worker.
 
 The common store is covered by `tests/unit/transcript.test.ts`. The Electron
 `tests/transcripts.test.mjs` dataset checks all 100,000 records against an
-independent checksum/text oracle (over 100 MiB of output), recovery, page bounds,
-renderer responsiveness, unchanged Clipboard and selective confirmed deletion.
-This storage coverage is distinct from provider streaming and terminal UX tests.
+independent checksum/text oracle and confirms that no archive API or UI is exposed.
+This storage coverage is distinct from provider streaming and conversation UX tests.
 
 ## Provider output streams
 
-Localino normalizes output from its own process, saves it in batches, and sends
-only the saved projection to Ink. The live projection keeps 100 recent events /
-2 MiB and at most 8,000 text characters; an explicit history notice points to
-Saved transcripts for earlier text. This display window does not shorten storage.
+Localino normalizes output from its own process, but saves and sends to Ink only
+assistant text. User prompts use the same acknowledged history path. The live
+projection keeps up to 100 recent chat events / 2 MiB and at most 8,000 text
+characters. Technical provider events remain internal and never enter the chat.
 Small identity/state indexes grow with the number of messages, tools and source
 event IDs, not the amount of text in a response.
 
@@ -134,12 +131,11 @@ event IDs, not the amount of text in a response.
 | Pi 0.84.3 RPC | Text/published thinking/tool deltas and authoritative message end; cumulative tool execution output; extension UI requests | Validated user-run timestamp, assistant timestamp and content index/tool ID. Reused timestamps are marked ambiguous. Deltas without timestamps rely on the owned ordered stream. `agent_settled` follows retries and compaction. |
 | OpenCode SDK 1.18.31 contract fixture | SSE message/part snapshots and deltas, tool state/output, files, session status and permission/question requests | Owned authenticated loopback endpoint + session + submitted parent message + assistant/part IDs. Reconnect keeps the same process and fetches up to 100 messages. A visible gap remains; snapshots replace known partials and deltas are suppressed for the interrupted turn to avoid replay duplication. Older activity may be unavailable. |
 
-Unknown event types are labeled explicitly. Arbitrary tool argument objects,
-authentication envelopes, environment, image data and raw stderr/server logs are
-excluded; command/path/query/description fields and emitted text are selected.
-Provider text itself may contain sensitive information. No automatic approval,
-policy update or input response is sent. Requests currently show an unsupported
-action label until the interaction flow is available.
+Arbitrary tool argument objects, authentication envelopes, environment, image
+data and raw stderr/server logs are excluded. Provider text itself may contain
+sensitive information. No automatic approval, policy update or input response is
+sent. Approval and input controls will use their dedicated interaction flow rather
+than appearing as transcript rows.
 
 JSONL records, SSE records and HTTP responses are bounded to 2 MiB before parsing;
 invalid UTF-8 is rejected instead of silently replaced. Reconnection checks the

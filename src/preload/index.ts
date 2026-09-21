@@ -43,14 +43,6 @@ const api: LocalinoApi = {
   getLiveSessions:()=>ipcRenderer.invoke('localino:live-sessions'),
   startLiveSession:agent=>ipcRenderer.invoke('localino:start-live-session',agent),
   stopLiveSession:sessionId=>ipcRenderer.invoke('localino:stop-live-session',sessionId),
-  getTranscripts:()=>ipcRenderer.invoke('localino:transcripts'),
-  getTranscriptPage:(sessionId,before)=>ipcRenderer.invoke('localino:transcript-page',{sessionId,before}),
-  deleteTranscript:sessionId=>ipcRenderer.invoke('localino:delete-transcript',sessionId),
-  onTranscripts:listener=>{
-    const callback=()=>listener()
-    ipcRenderer.on('localino:transcripts-changed',callback)
-    return ()=>ipcRenderer.removeListener('localino:transcripts-changed',callback)
-  },
   openTerminal:viewport=>ipcRenderer.invoke('localino:open-terminal',viewport),
   closeTerminal:viewId=>ipcRenderer.invoke('localino:close-terminal',viewId),
   onTerminalFrame:listener=>{

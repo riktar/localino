@@ -24,7 +24,7 @@ input.on('line',line=>{
           if(index%100===99)send({method:'item/completed',params:{...params,item:{id:itemId,type:'agentMessage',text,phase:'final'}}})
           index++
         }if(index===5000){clearInterval(timer);send({method:'turn/completed',params:{...params,turn:{id:turnId,status:'completed'}}})}},10)
-      }else setTimeout(()=>send({method:'turn/completed',params:{...params,turn:{id:turnId,status:'completed'}}}),150)
+      }else setTimeout(()=>{send({method:'item/completed',params:{...params,item:{id:`answer-${codexTurn}`,type:'agentMessage',text:'Model reply',phase:'final'}}});send({method:'turn/completed',params:{...params,turn:{id:turnId,status:'completed'}}})},150)
     }
   }else if(pi){
     if(value.type==='get_state')send({id:value.id,type:'response',command:'get_state',success:true,data:{sessionId:'fixture-pi-session'}})

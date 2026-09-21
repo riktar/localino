@@ -47,7 +47,6 @@ export interface TranscriptPage {
   after: number | null
 }
 export const transcriptLimits = { eventBytes: 1024 * 1024, segmentBytes: 4 * 1024 * 1024, pageBytes: 2 * 1024 * 1024, pageEvents: 100, pendingBytes: 8 * 1024 * 1024 } as const
-export const transcriptPolicy = 'Stored locally until you explicitly delete it. No automatic expiry or session size cap. Events over 1 MiB and storage failures are reported; output is never silently shortened. Private reasoning is unavailable; only published summaries can be shown.'
 export function transcriptId(value: unknown): value is string { return typeof value === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(value) }
 const identity = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 512 && ![...value].some(character=>character.charCodeAt(0)<32)
 export function cleanTranscriptInput(value: unknown): TranscriptInput {

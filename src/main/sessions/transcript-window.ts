@@ -10,6 +10,7 @@ export class TranscriptWindow {
     for(const event of events){
       if(event.sequence<=this.sequence)continue
       this.sequence=event.sequence
+      if(event.kind!=='prompt'&&event.kind!=='assistant')continue
       const key=transcriptItemKey(event),previous=this.states.get(key)??(event.operation==='append'?{length:event.offset??0,outcome:'streaming' as const,gap:false,kind:event.kind}:undefined)
       const state=reduceTranscriptItem(previous,event).state
       this.states.set(key,event.disposition==='gap'?{...state,gap:true,outcome:'unknown'}:state)
@@ -19,16 +20,15 @@ export class TranscriptWindow {
     const retained=new Set(this.events.map(transcriptItemKey))
     for(const key of this.states.keys())if(!retained.has(key))this.states.delete(key)
   }
-  lines():TerminalLine[] {
+  lines(assistantLabel:string):TerminalLine[] {
     const page={events:this.events,states:Object.fromEntries(this.states)} as TranscriptPage
     const items=projectTranscriptPage(page),lines:TerminalLine[]=[]
-    if(this.events[0]?.sequence>1)lines.push({label:'History',text:'Recent output. Earlier events remain in Saved transcripts.'})
     const limit=Math.floor(8000/Math.max(1,Math.min(12,items.length)))
     for(const item of items.slice(-12)){
-      const truncated=item.text.length>limit
       let start=Math.max(0,item.text.length-limit)
       if(start&&item.text.charCodeAt(start)>=0xdc00&&item.text.charCodeAt(start)<=0xdfff)start++
-      lines.push({label:`${item.label}${item.phase?` · ${item.phase}`:''} · ${item.outcome}${item.gap?' · gap':''}`,text:`${item.continued||truncated?'[Earlier text in Saved transcripts]\n':''}${item.text.slice(start)}`})
+      const text=item.text.slice(start)
+      if(text)lines.push({label:item.kind==='prompt'?'You':assistantLabel,text,role:item.kind==='prompt'?'user':'assistant'})
     }
     return lines
   }
