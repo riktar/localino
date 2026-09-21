@@ -18,3 +18,9 @@ The central panel replaces Home, the separate quota panel, standalone Clipboard 
 | Live Codex account, quotas and usage comparison | `test:account`, `test:rates`, `test:dashboard`; require an opted-in signed-in CLI |
 
 Run desktop suites serially: they share system focus and global shortcut registration. Synthetic fixtures are not evidence that every external editor or agent version is supported. Real macOS capture, permissions, focus, signing and packaged lifecycle results belong in the [Mac report](mac-test-report.md), tied to the exact commit and artifact.
+# Embedded terminal coverage
+
+- `tests/unit/terminal.test.ts`: visible escaping of provider control sequences and bounded viewport validation.
+- `tests/ink.test.mjs`: bundled Ink, 5,000 Unicode updates, independent streams, repeated mounts and worker cleanup.
+- `tests/terminal-ui.test.mjs`: embedded xterm, Unicode, sandbox, invalid IPC, resizing and packaged ASAR worker.
+- These are feasibility checks. Full transcript retention, provider streaming and the large-dataset acceptance are separate sprint checks.

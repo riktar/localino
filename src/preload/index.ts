@@ -43,6 +43,13 @@ const api: LocalinoApi = {
   getLiveSessions:()=>ipcRenderer.invoke('localino:live-sessions'),
   startLiveSession:agent=>ipcRenderer.invoke('localino:start-live-session',agent),
   stopLiveSession:sessionId=>ipcRenderer.invoke('localino:stop-live-session',sessionId),
+  openTerminal:viewport=>ipcRenderer.invoke('localino:open-terminal',viewport),
+  closeTerminal:viewId=>ipcRenderer.invoke('localino:close-terminal',viewId),
+  onTerminalFrame:listener=>{
+    const callback=(_event:Electron.IpcRendererEvent,frame:import('../shared/terminal').TerminalFrame)=>listener(frame)
+    ipcRenderer.on('localino:terminal-frame',callback)
+    return ()=>{ipcRenderer.removeListener('localino:terminal-frame',callback)}
+  },
   sendLiveSession:(sessionId,text)=>ipcRenderer.invoke('localino:send-live-session',{sessionId,text}),
   cancelLiveDelivery:(sessionId,deliveryId)=>ipcRenderer.invoke('localino:cancel-live-delivery',{sessionId,deliveryId}),
   setLiveSessionDraft:(sessionId,text)=>ipcRenderer.invoke('localino:set-live-session-draft',{sessionId,text}),

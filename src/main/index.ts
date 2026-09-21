@@ -28,6 +28,8 @@ import { agentLabels, agentCapabilities, isAgentId, isLocalAgentId, isAgentPerio
 import { SessionSupervisor } from './sessions/supervisor'
 import { SessionRecoveryStore } from './sessions/recovery'
 import { isSessionDelivery, isSessionDraft, isSessionText } from '../shared/sessions'
+import { isTerminalViewport, type TerminalLine } from '../shared/terminal'
+import { TerminalBridge } from './sessions/terminal-bridge'
 
 const customData = app.commandLine.getSwitchValue('user-data-dir')
 if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPath('userData', resolve(customData)) }
@@ -40,6 +42,12 @@ const agents = new AgentPreferences(join(app.getPath('userData'), 'agents.json')
 const bridge = new ClaudeBridge(join(app.getPath('userData'),'claude-bridge'),join(process.env.CLAUDE_CONFIG_DIR||join(homedir(),'.claude'),'settings.json'),app.isPackaged?join(process.resourcesPath,'native',nativeHelper('StatusLine')):join(__dirname,'..','native',nativeHelper('StatusLine')),[process.platform==='darwin'?'/Library/Application Support/ClaudeCode/managed-settings.json':join(process.env.ProgramFiles||'C:\\Program Files','ClaudeCode','managed-settings.json')])
 const histories = Object.fromEntries(['claude', 'pi', 'opencode'].map(id => [id, new HistoryResource(id as LocalAgentId, workerReader(id as LocalAgentId))])) as Record<LocalAgentId, HistoryResource>
 const liveSessions = new SessionSupervisor(undefined,undefined,new SessionRecoveryStore(join(app.getPath('userData'),'sessions.json')))
+const terminals = new TerminalBridge(join(__dirname,'ink-worker.mjs'))
+const terminalLines = (sessionId:string):TerminalLine[] => {
+  const session=liveSessions.state.sessions.find(item=>item.id===sessionId)
+  if(!session)throw Error('Session not found')
+  return [{label:`${session.agent} · ${session.status}`,text:session.projectName},...session.deliveries.slice(-20).map(item=>({label:`You · ${item.status}`,text:item.text}))]
+}
 const defaultSources: Record<LocalAgentId, string> = {
   claude: join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects'), pi: join(process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'), 'sessions'),
   opencode: join(process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share'), 'opencode', 'opencode.db'),
@@ -102,6 +110,8 @@ function hideWindow(window: BrowserWindow): void {
 const ownedWindows = (): BrowserWindow[] => [panel,dashboard].filter((w): w is BrowserWindow => w !== null && !w.isDestroyed())
 function broadcast(channel: string, value: unknown): void { for (const window of ownedWindows()) window.webContents.send(channel,value) }
 function secureWindow(window: BrowserWindow): void {
+  window.webContents.on('did-start-loading',()=>terminals.closeOwner(window.id))
+  window.on('closed',()=>terminals.closeOwner(window.id))
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', event => event.preventDefault())
   window.webContents.session.setPermissionRequestHandler((_contents,_permission,callback) => callback(false))
@@ -255,7 +265,7 @@ if (!app.requestSingleInstanceLock()) {
     usage.dispose()
     Object.values(histories).forEach(resource=>resource.dispose())
     bridge.dispose()
-    void Promise.all([connection.shutdown(),liveSessions.dispose()]).finally(() => { quitReady = true; app.quit() })
+    void Promise.all([connection.shutdown(),liveSessions.dispose(),terminals.dispose()]).finally(() => { quitReady = true; app.quit() })
   })
   app.on('window-all-closed', () => { if (quitting) app.quit() })
 
@@ -393,6 +403,14 @@ if (!app.requestSingleInstanceLock()) {
     })
     handle('localino:history',(_owner,id)=>histories[localId(id)].state)
     handle('localino:live-sessions',()=>liveSessions.state)
+    handle('localino:open-terminal',(owner,value)=>{
+      if(!isTerminalViewport(value))throw Error('Invalid terminal viewport')
+      terminals.open(owner.id,value,terminalLines(value.sessionId),frame=>{if(!owner.isDestroyed())owner.webContents.send('localino:terminal-frame',frame)})
+    })
+    handle('localino:close-terminal',(owner,value)=>{
+      if(typeof value!=='string'||!/^[\w-]{1,128}$/.test(value))throw Error('Invalid terminal view')
+      terminals.close(owner.id,value)
+    })
     handle('localino:start-live-session',async(owner,value)=>{
       if(!isAgentId(value))throw Error('Invalid agent')
       const choice=await dialog.showOpenDialog(owner,{title:`Start ${agentLabels[value]} session`,buttonLabel:'Start session',properties:['openDirectory']})
@@ -436,7 +454,10 @@ if (!app.requestSingleInstanceLock()) {
       }catch{return {ok:false,error:'Recovery failed. Previous file preserved.'}}
     })
     agents.on('change',state=>{broadcast('localino:agents-changed',state);updateUsageActivity();updateTray()})
-    liveSessions.on('change',state=>broadcast('localino:live-sessions-changed',state))
+    liveSessions.on('change',state=>{
+      broadcast('localino:live-sessions-changed',state)
+      for(const session of state.sessions)terminals.update(session.id,terminalLines(session.id))
+    })
     await liveSessions.refreshCapabilities()
     bridge.on('change',state=>{broadcast('localino:bridge-changed',state);updateTray()})
     await bridge.start()

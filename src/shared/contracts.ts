@@ -33,6 +33,9 @@ export interface ResourceState<T> {
 }
 
 export interface LocalinoApi {
+  openTerminal: (viewport: import('./terminal').TerminalViewport) => Promise<void>
+  closeTerminal: (viewId: string) => Promise<void>
+  onTerminalFrame: (listener: (frame: import('./terminal').TerminalFrame) => void) => () => void
   getTheme: () => Promise<import('./theme').ThemeState>
   setTheme: (theme: import('./theme').Theme) => Promise<import('./theme').ThemeState>
   onTheme: (listener: (state: import('./theme').ThemeState) => void) => () => void

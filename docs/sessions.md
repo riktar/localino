@@ -63,3 +63,8 @@ No external-client row has complete same-session evidence on both required platf
 ## Evidence needed to remove a block
 
 For each client and platform, start an external session using the documented setup, record client/agent versions and anonymized instance/session/turn IDs, observe turn start and completion, send an innocuous multiline Unicode message from Localino, and confirm exactly one receipt in the original client. Repeat while busy, after restart, and with two same-project sessions. Verify setup removal on an isolated profile without losing existing settings. Mock transports cover state-machine errors only; they do not prove same-session delivery.
+# Embedded terminal architecture
+
+The session terminal uses Ink in an isolated worker and xterm.js inside the
+sandboxed Localino window. See [the architecture decision](terminal-architecture.md)
+for the virtual streams, packaging, safety boundary and feasibility tests.

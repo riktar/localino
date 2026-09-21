@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+.session-terminal { min-width: 0; padding: .75rem; border: 1px solid var(--border); border-radius: .4rem; background: var(--card); }
+.session-terminal-viewport { min-width: 0; height: 190px; overflow: hidden; }
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

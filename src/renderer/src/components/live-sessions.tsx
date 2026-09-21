@@ -3,6 +3,7 @@ import { Square, Play, X } from 'lucide-react'
 import type { AgentId } from '../../../shared/agents'
 import { initialLiveSessions, type LiveSessionsState } from '../../../shared/sessions'
 import { Button } from './ui/button'
+import { SessionTerminal } from './session-terminal'
 
 export function useLiveSessions():LiveSessionsState{
   const [state,setState]=useState(initialLiveSessions)
@@ -39,6 +40,7 @@ export function LiveSessions({agent}:{agent:AgentId}):React.JSX.Element{
           <Button size="icon" variant="ghost" aria-label={`Stop ${session.projectName} instance ${session.id.slice(0,8)}`} disabled={session.status==='stopping'} onClick={event=>{event.stopPropagation();void stop(session.id)}}><Square aria-hidden="true"/></Button>
         </div>
         {open&&<div className="mt-3 space-y-2 border-t pt-3" onClick={event=>event.stopPropagation()} onKeyDown={event=>event.stopPropagation()}>
+          <SessionTerminal sessionId={session.id}/>
           <p className="text-xs text-muted-foreground">Message to {session.projectName} - instance {session.id.slice(0,8)}</p>
           <textarea aria-label={`Message for ${session.projectName} instance ${session.id.slice(0,8)}`} className="min-h-24 w-full resize-y rounded-md border bg-background p-2 text-sm" maxLength={100_000} value={draft} onChange={event=>updateDraft(session.id,event.target.value)}/>
           <div className="flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{draft.length.toLocaleString()} / 100,000 characters</span><Button size="sm" disabled={!canSend||submitting.has(session.id)} onClick={()=>void send(session.id)}>{busy?'Queue':'Send'}</Button></div>
