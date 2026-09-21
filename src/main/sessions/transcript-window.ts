@@ -22,7 +22,7 @@ export class TranscriptWindow {
   private pageIndex=0
   private historical=false
   append(events:TranscriptEvent[]):void {if(!this.historical)this.merge(events,'newer')}
-  prepend(events:TranscriptEvent[]):void {this.historical=true;this.pageIndex=0;this.merge(events,'older')}
+  prepend(events:TranscriptEvent[]):void {this.events=[];this.states.clear();this.bytes=0;this.cursor=null;this.historical=true;this.pageIndex=0;this.merge(events,'older')}
   replaceLatest(events:TranscriptEvent[]):void {this.events=[];this.states.clear();this.bytes=0;this.cursor=null;this.pageIndex=0;this.historical=false;this.merge(events,'newer')}
   hasEarlier():boolean {return this.pageIndex+1<this.pages('').length||(this.cursor??1)>1}
   hasLater():boolean {return this.historical||this.pageIndex>0}

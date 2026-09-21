@@ -47,7 +47,7 @@ test('chat projection pages every message, preserves Unicode and keeps its cache
   window.append(Array.from({length:14},(_,index)=>({...base,eventId:`event-${index+10}`,itemId:`message-${index+10}`,kind:index===0?'prompt' as const:'assistant' as const,text:index===0?long:`Message ${index+10}`,sequence:index+10})))
   assert.equal(window.lines('Codex').length,12);assert.equal(window.hasEarlier(),true);assert.equal(window.before(),10);assert.equal(window.revealLoadedEarlier(),true);assert.equal(window.lines('Codex')[0].text,long);assert.equal(window.hasLater(),true)
   window.prepend(Array.from({length:9},(_,index)=>({...base,eventId:`event-${index+1}`,itemId:`message-${index+1}`,kind:'assistant' as const,text:`Message ${index+1}`,sequence:index+1})))
-  assert.equal(window.revealLoadedEarlier(),true);assert.equal(window.lines('Codex').length,11);assert.equal(window.lines('Codex')[0].text,'Message 1');assert.equal(window.lines('Codex').at(-1)?.text,'Message 11');assert.equal(window.hasEarlier(),false)
+  assert.equal(window.revealLoadedEarlier(),false);assert.equal(window.lines('Codex').length,9);assert.equal(window.lines('Codex')[0].text,'Message 1');assert.equal(window.lines('Codex').at(-1)?.text,'Message 9');assert.equal(window.hasEarlier(),false)
   const assistant=new TranscriptWindow(),text=`BEGIN-${'x'.repeat(3992)}🌍-${'y'.repeat(1000)}-END`
   assistant.append([{...base,eventId:'long',itemId:'long',kind:'assistant',text,sequence:1}])
   assert.match(assistant.lines('Codex')[0].text,/^…\n/);assert.equal(assistant.hasEarlier(),true);assert.equal(assistant.revealLoadedEarlier(),true)
@@ -58,8 +58,10 @@ test('chat projection pages every message, preserves Unicode and keeps its cache
   assert.deepEqual(bounded.cacheStats(),retained);assert.ok(retained.events<=100&&retained.bytes<=2*1024*1024)
   bounded.replaceLatest([{...base,eventId:'latest',itemId:'latest',kind:'assistant',text:'latest',sequence:9999}]);assert.deepEqual(bounded.lines('Codex').map(line=>line.text),['latest']);assert.equal(bounded.hasLater(),false)
   const streamed=new TranscriptWindow(),prompt={...base,eventId:'prompt-protected',itemId:'prompt-protected',kind:'prompt' as const,text:'question',sequence:1}
-  streamed.append([prompt,...Array.from({length:200},(_,index)=>({...base,eventId:`delta-${index}`,itemId:'streamed-answer',kind:'assistant' as const,operation:'append' as const,text:'x',offset:index,sequence:index+2}))])
-  assert.equal(streamed.cacheStats().events,100);assert.equal(streamed.before(),103);assert.equal(streamed.hasEarlier(),true)
+  const deltas=Array.from({length:200},(_,index)=>({...base,eventId:`delta-${index}`,itemId:'streamed-answer',kind:'assistant' as const,operation:'append' as const,text:`D${String(index).padStart(3,'0')}`,offset:index*4,sequence:index+2}))
+  streamed.append([prompt,...deltas]);assert.equal(streamed.cacheStats().events,100);assert.equal(streamed.before(),103);assert.equal(streamed.hasEarlier(),true);assert.equal(streamed.lines('Codex').at(-1)?.text,deltas.slice(101).map(event=>event.text).join(''))
+  streamed.prepend(deltas.slice(1,101));assert.equal(streamed.before(),3);assert.equal(streamed.lines('Codex').at(-1)?.text,deltas.slice(1,101).map(event=>event.text).join(''))
+  streamed.prepend([prompt,deltas[0]]);assert.deepEqual(streamed.lines('Codex').map(line=>line.text),['question','D000']);assert.equal(streamed.hasEarlier(),false)
 })
 test('append/restart preserves exact Unicode, idempotence, final snapshot and session isolation',()=>{
   const {root,store}=fixture()

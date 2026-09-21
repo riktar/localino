@@ -15,7 +15,7 @@ export function SessionTerminal({ sessionId }: { sessionId: string }): React.JSX
   useEffect(() => {
     const host = container.current!
     const viewId = crypto.randomUUID()
-    let disposed = false, sequence = 0
+    let disposed = false, applyingFrame = false, sequence = 0
     let writes = Promise.resolve()
     const terminal = new Terminal({
       cols: 60, rows: 12, disableStdin: true, convertEol: true,
@@ -45,13 +45,15 @@ export function SessionTerminal({ sessionId }: { sessionId: string }): React.JSX
       // xterm parses writes asynchronously; finish old bytes before a repaint.
       writes = writes.then(() => new Promise<void>(resolveWrite => {
         if (disposed) { resolveWrite(); return }
-        const anchor=followRef.current?null:terminal.buffer.active.viewportY
+        const following=followRef.current,anchor=following?null:terminal.buffer.active.viewportY
+        const anchorText=anchor===null?null:Array.from({length:terminal.rows},(_,offset)=>terminal.buffer.active.getLine(anchor+offset)?.translateToString(true).trim()).find(Boolean)??null
+        applyingFrame=true
         if (frame.reset) { terminal.reset(); terminal.resize(frame.columns!, frame.rows!) }
-        terminal.write(frame.data,()=>{if(followRef.current)terminal.scrollToBottom();else{if(anchor!==null)terminal.scrollToLine(Math.min(anchor,terminal.buffer.active.baseY));setNewOutput(true)}resolveWrite()})
+        terminal.write(frame.data,()=>{if(following)terminal.scrollToBottom();else{let target=anchor??0;if(anchorText)for(let line=0;line<=terminal.buffer.active.baseY+terminal.rows;line++){const text=terminal.buffer.active.getLine(line)?.translateToString(true).trim();if(text&&(text.includes(anchorText)||anchorText.includes(text))){target=line;break}}terminal.scrollToLine(Math.min(target,terminal.buffer.active.baseY));setNewOutput(true)}applyingFrame=false;resolveWrite()})
       }))
     })
     const offHistory=window.localino.onChatHistory(next=>{if(next.sessionId===sessionId)setHistory(next)})
-    const scroll=terminal.onScroll(()=>{followRef.current=terminal.buffer.active.viewportY>=terminal.buffer.active.baseY;if(followRef.current)setNewOutput(false)})
+    const scroll=terminal.onScroll(()=>{if(applyingFrame)return;followRef.current=terminal.buffer.active.viewportY>=terminal.buffer.active.baseY;if(followRef.current)setNewOutput(false)})
     const resize = () => {
       const columns = Math.max(10, Math.min(240, Math.floor((host.clientWidth - 20) / 7.3)))
       void window.localino.openTerminal({ sessionId, viewId, columns, rows: 12 }).then(()=>window.localino.getChatHistory(sessionId)).then(next=>{if(!disposed)setHistory(next)}).catch(() => { if (!disposed) setError('Terminal unavailable. Reopen this session.') })
