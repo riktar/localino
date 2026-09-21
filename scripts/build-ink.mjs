@@ -24,4 +24,6 @@ export async function buildInk() { return build({
   logLevel: 'warning',
 }) }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await buildInk()
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  buildInk().catch(error => { console.error(error); process.exitCode = 1 })
+}
