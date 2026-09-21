@@ -116,3 +116,7 @@ tests          unit, Electron, native protocol and package checks
 ```
 
 Want the exact protocol and recovery behavior? Start with the [live-session guide](docs/sessions.md). Want to understand how a metric is calculated? See [agent data sources](docs/agents.md).
+
+Session transcripts stay locally until you explicitly delete them. The saved
+transcript archive shows their size, supports paged reading and reports storage
+or recovery problems. See [storage and privacy](docs/sessions.md#local-transcript-storage).

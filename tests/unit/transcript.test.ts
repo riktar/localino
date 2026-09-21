@@ -1,0 +1,92 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { appendFileSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { TranscriptStore } from '../../src/main/sessions/transcript-store'
+import { cleanTranscriptInput, projectTranscriptPage, reduceTranscriptItem, transcriptKinds, type TranscriptInput, type TranscriptItemState } from '../../src/shared/transcript'
+
+const event=(id:string,change:Partial<TranscriptInput>={}):TranscriptInput=>({eventId:id,sessionId:'one',provider:'codex',providerSessionId:'owned',turnId:'turn',itemId:'answer',kind:'assistant',operation:'append',text:'λ',offset:0,...change})
+function fixture(beforeWrite?:()=>void) {
+  const root=mkdtempSync(join(tmpdir(),'localino-transcript-')),store=new TranscriptStore(root,beforeWrite)
+  store.create({sessionId:'one',provider:'codex',projectPath:root,projectName:'same'})
+  store.create({sessionId:'two',provider:'claude',projectPath:root,projectName:'same'})
+  return {root,store}
+}
+test('normalized transcript whitelists observable types and handles offsets, gaps and terminal events',()=>{
+  let state:TranscriptItemState|undefined
+  for (const [input,expected] of [[event('a'), 'applied'],[event('a-again'),'duplicate'],[event('future',{offset:3}),'gap'],[event('b',{offset:1,text:'🌍'}),'applied'],[event('done',{operation:'finish',outcome:'completed',text:undefined,offset:undefined}),'applied'],[event('late',{offset:3}),'late']] as const) {
+    const result=reduceTranscriptItem(state,input);state=result.state;assert.equal(result.disposition,expected)
+  }
+  assert.equal(state!.length,3);assert.equal(state!.outcome,'unknown');assert.equal(state!.gap,true)
+  for(const kind of transcriptKinds) assert.equal(cleanTranscriptInput(event(kind,{kind})).kind,kind)
+  const clean=cleanTranscriptInput({...event('safe'),authorization:'SECRET',raw:{token:'SECRET'},privateReasoning:'SECRET'})
+  assert.equal(JSON.stringify(clean).includes('SECRET'),false)
+  assert.throws(()=>cleanTranscriptInput(event('bad',{kind:'thinking' as never})))
+  assert.throws(()=>cleanTranscriptInput(event('bad',{offset:undefined})))
+})
+test('append/restart preserves exact Unicode, idempotence, final snapshot and session isolation',()=>{
+  const {root,store}=fixture()
+  const inputs=[event('a'),event('b',{offset:1,text:'🌍'}),event('final',{operation:'snapshot',text:'λ🌍',offset:undefined,outcome:'completed'})]
+  assert.equal(store.append(inputs).length,3)
+  assert.equal(store.append(inputs).length,0)
+  store.append([event('other',{sessionId:'two',provider:'claude',providerSessionId:'claude-id',text:'other'})])
+  const restarted=new TranscriptStore(root)
+  assert.deepEqual(restarted.page('one').events.map(item=>item.text),['λ','🌍','λ🌍'])
+  assert.equal(restarted.page('one').info.interrupted,false)
+  assert.equal(projectTranscriptPage(restarted.page('one'))[0].text,'λ🌍')
+  assert.equal(restarted.page('two').info.interrupted,true)
+  assert.equal(restarted.append([event('a')]).length,0)
+  assert.throws(()=>restarted.append([event('a',{text:'conflict'})]),/Conflicting/)
+  assert.equal(restarted.page('two').events[0].text,'other')
+  assert.throws(()=>restarted.delete('one',false),/confirmation/)
+  assert.throws(()=>restarted.delete('../one',true),/not found/)
+  restarted.delete('one',true)
+  assert.deepEqual(restarted.list().map(item=>item.sessionId),['two'])
+  assert.equal(restarted.page('two').events[0].text,'other')
+})
+test('truncated tail and corrupt complete record remain byte-for-byte intact, index is rebuilt',()=>{
+  const {root,store}=fixture()
+  store.append([event('a'),event('b',{offset:1})])
+  const file=join(root,'one','events-00000001.jsonl')
+  appendFileSync(file,'{"event":')
+  writeFileSync(join(root,'one','manifest.json'),'{broken')
+  const original=readFileSync(file)
+  const recovered=new TranscriptStore(root)
+  const page=recovered.page('one')
+  assert.equal(page.events.length,2);assert.equal(page.info.interrupted,true);assert.match(page.info.error!,/tail/)
+  recovered.append([event('new',{turnId:'new-turn',text:'new'})])
+  assert.deepEqual(readFileSync(file),original)
+  assert.equal(readdirSync(join(root,'one')).filter(name=>name.endsWith('.jsonl')).length,2)
+  const second=join(root,'one','events-00000002.jsonl')
+  writeFileSync(second,readFileSync(second,'utf8').replace('"text":"new"','"text":"tampered"'))
+  const corrupted=readFileSync(second)
+  const again=new TranscriptStore(root).page('one')
+  assert.match(again.info.error!,/corrupt/);assert.equal(again.events.some(item=>item.text==='tampered'),false)
+  assert.deepEqual(readFileSync(second),corrupted)
+})
+test('disk-full and oversized events are explicit, never truncate accepted output',()=>{
+  let fail=false
+  const {root,store}=fixture(()=>{if(fail)throw Object.assign(Error('disk full'),{code:'ENOSPC'})})
+  store.append([event('a')]);fail=true
+  assert.throws(()=>store.append([event('b',{offset:1})]),/not writable/)
+  assert.match(store.list().find(item=>item.sessionId==='one')!.error!,/not saved/)
+  assert.equal(new TranscriptStore(root).page('one').events.length,1)
+  const other=fixture().store
+  assert.throws(()=>other.append([event('huge',{text:'x'.repeat(1024*1024)})]),/1 MiB/)
+  assert.equal(other.page('one').events.length,0)
+})
+
+test('all observable kinds persist; conflicting offset is a gap and final cannot hide it after restart',()=>{
+  const {root,store}=fixture()
+  store.append(transcriptKinds.map(kind=>event(`kind-${kind}`,{kind,itemId:`kind-${kind}`,operation:'notice',offset:undefined,text:kind==='unknown'?undefined:kind,label:kind==='unknown'?'unsupported provider event':kind,outcome:'completed'})))
+  store.append([event('first'),event('conflict',{text:'changed'}),event('finish',{operation:'finish',offset:undefined,text:undefined,outcome:'completed'})])
+  const page=store.page('one')
+  assert.deepEqual(page.events.slice(0,transcriptKinds.length).map(item=>item.kind),[...transcriptKinds])
+  assert.equal(page.events.at(-2)!.disposition,'gap');assert.equal(page.events.at(-1)!.outcome,'unknown')
+  const reopened=new TranscriptStore(root)
+  assert.equal(reopened.append([event('finish',{operation:'finish',offset:undefined,text:undefined,outcome:'completed'})]).length,0)
+  assert.equal(reopened.page('one').events.at(-1)!.outcome,'unknown')
+  assert.equal(reopened.page('one').info.reasoning,'published-summary')
+  assert.equal(projectTranscriptPage(reopened.page('one')).at(-1)!.text,'λ')
+})

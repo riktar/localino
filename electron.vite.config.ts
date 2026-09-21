@@ -12,7 +12,7 @@ export default defineConfig({
       },
       async writeBundle() { await buildInk() },
     }],
-    build: { rollupOptions: { input: { index: resolve('src/main/index.ts'), 'history-worker': resolve('src/main/agents/history-worker.ts') } } },
+    build: { rollupOptions: { input: { index: resolve('src/main/index.ts'), 'history-worker': resolve('src/main/agents/history-worker.ts'), 'transcript-worker': resolve('src/main/sessions/transcript-worker.ts') } } },
   },
   preload: {},
   renderer: {

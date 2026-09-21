@@ -17,13 +17,32 @@ class FakeChild extends EventEmitter {
 const wait=(milliseconds=0)=>new Promise(resolve=>setTimeout(resolve,milliseconds))
 const line=(child:FakeChild,value:unknown)=>child.stdout.write(`${JSON.stringify(value)}\n`)
 
-function fixture(){
+test('failed transcript persistence prevents provider delivery; stop during pending save cannot send or resurrect a session',async()=>{
+  for(const blocked of [true,false]) {
+    let release:()=>void=()=>{}
+    const {supervisor,children}=fixture({create:async info=>({...info,version:1,createdAt:0,updatedAt:0,bytes:0,events:0,interrupted:false,error:null,reasoning:'unavailable'}),append:async()=>{if(blocked)throw Error('ENOSPC');await new Promise<void>(resolve=>{release=resolve});return []}})
+    try {
+      await supervisor.start('codex',mkdtempSync(join(tmpdir(),'localino-save-gate-')))
+      const child=children[0],writes:string[]=[];child.stdin.on('data',data=>writes.push(String(data)))
+      line(child,{id:1,result:{}});line(child,{id:2,result:{thread:{id:'owned'}}})
+      const id=supervisor.state.sessions[0].id
+      await supervisor.send(id,'must not reach provider')
+      if(!blocked){await supervisor.stop(id);release()}
+      await wait(20)
+      assert.equal(writes.some(text=>text.includes('turn/start')),false)
+      assert.equal(supervisor.state.sessions[0].status,blocked?'error':'stopped')
+      if(blocked)assert.match(supervisor.state.sessions[0].deliveries[0].error!,/not sent/)
+    } finally {await supervisor.dispose()}
+  }
+})
+
+function fixture(transcripts?:ConstructorParameters<typeof SessionSupervisor>[3]){
   const children:FakeChild[]=[],calls:{command:string;args:string[];options:SpawnOptionsWithoutStdio}[]=[]
   const spawnProcess=(command:string,args:string[],options:SpawnOptionsWithoutStdio):ChildProcessWithoutNullStreams=>{
     const child=new FakeChild();children.push(child);calls.push({command,args,options});queueMicrotask(()=>child.emit('spawn'));return child as unknown as ChildProcessWithoutNullStreams
   }
   const resolver=async(agent:AgentId)=>({path:`${agent}.fixture`,version:`${agent} 1.0.0`})
-  return {children,calls,supervisor:new SessionSupervisor(spawnProcess,resolver)}
+  return {children,calls,supervisor:new SessionSupervisor(spawnProcess,resolver,undefined,transcripts)}
 }
 
 test('capability discovery keeps missing binaries distinct and does not start them',async()=>{

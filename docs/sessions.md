@@ -63,8 +63,54 @@ No external-client row has complete same-session evidence on both required platf
 ## Evidence needed to remove a block
 
 For each client and platform, start an external session using the documented setup, record client/agent versions and anonymized instance/session/turn IDs, observe turn start and completion, send an innocuous multiline Unicode message from Localino, and confirm exactly one receipt in the original client. Repeat while busy, after restart, and with two same-project sessions. Verify setup removal on an isolated profile without losing existing settings. Mock transports cover state-machine errors only; they do not prove same-session delivery.
-# Embedded terminal architecture
+## Embedded terminal architecture
 
 The session terminal uses Ink in an isolated worker and xterm.js inside the
 sandboxed Localino window. See [the architecture decision](terminal-architecture.md)
 for the virtual streams, packaging, safety boundary and feasibility tests.
+
+## Local transcript storage
+
+Saved transcripts belong to the Localino instance UUID, so two sessions in the
+same project remain separate. They are retained under the Electron user-data
+directory in `transcripts/<instance-id>/` until **Delete transcript** is confirmed.
+Stop a live session before deleting its transcript. Deletion affects that
+transcript only; recovered unsent drafts have a separate Discard action.
+
+The archive shows stored bytes, event count, recovery state and storage errors.
+**Read transcript** opens at most 100 events / 2 MiB; **Earlier events** replaces
+the page without loading the whole session into the renderer. Text selection and
+the normal explicit copy gesture are available. Reading never changes Clipboard,
+starts a provider or resends a prompt.
+
+Storage uses versioned, checksummed JSONL records in approximately 4 MiB segments,
+an atomically replaced manifest and a disposable snapshot of the recent events.
+The worker synchronizes accepted batches to disk before acknowledging them.
+It rebuilds its index by streaming records after restart; the UI remains usable
+while this happens. Interrupted tails and corrupt records are preserved, skipped
+with a visible completeness warning, and never overwritten by new segments.
+Items still streaming after restart become interrupted; a sequence/content gap
+prevents a completed label. A final snapshot replaces streamed text rather than
+adding a second copy. A late delta cannot reopen a terminal item.
+
+There is no automatic expiry or total session-size cap. Individual events over
+1 MiB and a pending write queue over 8 MiB are rejected with an explicit error,
+not shortened. Disk-full, checkpoint and worker failures are visible. A prompt
+whose transcript cannot be saved is not sent. Provider output may contain secrets
+the provider actually printed: keep the local user-data directory private.
+Localino selects normalized observable fields; it does not persist raw auth
+envelopes, arbitrary provider objects or private chain-of-thought. Reasoning is
+unavailable unless a provider publishes an allowed summary. Transcripts are not
+sent to telemetry, application logs or Clipboard automatically.
+
+The output cache is bounded (20 recent events / 2 MiB), and event identity uses a
+fixed 1 MiB Bloom index with exact disk lookup for positives. False positives
+never suppress events. Small per-item state grows with item count, not response
+text length; stored output has no in-memory mirror. Exact duplicate checks may
+require disk scanning on very large sessions and run only in the worker.
+
+The common store is covered by `tests/unit/transcript.test.ts`. The Electron
+`tests/transcripts.test.mjs` dataset checks all 100,000 records against an
+independent checksum/text oracle (over 100 MiB of output), recovery, page bounds,
+renderer responsiveness, unchanged Clipboard and selective confirmed deletion.
+This storage coverage is distinct from provider streaming and terminal UX tests.

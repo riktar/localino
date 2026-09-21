@@ -16,7 +16,7 @@
     "lint": "eslint .",
     "build": "npm run build:common && npm run build:native",
     "build:win": "npm run build && electron-builder --win --x64 --publish never",
-    "test": "npm run test:unit && npm run build && node --test --test-concurrency=1 tests/ink.test.mjs tests/terminal-ui.test.mjs tests/session-contracts.test.mjs tests/sessions-ui.test.mjs tests/desktop.test.mjs tests/development.test.mjs tests/quotas-ui.test.mjs tests/dashboard.test.mjs tests/navigation.test.mjs tests/clipboard.test.mjs tests/shortcuts.test.mjs tests/capture.test.mjs tests/agents.test.mjs tests/local-history.test.mjs tests/pi-history.test.mjs tests/opencode-history.test.mjs tests/bridge.test.mjs tests/panel.test.mjs tests/panel-clipboard.test.mjs tests/shortcut-routing.test.mjs tests/appearance.test.mjs",
+    "test": "npm run test:unit && npm run build && node --test --test-concurrency=1 tests/ink.test.mjs tests/terminal-ui.test.mjs tests/transcripts.test.mjs tests/session-contracts.test.mjs tests/sessions-ui.test.mjs tests/desktop.test.mjs tests/development.test.mjs tests/quotas-ui.test.mjs tests/dashboard.test.mjs tests/navigation.test.mjs tests/clipboard.test.mjs tests/shortcuts.test.mjs tests/capture.test.mjs tests/agents.test.mjs tests/local-history.test.mjs tests/pi-history.test.mjs tests/opencode-history.test.mjs tests/bridge.test.mjs tests/panel.test.mjs tests/panel-clipboard.test.mjs tests/shortcut-routing.test.mjs tests/appearance.test.mjs",
     "test:packaged": "node --test --test-concurrency=1 tests/packaged.test.mjs tests/terminal-packaged.test.mjs",
     "test:terminal:dev": "node --test tests/terminal-dev.test.mjs",
     "check": "npm run lint && npm test",

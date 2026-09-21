@@ -8,6 +8,7 @@ import { StringDecoder } from 'node:string_decoder'
 import { agentIds, type AgentId } from '../../shared/agents'
 import { initialLiveSessions, sessionProtocols, type LiveSession, type LiveSessionsState, type SessionCapability, type SessionDelivery, type SessionResult } from '../../shared/sessions'
 import { SessionRecoveryStore } from './recovery'
+import type { TranscriptClient } from './transcript-client'
 
 type SpawnAgent = (command:string,args:string[],options:SpawnOptionsWithoutStdio)=>ChildProcessWithoutNullStreams
 type ResolveAgent = (agent:AgentId)=>Promise<{path:string;version:string|null}|null>
@@ -123,7 +124,7 @@ export class SessionSupervisor extends EventEmitter {
   private readonly binaries=new Map<AgentId,string>()
   private readonly sessions=new Map<string,ManagedSession>()
   private disposed=false
-  constructor(private readonly spawnProcess:SpawnAgent=spawnAgent,private readonly resolver:ResolveAgent=resolveAgentBinary,private readonly recovery=new SessionRecoveryStore()){super()}
+  constructor(private readonly spawnProcess:SpawnAgent=spawnAgent,private readonly resolver:ResolveAgent=resolveAgentBinary,private readonly recovery=new SessionRecoveryStore(),private readonly transcripts?:Pick<TranscriptClient,'create'|'append'>){super()}
   get state():LiveSessionsState{return copyState(this.capabilities,this.sessions,this.recovery)}
   async refreshCapabilities():Promise<LiveSessionsState>{
     await Promise.all(agentIds.map(async agent=>{
@@ -146,6 +147,8 @@ export class SessionSupervisor extends EventEmitter {
     const id=randomUUID(),now=Date.now(),providerSessionId=agent==='claude'?randomUUID():null
     const view:LiveSession={id,agent,protocol:sessionProtocols[agent],projectPath:directory,projectName:basename(directory)||directory,providerSessionId,status:'starting',createdAt:now,turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,updatedAt:now,error:null,deliveries:[],draft:''}
     try{
+      await this.transcripts?.create({sessionId:id,provider:agent,projectPath:directory,projectName:view.projectName})
+      if(this.disposed)return {ok:false,error:'Session supervisor is shutting down.'}
       const port=agent==='opencode'?await freePort():null
       const password=agent==='opencode'?randomBytes(24).toString('base64url'):null
       const args=agent==='opencode'?['serve','--hostname','127.0.0.1','--port',String(port)]:commandFor(agent,providerSessionId??undefined)
@@ -399,7 +402,13 @@ export class SessionSupervisor extends EventEmitter {
     finally{if(session.pollingGeneration===generation)session.pollingGeneration=undefined}
   }
   private async dispatch(session:ManagedSession,delivery:SessionDelivery):Promise<void>{
+    const generation=session.generation
     try{
+      if(this.transcripts) {
+        try { await this.transcripts.append([{eventId:`prompt:${delivery.id}`,sessionId:session.view.id,provider:session.view.agent,providerSessionId:session.view.providerSessionId,turnId:delivery.id,itemId:delivery.id,kind:'prompt',operation:'snapshot',text:delivery.text,outcome:'completed'}]) }
+        catch { if(session.stopping||this.disposed||generation!==session.generation)return;delivery.status='failed';delivery.error='Message was not sent because the transcript could not be saved.';this.persist(session);this.update(session,{status:'error',error:delivery.error});return }
+      }
+      if(session.stopping||this.disposed||generation!==session.generation||delivery.status!=='sending')return
       if(session.view.agent==='codex'){
         const id=++session.requestSequence;session.pending.set(id,`delivery:${delivery.id}`);this.write(session,{id,method:'turn/start',params:{threadId:session.view.providerSessionId,input:[{type:'text',text:delivery.text}]}});this.awaitReceipt(session,delivery);this.update(session,{status:'running',turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,error:null})
       }else if(session.view.agent==='pi'){

@@ -4,6 +4,7 @@ import type { AgentId } from '../../../shared/agents'
 import { initialLiveSessions, type LiveSessionsState } from '../../../shared/sessions'
 import { Button } from './ui/button'
 import { SessionTerminal } from './session-terminal'
+import { TranscriptArchive } from './transcript-archive'
 
 export function useLiveSessions():LiveSessionsState{
   const [state,setState]=useState(initialLiveSessions)
@@ -48,5 +49,6 @@ export function LiveSessions({agent}:{agent:AgentId}):React.JSX.Element{
         </div>}
       </article>})}</div>}
     {recovered.length>0&&<div className="space-y-2"><h3 className="text-sm font-medium">Recovered drafts and undelivered messages</h3><p className="text-xs text-muted-foreground">These messages are suspended and will never be sent automatically.</p>{recovered.map(session=><article key={session.id} className="rounded-lg border border-dashed p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="text-sm font-medium">{session.projectName} - instance {session.id.slice(0,8)}</p><p className="truncate text-xs text-muted-foreground">{session.projectPath}</p></div><Button size="sm" variant="ghost" onClick={()=>void act(()=>window.localino.discardRecoveredSession(session.id))}>Discard</Button></div>{session.draft&&<pre className="mt-2 whitespace-pre-wrap break-words rounded bg-muted p-2 text-xs">{session.draft}</pre>}{session.deliveries.map(delivery=><div key={delivery.id} className="mt-2 rounded bg-muted p-2 text-xs"><span className="font-medium">{delivery.status}: </span><span className="whitespace-pre-wrap break-words">{delivery.text}</span></div>)}</article>)}</div>}
+    <TranscriptArchive agent={agent}/>
   </section>
 }

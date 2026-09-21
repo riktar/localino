@@ -30,6 +30,8 @@ import { SessionRecoveryStore } from './sessions/recovery'
 import { isSessionDelivery, isSessionDraft, isSessionText } from '../shared/sessions'
 import { isTerminalViewport, type TerminalLine } from '../shared/terminal'
 import { TerminalBridge } from './sessions/terminal-bridge'
+import { TranscriptClient } from './sessions/transcript-client'
+import { transcriptId } from '../shared/transcript'
 
 const customData = app.commandLine.getSwitchValue('user-data-dir')
 if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPath('userData', resolve(customData)) }
@@ -41,7 +43,8 @@ const connection = new Connection(codexPreferences)
 const agents = new AgentPreferences(join(app.getPath('userData'), 'agents.json'))
 const bridge = new ClaudeBridge(join(app.getPath('userData'),'claude-bridge'),join(process.env.CLAUDE_CONFIG_DIR||join(homedir(),'.claude'),'settings.json'),app.isPackaged?join(process.resourcesPath,'native',nativeHelper('StatusLine')):join(__dirname,'..','native',nativeHelper('StatusLine')),[process.platform==='darwin'?'/Library/Application Support/ClaudeCode/managed-settings.json':join(process.env.ProgramFiles||'C:\\Program Files','ClaudeCode','managed-settings.json')])
 const histories = Object.fromEntries(['claude', 'pi', 'opencode'].map(id => [id, new HistoryResource(id as LocalAgentId, workerReader(id as LocalAgentId))])) as Record<LocalAgentId, HistoryResource>
-const liveSessions = new SessionSupervisor(undefined,undefined,new SessionRecoveryStore(join(app.getPath('userData'),'sessions.json')))
+const transcripts = new TranscriptClient(join(__dirname,'transcript-worker.js'),join(app.getPath('userData'),'transcripts'))
+const liveSessions = new SessionSupervisor(undefined,undefined,new SessionRecoveryStore(join(app.getPath('userData'),'sessions.json')),transcripts)
 const terminals = new TerminalBridge(join(__dirname,'ink-worker.mjs'))
 const terminalLines = (sessionId:string):TerminalLine[] => {
   const session=liveSessions.state.sessions.find(item=>item.id===sessionId)
@@ -265,7 +268,7 @@ if (!app.requestSingleInstanceLock()) {
     usage.dispose()
     Object.values(histories).forEach(resource=>resource.dispose())
     bridge.dispose()
-    void Promise.all([connection.shutdown(),liveSessions.dispose(),terminals.dispose()]).finally(() => { quitReady = true; app.quit() })
+    void Promise.all([connection.shutdown(),liveSessions.dispose().then(()=>transcripts.dispose()),terminals.dispose()]).finally(() => { quitReady = true; app.quit() })
   })
   app.on('window-all-closed', () => { if (quitting) app.quit() })
 
@@ -403,6 +406,21 @@ if (!app.requestSingleInstanceLock()) {
     })
     handle('localino:history',(_owner,id)=>histories[localId(id)].state)
     handle('localino:live-sessions',()=>liveSessions.state)
+    handle('localino:transcripts',async()=>({sessions:await transcripts.list(),error:transcripts.error}))
+    handle('localino:transcript-page',(_owner,value)=>{
+      const request=value as {sessionId?:unknown;before?:unknown}|null
+      if(!request||!transcriptId(request.sessionId)||request.before!==undefined&&(!Number.isSafeInteger(request.before)||(request.before as number)<1))throw Error('Invalid transcript page')
+      return transcripts.page(request.sessionId,request.before as number|undefined)
+    })
+    handle('localino:delete-transcript',async(owner,value)=>{
+      if(!transcriptId(value))throw Error('Invalid transcript session')
+      if(liveSessions.state.sessions.some(session=>session.id===value&&session.status!=='stopped'))return {ok:false,error:'Stop the session before deleting its transcript.'}
+      const info=(await transcripts.list()).find(session=>session.sessionId===value)
+      if(!info)return {ok:false,error:'Transcript not found.'}
+      const choice=await dialog.showMessageBox(owner,{type:'warning',title:'Delete transcript',message:`Delete the transcript for ${info.projectName}?`,detail:`Instance ${value}. This permanently deletes this transcript only.`,buttons:['Cancel','Delete transcript'],defaultId:0,cancelId:0,noLink:true})
+      if(choice.response!==1)return {ok:false,error:'Deletion cancelled.'}
+      await transcripts.delete(value,true);return {ok:true}
+    })
     handle('localino:open-terminal',(owner,value)=>{
       if(!isTerminalViewport(value))throw Error('Invalid terminal viewport')
       terminals.open(owner.id,value,terminalLines(value.sessionId),frame=>{if(!owner.isDestroyed())owner.webContents.send('localino:terminal-frame',frame)})
@@ -454,6 +472,7 @@ if (!app.requestSingleInstanceLock()) {
       }catch{return {ok:false,error:'Recovery failed. Previous file preserved.'}}
     })
     agents.on('change',state=>{broadcast('localino:agents-changed',state);updateUsageActivity();updateTray()})
+    transcripts.on('change',()=>{for(const window of BrowserWindow.getAllWindows())if(!window.isDestroyed())window.webContents.send('localino:transcripts-changed')})
     liveSessions.on('change',state=>{
       broadcast('localino:live-sessions-changed',state)
       for(const session of state.sessions)terminals.update(session.id,terminalLines(session.id))
