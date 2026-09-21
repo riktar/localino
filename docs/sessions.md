@@ -117,3 +117,50 @@ The common store is covered by `tests/unit/transcript.test.ts`. The Electron
 independent checksum/text oracle (over 100 MiB of output), recovery, page bounds,
 renderer responsiveness, unchanged Clipboard and selective confirmed deletion.
 This storage coverage is distinct from provider streaming and terminal UX tests.
+
+## Provider output streams
+
+Localino normalizes output from its own process, saves it in batches, and sends
+only the saved projection to Ink. The live projection keeps 100 recent events /
+2 MiB and at most 8,000 text characters; an explicit history notice points to
+Saved transcripts for earlier text. This display window does not shorten storage.
+Small identity/state indexes grow with the number of messages, tools and source
+event IDs, not the amount of text in a response.
+
+| Provider / protocol reference | Observed fields | Identity and recovery |
+|---|---|---|
+| Codex CLI 0.155.0 App Server | Assistant deltas and authoritative item snapshots, commentary/final phase, published reasoning summary, command/file/tool activity and output, approval/input requests and turn outcome | Owned thread + active turn + item. Ordered stdio has no delta UUID or offset: repeated equal text is legitimate and is retained. Final snapshots replace text. Raw reasoning channels are excluded. |
+| Claude Code 2.1.247, SDK types 0.3.247 | Partial text/published thinking/tool blocks, completed assistant blocks, tool results and final result status | Owned session, submitted user UUID, message ID, block index/tool ID and source UUID where emitted. Completed one-block messages may share a message ID. User replay is a receipt, and result text does not duplicate the assistant. Nested subagent events are explicitly unsupported. |
+| Pi 0.84.3 RPC | Text/published thinking/tool deltas and authoritative message end; cumulative tool execution output; extension UI requests | Validated user-run timestamp, assistant timestamp and content index/tool ID. Reused timestamps are marked ambiguous. Deltas without timestamps rely on the owned ordered stream. `agent_settled` follows retries and compaction. |
+| OpenCode SDK 1.18.31 contract fixture | SSE message/part snapshots and deltas, tool state/output, files, session status and permission/question requests | Owned authenticated loopback endpoint + session + submitted parent message + assistant/part IDs. Reconnect keeps the same process and fetches up to 100 messages. A visible gap remains; snapshots replace known partials and deltas are suppressed for the interrupted turn to avoid replay duplication. Older activity may be unavailable. |
+
+Unknown event types are labeled explicitly. Arbitrary tool argument objects,
+authentication envelopes, environment, image data and raw stderr/server logs are
+excluded; command/path/query/description fields and emitted text are selected.
+Provider text itself may contain sensitive information. No automatic approval,
+policy update or input response is sent. Requests currently show an unsupported
+action label until the interaction flow is available.
+
+JSONL records, SSE records and HTTP responses are bounded to 2 MiB before parsing;
+the normalized storage event limit remains 1 MiB. Oversized/malformed stdio stops
+only that session and records an incomplete outcome. An SSE disconnect or invalid
+record degrades only its session and attempts recovery from the same server.
+The write queue is bounded to 8 MiB, with a 34 ms batching window and batches of
+up to 128 events / approximately 512 KiB. Storage failure stops the affected
+session. Output is never copied to application logs or Clipboard automatically.
+
+`tests/unit/provider-transcript.test.ts` checks each protocol, normalization and
+privacy. `tests/unit/sessions.test.ts` also exercises malformed/oversized isolation
+and SSE reconnection without resending. `tests/provider-volume.test.ts` checks
+100,000 normalized deltas (over 100 MiB) against a disk oracle.
+`tests/provider-stream.test.mjs` measures actual rendered DOM text and input
+during 1,000 deltas/s through the owned process, store and Ink. xterm's screen
+reader tree has its own one-second debounce, so it is not used as the visual
+latency clock.
+
+The explicitly invoked `node --import tsx scripts/probe-transcript-live.ts`
+performs read-only turns in a fresh temporary project using existing CLI accounts.
+On 2026-09-21, Codex and Pi completed the probe with streamed text and a read-only
+tool. Claude's CLI was available but OAuth refresh failed, so its live success
+check remains pending login. OpenCode was absent: its fixture result is not a
+live integration claim. No macOS streaming verification has been performed.

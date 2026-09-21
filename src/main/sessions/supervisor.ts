@@ -4,16 +4,26 @@ import { createServer } from 'node:net'
 import { basename, resolve } from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from 'node:child_process'
-import { StringDecoder } from 'node:string_decoder'
 import { agentIds, type AgentId } from '../../shared/agents'
 import { initialLiveSessions, sessionProtocols, type LiveSession, type LiveSessionsState, type SessionCapability, type SessionDelivery, type SessionResult } from '../../shared/sessions'
 import { SessionRecoveryStore } from './recovery'
 import type { TranscriptClient } from './transcript-client'
+import { CodexTranscript, ProviderTranscript, object } from './provider-transcript'
+import { ClaudeTranscript } from './claude-transcript'
+import { PiTranscript } from './pi-transcript'
+import { OpenCodeTranscript } from './opencode-transcript'
+import { TranscriptPump } from './transcript-pump'
+import { boundedJson, readProviderEvents } from './provider-http'
 
 type SpawnAgent = (command:string,args:string[],options:SpawnOptionsWithoutStdio)=>ChildProcessWithoutNullStreams
 type ResolveAgent = (agent:AgentId)=>Promise<{path:string;version:string|null}|null>
 
 interface ManagedSession {
+  output:ProviderTranscript
+  pump:TranscriptPump
+  stream?:AbortController
+  streamTask?:Promise<void>
+  lastPiRunTimestamp:number
   view: LiveSession
   child: ChildProcessWithoutNullStreams
   buffer: JsonlBuffer
@@ -45,19 +55,23 @@ interface ManagedSession {
 const executableNames:Record<AgentId,string>={codex:'codex',claude:'claude',pi:'pi',opencode:'opencode'}
 
 export class JsonlBuffer {
-  private readonly decoder=new StringDecoder('utf8')
+  private readonly decoder=new TextDecoder('utf-8',{fatal:true})
   private pending=''
+  constructor(private readonly maxBytes=2*1024*1024){}
   push(chunk:Buffer|string,onLine:(line:string)=>void):void {
-    this.pending+=typeof chunk==='string'?chunk:this.decoder.write(chunk)
+    this.pending+=typeof chunk==='string'?chunk:this.decoder.decode(chunk,{stream:true})
     for(let index=this.pending.indexOf('\n');index>=0;index=this.pending.indexOf('\n')){
       let line=this.pending.slice(0,index);this.pending=this.pending.slice(index+1)
+      if(Buffer.byteLength(line)>this.maxBytes)throw Error('Provider event exceeds 2 MiB.')
       if(line.endsWith('\r'))line=line.slice(0,-1)
       if(line)onLine(line)
     }
+    if(Buffer.byteLength(this.pending)>this.maxBytes)throw Error('Provider event exceeds 2 MiB.')
   }
   end(onLine:(line:string)=>void):void {
-    this.pending+=this.decoder.end()
+    this.pending+=this.decoder.decode()
     let line=this.pending;this.pending=''
+    if(Buffer.byteLength(line)>this.maxBytes)throw Error('Provider event exceeds 2 MiB.')
     if(line.endsWith('\r'))line=line.slice(0,-1)
     if(line)onLine(line)
   }
@@ -103,7 +117,7 @@ export async function resolveAgentBinary(agent:AgentId):Promise<{path:string;ver
 
 function commandFor(agent:AgentId,providerSessionId?:string):string[] {
   if(agent==='codex')return ['app-server','--stdio']
-  if(agent==='claude')return ['-p','--input-format','stream-json','--output-format','stream-json','--verbose','--replay-user-messages','--include-hook-events','--permission-mode','manual','--session-id',providerSessionId!]
+  if(agent==='claude')return ['-p','--input-format','stream-json','--output-format','stream-json','--verbose','--include-partial-messages','--replay-user-messages','--include-hook-events','--permission-mode','manual','--session-id',providerSessionId!]
   if(agent==='pi')return ['--mode','rpc','--no-approve','--session-id',randomUUID()]
   return []
 }
@@ -154,7 +168,10 @@ export class SessionSupervisor extends EventEmitter {
       const args=agent==='opencode'?['serve','--hostname','127.0.0.1','--port',String(port)]:commandFor(agent,providerSessionId??undefined)
       const env=agent==='opencode'?{...process.env,OPENCODE_SERVER_USERNAME:'localino',OPENCODE_SERVER_PASSWORD:password!}:process.env
       const child=this.spawnProcess(binary,args,{cwd:directory,env,stdio:['pipe','pipe','pipe']})
-      const managed:ManagedSession={view,child,buffer:new JsonlBuffer(),requestSequence:0,pending:new Map(),deliveryDeadlines:new Map(),lastContactAt:now,generation:0,completedPiRuns:new Set(),piCanSettle:false,completedClaudeMessages:new Set(),completedClaudeResults:new Set(),completedCodexTurns:new Set(),stopping:false,...(port&&password?{endpoint:`http://127.0.0.1:${port}`,authorization:`Basic ${Buffer.from(`localino:${password}`).toString('base64')}`}:{})}
+      const pump=new TranscriptPump(this.transcripts,message=>this.outputFailure(managed,message))
+      const Adapter={codex:CodexTranscript,claude:ClaudeTranscript,pi:PiTranscript,opencode:OpenCodeTranscript}[agent]
+      const output=new Adapter(id,agent,events=>pump.push(events))
+      const managed:ManagedSession={view,child,output,pump,lastPiRunTimestamp:-1,buffer:new JsonlBuffer(),requestSequence:0,pending:new Map(),deliveryDeadlines:new Map(),lastContactAt:now,generation:0,completedPiRuns:new Set(),piCanSettle:false,completedClaudeMessages:new Set(),completedClaudeResults:new Set(),completedCodexTurns:new Set(),stopping:false,...(port&&password?{endpoint:`http://127.0.0.1:${port}`,authorization:`Basic ${Buffer.from(`localino:${password}`).toString('base64')}`}:{})}
       this.sessions.set(id,managed);this.attach(managed);this.changed()
       return {ok:true,sessionId:id}
     }catch{return {ok:false,error:'Could not start the agent process.'}}
@@ -164,6 +181,7 @@ export class SessionSupervisor extends EventEmitter {
     if(session.view.status==='stopped')return {ok:true,sessionId:id}
     const wasRunning=session.view.status==='running'||session.view.status==='waiting'
     session.stopping=true;session.generation++;this.clearTimers(session);this.update(session,{status:'stopping',error:null})
+    session.stream?.abort();session.output.terminate('Session stopped by user.','interrupted')
     if(session.poll)clearInterval(session.poll)
     try{
       if(session.view.agent==='pi'&&wasRunning)this.write(session,{type:'abort'})
@@ -224,6 +242,7 @@ export class SessionSupervisor extends EventEmitter {
     this.disposed=true
     await Promise.all([...this.sessions.keys()].map(id=>this.stop(id)))
     await Promise.all([...this.sessions.values()].map(session=>new Promise<void>(resolveDone=>{if(session.child.exitCode!==null)return resolveDone();const timeout=setTimeout(resolveDone,2000);session.child.once('exit',()=>{clearTimeout(timeout);resolveDone()})})))
+    await Promise.all([...this.sessions.values()].map(session=>session.pump.flush()))
   }
   private attach(session:ManagedSession):void{
     session.deadline=setTimeout(()=>{
@@ -231,11 +250,13 @@ export class SessionSupervisor extends EventEmitter {
       this.update(session,{status:'unknown',error:'Agent protocol did not respond within 15 seconds.'})
       session.child.kill()
     },15_000);session.deadline.unref()
-    session.child.stdout.on('data',chunk=>session.buffer.push(chunk,line=>this.record(session,line)))
-    session.child.stdout.on('end',()=>session.buffer.end(line=>this.record(session,line)))
+    session.child.stdout.on('data',chunk=>{if(session.view.agent==='opencode')return;try{session.buffer.push(chunk,line=>this.record(session,line))}catch{this.outputFailure(session,'Invalid or oversized provider stream. The session was stopped; output may be incomplete.')}})
+    session.child.stdout.on('end',()=>{if(session.view.agent==='opencode')return;try{session.buffer.end(line=>this.record(session,line))}catch{this.outputFailure(session,'Provider stream ended with an invalid record. Output may be incomplete.')}})
     session.child.stderr.on('data',()=>{/* Provider stderr can contain prompts, paths or credentials and is never surfaced. */})
     session.child.once('error',()=>this.fail(session,'Agent process could not be started.'))
     session.child.once('exit',code=>{
+      session.stream?.abort()
+      if(!session.stopping&&(session.view.status==='running'||session.view.status==='waiting'))session.output.terminate('Provider process ended before the turn completed.')
       session.generation++;this.clearTimers(session)
       for(const delivery of session.view.deliveries){if(delivery.status==='sending'){delivery.status='unknown';delivery.error='Delivery outcome is unknown.'}else if(delivery.status==='queued')delivery.status='suspended'}
       this.persist(session)
@@ -263,14 +284,26 @@ export class SessionSupervisor extends EventEmitter {
   }
   private record(session:ManagedSession,line:string):void{
     if(session.stopping||session.view.status==='stopped'||session.view.status==='stopping')return
-    let value:Record<string,unknown>;try{value=JSON.parse(line) as Record<string,unknown>}catch{return}
+    const value=object(JSON.parse(line));if(!value)throw Error('Invalid provider record.')
     session.lastContactAt=Date.now();if(session.view.status!=='starting'&&session.deadline){clearTimeout(session.deadline);session.deadline=undefined}
+    const terminal=value.method==='turn/completed'||value.type==='result'||value.type==='agent_settled'
+    if(terminal)this.outputRecord(session,value)
+    if(session.stopping)return
     if(session.view.agent==='codex')this.codexRecord(session,value)
     else if(session.view.agent==='pi')this.piRecord(session,value)
     else if(session.view.agent==='claude')this.claudeRecord(session,value)
+    if(!terminal&&!session.stopping)this.outputRecord(session,value)
+  }
+  private outputRecord(session:ManagedSession,value:Record<string,unknown>):void {
+    session.output.ingest(value,{providerSessionId:session.view.providerSessionId,turnId:session.view.agent==='codex'?session.activeCodexTurn:session.view.agent==='pi'?session.activePiRun:undefined})
+  }
+  private outputFailure(session:ManagedSession,message:string):void {
+    if(session.stopping&&session.view.status==='error')return
+    session.output.terminate(message);session.stopping=true;session.generation++;this.clearTimers(session);session.stream?.abort()
+    this.update(session,{status:'error',turnStartedAt:null,error:message});session.child.kill()
   }
   private codexRecord(session:ManagedSession,value:Record<string,unknown>):void{
-    if(typeof value.id==='number'){
+    if(typeof value.id==='number'&&value.method===undefined){
       const pending=session.pending.get(value.id);session.pending.delete(value.id)
       if(pending==='initialize'){
         if(value.error)return this.fail(session,'Codex App Server handshake failed.')
@@ -334,7 +367,10 @@ export class SessionSupervisor extends EventEmitter {
       const message=value.message as {role?:unknown;content?:unknown;timestamp?:unknown}|undefined,delivery=session.awaitingPiDelivery?this.delivery(session,session.awaitingPiDelivery):undefined
       const content=typeof message?.content==='string'?message.content:Array.isArray(message?.content)?message.content.filter((item):item is {type:'text';text:string}=>Boolean(item)&&typeof item==='object'&&(item as {type?:unknown}).type==='text'&&typeof (item as {text?:unknown}).text==='string').map(item=>item.text).join(''):''
       const key=typeof message?.timestamp==='number'&&Number.isFinite(message.timestamp)?String(message.timestamp):null
-      if(message?.role==='user'&&delivery?.status==='sent'&&content===delivery.text&&key&&!session.completedPiRuns.has(key)){session.activePiRun=key;session.awaitingPiDelivery=undefined;session.piCanSettle=false}
+      if(message?.role==='user'&&delivery?.status==='sent'&&content===delivery.text&&key&&!session.completedPiRuns.has(key)){
+        if(Number(key)<=session.lastPiRunTimestamp){session.output.markGap('Pi reused a previous run timestamp. The current turn could not be identified.');this.update(session,{status:'unknown',error:'Pi run identity is ambiguous.'});return}
+        session.lastPiRunTimestamp=Number(key);session.activePiRun=key;session.awaitingPiDelivery=undefined;session.piCanSettle=false
+      }
     }
     if(value.type==='turn_start'&&session.activePiRun){
       session.piCanSettle=false;session.piTurnOutcome=undefined;this.update(session,{status:'running',turnStartedAt:session.view.turnStartedAt??Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})
@@ -381,6 +417,8 @@ export class SessionSupervisor extends EventEmitter {
       const created=await this.request(session,'/session',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({title:`Localino · ${session.view.projectName}`})}) as {id?:unknown}
       if(session.stopping||generation!==session.generation)return
       if(typeof created.id!=='string')throw Error()
+      session.stream=new AbortController()
+      session.streamTask=this.streamOpenCode(session)
       this.update(session,{providerSessionId:created.id,status:'idle'})
       session.poll=setInterval(()=>void this.pollOpenCode(session),2000);session.poll.unref()
     }catch{if(!session.stopping&&generation===session.generation){this.fail(session,'OpenCode server handshake failed.');session.child.kill()}}
@@ -396,10 +434,34 @@ export class SessionSupervisor extends EventEmitter {
       session.lastContactAt=Date.now()
       const type=statuses[session.view.providerSessionId]?.type
       if(type==='busy'||type==='retry'){if(session.view.status!=='running')this.update(session,{status:'running',turnStartedAt:reconcile?null:Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})}
-      else if(type==='idle'||type===undefined)this.idle(session,session.view.lastTurnOutcome)
+      else if((type==='idle'||type===undefined)&&(!session.view.deliveries.length||(session.output as OpenCodeTranscript).settled))this.idle(session,(session.output as OpenCodeTranscript).outcome)
       if(reconcile&&!session.poll&&!session.stopping&&generation===session.generation){session.poll=setInterval(()=>void this.pollOpenCode(session),2000);session.poll.unref()}
     }catch{if(!session.stopping&&generation===session.generation)this.update(session,{status:'unknown',error:'OpenCode status is unavailable.'})}
     finally{if(session.pollingGeneration===generation)session.pollingGeneration=undefined}
+  }
+  private async streamOpenCode(session:ManagedSession):Promise<void>{
+    const signal=session.stream!.signal,output=session.output as OpenCodeTranscript
+    let reconnect=false
+    while(!signal.aborted&&!session.stopping){
+      try{
+        const response=await fetch(`${session.endpoint}/event`,{headers:{authorization:session.authorization!},signal})
+        if(reconnect){
+          const messages=await this.request(session,`/session/${encodeURIComponent(session.view.providerSessionId!)}/message?limit=100`)
+          if(!Array.isArray(messages))throw Error('Invalid recovery page.')
+          output.reconcile(messages,{providerSessionId:session.view.providerSessionId})
+        }
+        await readProviderEvents(response,event=>{
+          if(signal.aborted||session.stopping)return
+          session.lastContactAt=Date.now();this.outputRecord(session,event)
+          if(output.settled)this.idle(session,output.outcome)
+        })
+        if(!signal.aborted)throw Error('Event stream ended.')
+      }catch{
+        if(signal.aborted||session.stopping)return
+        output.disconnected();this.update(session,{status:'unknown',error:'OpenCode output disconnected. Recovering from the same owned server.'});reconnect=true
+        await new Promise<void>(resolveWait=>{const done=():void=>{clearTimeout(timer);signal.removeEventListener('abort',done);resolveWait()},timer=setTimeout(done,500);signal.addEventListener('abort',done,{once:true})})
+      }
+    }
   }
   private async dispatch(session:ManagedSession,delivery:SessionDelivery):Promise<void>{
     const generation=session.generation
@@ -409,18 +471,22 @@ export class SessionSupervisor extends EventEmitter {
         catch { if(session.stopping||this.disposed||generation!==session.generation)return;delivery.status='failed';delivery.error='Message was not sent because the transcript could not be saved.';this.persist(session);this.update(session,{status:'error',error:delivery.error});return }
       }
       if(session.stopping||this.disposed||generation!==session.generation||delivery.status!=='sending')return
+      session.output.beginDelivery(delivery.id)
       if(session.view.agent==='codex'){
         const id=++session.requestSequence;session.pending.set(id,`delivery:${delivery.id}`);this.write(session,{id,method:'turn/start',params:{threadId:session.view.providerSessionId,input:[{type:'text',text:delivery.text}]}});this.awaitReceipt(session,delivery);this.update(session,{status:'running',turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,error:null})
       }else if(session.view.agent==='pi'){
         session.activePiRun=undefined;session.awaitingPiDelivery=delivery.id;session.piCanSettle=false;const id=++session.requestSequence;session.pending.set(id,`delivery:${delivery.id}`);this.write(session,{id,type:'prompt',message:delivery.text});this.awaitReceipt(session,delivery);this.update(session,{status:'running',turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,error:null})
       }else if(session.view.agent==='claude'){
         session.activeClaudeMessage=undefined
-        this.write(session,{type:'user',message:{role:'user',content:[{type:'text',text:delivery.text}]},parent_tool_use_id:null,session_id:session.view.providerSessionId??''})
+        this.write(session,{type:'user',uuid:delivery.id,message:{role:'user',content:[{type:'text',text:delivery.text}]},parent_tool_use_id:null,session_id:session.view.providerSessionId??''})
         this.awaitReceipt(session,delivery);this.update(session,{status:'running',turnStartedAt:Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})
       }else{
         const provider=session.view.providerSessionId;if(!provider)throw Error()
         await this.request(session,`/session/${encodeURIComponent(provider)}/prompt_async`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({messageID:delivery.id,parts:[{type:'text',text:delivery.text}]}),expectNoContent:true})
-        this.confirmDelivery(session,delivery,true);this.update(session,{status:'running',turnStartedAt:Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})
+        if(session.stopping||generation!==session.generation)return
+        this.confirmDelivery(session,delivery,true)
+        if((session.output as OpenCodeTranscript).settled)this.idle(session,(session.output as OpenCodeTranscript).outcome)
+        else this.update(session,{status:'running',turnStartedAt:Date.now(),turnElapsedMs:null,lastTurnOutcome:null,error:null})
       }
     }catch{this.clearDeliveryDeadline(session,delivery.id);delivery.status='unknown';delivery.error='Delivery outcome is unknown.';this.persist(session);this.update(session,{status:'unknown',error:'Connection to the agent was lost.'})}
   }
@@ -468,7 +534,7 @@ export class SessionSupervisor extends EventEmitter {
     return fetch(`${session.endpoint}${path}`,{...request,headers:{authorization:session.authorization,...request.headers},signal:AbortSignal.timeout(5000)}).then(async response=>{
       if(!response.ok)throw Error()
       if(expectNoContent||response.status===204)return null
-      return response.json()
+      return boundedJson(response)
     })
   }
   private write(session:ManagedSession,value:unknown):void{

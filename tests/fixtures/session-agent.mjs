@@ -6,13 +6,26 @@ const codex=process.argv.includes('app-server'),pi=process.argv.includes('--mode
 const claudeSession=process.argv[process.argv.indexOf('--session-id')+1]
 const input=readline.createInterface({input:process.stdin,crlfDelay:Infinity})
 const send=value=>process.stdout.write(`${JSON.stringify(value)}\n`)
-let claudeTurn=0
+let claudeTurn=0,codexTurn=0
 input.on('line',line=>{
   let value;try{value=JSON.parse(line)}catch{return}
   if(codex){
     if(value.method==='initialize')send({id:value.id,result:{userAgent:'fixture'}})
     else if(value.method==='thread/start')send({id:value.id,result:{thread:{id:'fixture-codex-thread'}}})
-    else if(value.method==='turn/start'){send({id:value.id,result:{turn:{id:'fixture-turn'}}});send({method:'turn/started',params:{threadId:'fixture-codex-thread',turn:{id:'fixture-turn',startedAt:Date.now()/1000}}});setTimeout(()=>send({method:'turn/completed',params:{threadId:'fixture-codex-thread',turn:{id:'fixture-turn',status:'completed'}}}),150)}
+    else if(value.method==='turn/start'){
+      const turnId=`fixture-turn-${++codexTurn}`,params={threadId:'fixture-codex-thread',turnId}
+      send({id:value.id,result:{turn:{id:turnId}}});send({method:'turn/started',params:{...params,turn:{id:turnId,startedAt:Date.now()/1000}}})
+      if(value.params.input[0].text==='LOCALINO_STREAM_FIXTURE'){
+        let index=0,text='';const started=performance.now();process.stderr.write('PRIVATE_STDERR_AUTH_SENTINEL\n')
+        const timer=setInterval(()=>{const target=Math.min(5000,Math.floor(performance.now()-started));while(index<target){
+          const itemId=`answer-${Math.floor(index/100)}`,delta=`${'λ'.repeat(520)}🌍\nSEQ${String(index).padStart(6,'0')} AT${Date.now()}\n`
+          if(index%100===0){text='';send({method:'item/started',params:{...params,item:{id:itemId,type:'agentMessage',text:''}}})}
+          text+=delta;send({method:'item/agentMessage/delta',params:{...params,itemId,delta}})
+          if(index%100===99)send({method:'item/completed',params:{...params,item:{id:itemId,type:'agentMessage',text,phase:'final'}}})
+          index++
+        }if(index===5000){clearInterval(timer);send({method:'turn/completed',params:{...params,turn:{id:turnId,status:'completed'}}})}},10)
+      }else setTimeout(()=>send({method:'turn/completed',params:{...params,turn:{id:turnId,status:'completed'}}}),150)
+    }
   }else if(pi){
     if(value.type==='get_state')send({id:value.id,type:'response',command:'get_state',success:true,data:{sessionId:'fixture-pi-session'}})
     else if(value.type==='prompt'){const timestamp=Date.now();send({id:value.id,type:'response',command:'prompt',success:true});send({type:'agent_start'});send({type:'turn_start'});send({type:'message_start',message:{role:'user',content:value.message,timestamp}});setTimeout(()=>{send({type:'turn_end',message:{stopReason:'stop'}});send({type:'agent_settled'})},150)}

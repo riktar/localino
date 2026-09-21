@@ -45,6 +45,31 @@ function fixture(transcripts?:ConstructorParameters<typeof SessionSupervisor>[3]
   return {children,calls,supervisor:new SessionSupervisor(spawnProcess,resolver,undefined,transcripts)}
 }
 
+test('malformed and oversized stdout stop only the owning session; stderr and foreign output never persist',async()=>{
+  const events:import('../../src/shared/transcript').TranscriptInput[]=[]
+  const {supervisor,children}=fixture({create:async info=>({...info,version:1,createdAt:0,updatedAt:0,bytes:0,events:0,interrupted:false,error:null,reasoning:'unavailable'}),append:async batch=>{events.push(...batch);return []}})
+  try{
+    const project=mkdtempSync(join(tmpdir(),'localino-stream-isolation-'))
+    for(let i=0;i<3;i++){
+      await supervisor.start('codex',project);await wait()
+      line(children[i],{id:1,result:{}});line(children[i],{id:2,result:{thread:{id:`owned-${i}`}}})
+      await supervisor.send(supervisor.state.sessions[i].id,'Read only');await wait()
+      line(children[i],{id:3,result:{turn:{id:`turn-${i}`}}})
+    }
+    children[0].stderr.write('PRIVATE_STDERR_AUTH_SENTINEL')
+    line(children[0],{method:'item/agentMessage/delta',params:{threadId:'foreign',turnId:'turn-0',itemId:'a',delta:'FOREIGN'}})
+    line(children[0],{method:'item/agentMessage/delta',params:{threadId:'owned-0',turnId:'turn-0',itemId:'a',delta:'partial'}})
+    children[0].stdout.write('{malformed\n')
+    children[1].stdout.write('x'.repeat(2*1024*1024+1))
+    line(children[2],{method:'item/agentMessage/delta',params:{threadId:'owned-2',turnId:'turn-2',itemId:'a',delta:'healthy λ🌍'}})
+    await wait(80)
+    assert.deepEqual(supervisor.state.sessions.map(session=>session.status),['error','error','running'])
+    assert.equal(events.filter(event=>event.kind==='assistant'&&event.operation==='append').map(event=>event.text).join('|'),'partial|healthy λ🌍')
+    assert.equal(JSON.stringify(events).includes('PRIVATE_STDERR'),false);assert.equal(JSON.stringify(events).includes('FOREIGN'),false)
+    assert.ok(events.some(event=>event.itemId==='a'&&event.outcome==='unknown'))
+  }finally{await supervisor.dispose()}
+})
+
 test('capability discovery keeps missing binaries distinct and does not start them',async()=>{
   const {supervisor}=fixture()
   const missing=new SessionSupervisor(()=>{throw Error('must not spawn')},async agent=>agent==='pi'?null:{path:`${agent}.fixture`,version:null})
@@ -195,6 +220,7 @@ test('OpenCode owns an authenticated loopback server and creates its session',as
     const url=String(input)
     if(url.endsWith('/global/health'))return Response.json({healthy:true,version:'1.0.0'})
     if(url.endsWith('/session'))return Response.json({id:'open-one'})
+    if(url.endsWith('/event'))return new Response(new ReadableStream(),{headers:{'content-type':'text/event-stream'}})
     if(url.endsWith('/instance/dispose'))return Response.json(true)
     return Response.json({})
   }
@@ -206,6 +232,39 @@ test('OpenCode owns an authenticated loopback server and creates its session',as
     supervisor.suspend();assert.equal(supervisor.state.sessions[0].status,'unknown');supervisor.resume();await wait()
     const managed=(supervisor as unknown as {sessions:Map<string,{poll?:NodeJS.Timeout}>}).sessions.get(result.sessionId!)!
     assert.equal(supervisor.state.sessions[0].status,'idle');assert.ok(managed.poll)
+  }finally{await supervisor.dispose();globalThis.fetch=originalFetch}
+})
+
+test('OpenCode SSE reconnect uses only the owned endpoint and snapshots; no prompt resend or duplicate delta',async()=>{
+  const events:import('../../src/shared/transcript').TranscriptInput[]=[]
+  const {supervisor}=fixture({create:async info=>({...info,version:1,createdAt:0,updatedAt:0,bytes:0,events:0,interrupted:false,error:null,reasoning:'unavailable'}),append:async batch=>{events.push(...batch);return []}})
+  const originalFetch=globalThis.fetch,urls:string[]=[],auth:string[]=[]
+  let controller:ReadableStreamDefaultController<Uint8Array>,connections=0,prompts=0,parent=''
+  const info={sessionID:'owned-open',id:'assistant',role:'assistant',parentID:''},part={sessionID:'owned-open',messageID:'assistant',id:'text',type:'text',text:'AB'}
+  globalThis.fetch=async(input,init)=>{
+    const url=String(input);urls.push(url);auth.push(new Headers(init?.headers).get('authorization')??'')
+    if(url.endsWith('/global/health'))return Response.json({healthy:true})
+    if(url.endsWith('/session'))return Response.json({id:'owned-open'})
+    if(url.endsWith('/event')){connections++;return new Response(new ReadableStream({start(c){controller=c;init?.signal?.addEventListener('abort',()=>{try{c.close()}catch{/* Already closed. */}},{once:true})}}),{headers:{'content-type':'text/event-stream'}})}
+    if(url.includes('/message?'))return Response.json([{info:{...info,parentID:parent},parts:[part]}])
+    if(url.endsWith('/prompt_async')){prompts++;parent=JSON.parse(String(init?.body)).messageID;return new Response(null,{status:204})}
+    return Response.json({})
+  }
+  const emit=(type:string,properties:Record<string,unknown>)=>controller.enqueue(Buffer.from(`data: ${JSON.stringify({type,properties:{sessionID:'owned-open',...properties}})}\n\n`))
+  try{
+    const result=await supervisor.start('opencode',mkdtempSync(join(tmpdir(),'localino-open-sse-')));await wait(20)
+    await supervisor.send(result.sessionId!,'Read only');await wait(20)
+    emit('message.updated',{info:{...info,parentID:parent}});emit('session.status',{status:{type:'busy'}})
+    emit('message.part.updated',{part:{...part,text:''}});emit('message.part.delta',{messageID:'assistant',partID:'text',field:'text',delta:'A'});await wait(40)
+    controller.close();await wait(650)
+    assert.equal(connections,2)
+    emit('message.part.delta',{messageID:'assistant',partID:'text',field:'text',delta:'B'})
+    emit('message.part.updated',{part:{...part,text:'ABC',time:{end:10}}});emit('session.status',{status:{type:'idle'}});await wait(60)
+    let text='';for(const event of events.filter(event=>event.itemId==='text')){if(event.operation==='append')text+=event.text;else if(event.text!==undefined)text=event.text}
+    assert.equal(text,'ABC');assert.equal(prompts,1);assert.equal(new Set(urls.map(url=>new URL(url).origin)).size,1)
+    assert.equal(new Set(auth).size,1);assert.match(auth[0],/^Basic /);assert.equal(JSON.stringify(events).includes(auth[0]),false)
+    assert.equal(supervisor.state.sessions[0].status,'idle');assert.equal(supervisor.state.sessions[0].lastTurnOutcome,null)
+    assert.ok(events.some(event=>event.label==='Output gap'));assert.equal(events.findLast(event=>event.itemId==='text')?.outcome,'unknown')
   }finally{await supervisor.dispose();globalThis.fetch=originalFetch}
 })
 

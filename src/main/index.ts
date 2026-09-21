@@ -31,7 +31,8 @@ import { isSessionDelivery, isSessionDraft, isSessionText } from '../shared/sess
 import { isTerminalViewport, type TerminalLine } from '../shared/terminal'
 import { TerminalBridge } from './sessions/terminal-bridge'
 import { TranscriptClient } from './sessions/transcript-client'
-import { transcriptId } from '../shared/transcript'
+import { TranscriptWindow } from './sessions/transcript-window'
+import { transcriptId, type TranscriptEvent } from '../shared/transcript'
 
 const customData = app.commandLine.getSwitchValue('user-data-dir')
 if (customData) { mkdirSync(resolve(customData), { recursive: true }); app.setPath('userData', resolve(customData)) }
@@ -46,10 +47,11 @@ const histories = Object.fromEntries(['claude', 'pi', 'opencode'].map(id => [id,
 const transcripts = new TranscriptClient(join(__dirname,'transcript-worker.js'),join(app.getPath('userData'),'transcripts'))
 const liveSessions = new SessionSupervisor(undefined,undefined,new SessionRecoveryStore(join(app.getPath('userData'),'sessions.json')),transcripts)
 const terminals = new TerminalBridge(join(__dirname,'ink-worker.mjs'))
+const transcriptWindows = new Map<string,TranscriptWindow>()
 const terminalLines = (sessionId:string):TerminalLine[] => {
   const session=liveSessions.state.sessions.find(item=>item.id===sessionId)
   if(!session)throw Error('Session not found')
-  return [{label:`${session.agent} · ${session.status}`,text:session.projectName},...session.deliveries.slice(-20).map(item=>({label:`You · ${item.status}`,text:item.text}))]
+  return [{label:`${session.agent} · ${session.status}`,text:session.projectName},...(transcriptWindows.get(sessionId)?.lines()??[])]
 }
 const defaultSources: Record<LocalAgentId, string> = {
   claude: join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects'), pi: join(process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'), 'sessions'),
@@ -472,6 +474,11 @@ if (!app.requestSingleInstanceLock()) {
       }catch{return {ok:false,error:'Recovery failed. Previous file preserved.'}}
     })
     agents.on('change',state=>{broadcast('localino:agents-changed',state);updateUsageActivity();updateTray()})
+    transcripts.on('events',(events:TranscriptEvent[])=>{
+      const changed=new Set<string>()
+      for(const event of events){let window=transcriptWindows.get(event.sessionId);if(!window){window=new TranscriptWindow();transcriptWindows.set(event.sessionId,window)}window.append([event]);changed.add(event.sessionId)}
+      for(const id of changed)if(liveSessions.state.sessions.some(session=>session.id===id))terminals.update(id,terminalLines(id))
+    })
     transcripts.on('change',()=>{for(const window of BrowserWindow.getAllWindows())if(!window.isDestroyed())window.webContents.send('localino:transcripts-changed')})
     liveSessions.on('change',state=>{
       broadcast('localino:live-sessions-changed',state)

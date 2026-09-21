@@ -33,3 +33,10 @@ checksums, corrupt/torn file preservation, disk-full, oversize and selective del
 `tests/transcripts.test.mjs`: 100,000 events / >100 MiB independently checked,
 segmentation, bounded pages, responsive Electron during worker replay, interrupted
 recovery with no provider start, Clipboard privacy and native delete confirmation.
+# Provider streaming
+
+- `tests/unit/provider-transcript.test.ts`: frozen Codex/Claude/Pi/OpenCode contracts, source identities, delta/final replacement, stale messages, published reasoning and field selection.
+- `tests/unit/sessions.test.ts`: malformed/oversized process isolation, stderr exclusion, same-server SSE recovery and no prompt resend.
+- `tests/provider-volume.test.ts`: 100,000 provider deltas through normalization, batching, worker storage and bounded live projection; independent disk text/offset oracle.
+- `tests/provider-stream.test.mjs`: 1,000 deltas/s from an owned fixture process through storage and Ink; rendered text latency, input and scroll scheduling.
+- `scripts/probe-transcript-live.ts`: explicitly invoked authenticated read-only probe. Fixture coverage does not replace this evidence; unavailable binaries and expired authentication are reported separately.
