@@ -55,7 +55,14 @@ events must be stored independently before presentation. This prevents a burst
 of 5,000 updates from causing 5,000 React layout operations. It does not authorize
 dropping transcript events. Three independently identified views per window are
 allowed. xterm's screen-reader mode provides the prototype's readable terminal;
-the transcript story adds the equivalent semantic DOM path.
+the transcript story adds an equivalent semantic ordered list with explicit user
+and model labels. Semantic updates are coalesced to 200 ms during a burst while
+the visible terminal retains the 34 ms schedule.
+
+The live projection starts with 12 messages and loads older messages explicitly.
+It keeps user prompts intact and bounds visible model text to 4,000 characters,
+marking an omitted prefix with an ellipsis. Manual upward scrolling suspends
+auto-follow; the New messages action restores the live end.
 
 ## Reproducing the spike
 

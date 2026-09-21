@@ -37,6 +37,6 @@ test('100,000 provider deltas / 100 MiB survive normalization, batching and disk
       assert.equal(event.text,expected);assert.equal(event.offset,(count%1000)*expected.length);assert.equal(event.disposition,'applied');count++;outputBytes+=Buffer.byteLength(expected)
     }
   }
-  assert.equal(count,100000);assert.ok(outputBytes>=50*1024*1024);assert.deepEqual(errors,[]);assert.ok(maxProjection<16000);assert.ok(peak-rss<256*1024*1024)
+  assert.equal(count,100000);assert.ok(outputBytes>=50*1024*1024);assert.deepEqual(errors,[]);assert.ok(maxProjection<2*1024*1024);assert.ok(peak-rss<256*1024*1024)
   console.log(JSON.stringify({normalizedDeltas:count,outputBytes,maxProjection,peakRssGrowth:peak-rss,elapsedMs:performance.now()-started}))
 })

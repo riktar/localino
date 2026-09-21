@@ -28,7 +28,7 @@ import { agentLabels, agentCapabilities, isAgentId, isLocalAgentId, isAgentPerio
 import { SessionSupervisor } from './sessions/supervisor'
 import { SessionRecoveryStore } from './sessions/recovery'
 import { isSessionDelivery, isSessionDraft, isSessionText } from '../shared/sessions'
-import { isTerminalViewport, type TerminalLine } from '../shared/terminal'
+import { isTerminalViewport, type ChatHistory, type TerminalLine } from '../shared/terminal'
 import { TerminalBridge } from './sessions/terminal-bridge'
 import { TranscriptClient } from './sessions/transcript-client'
 import { TranscriptWindow } from './sessions/transcript-window'
@@ -48,10 +48,17 @@ const transcripts = new TranscriptClient(join(__dirname,'transcript-worker.js'),
 const liveSessions = new SessionSupervisor(undefined,undefined,new SessionRecoveryStore(join(app.getPath('userData'),'sessions.json')),transcripts)
 const terminals = new TerminalBridge(join(__dirname,'ink-worker.mjs'))
 const transcriptWindows = new Map<string,TranscriptWindow>()
+const chatHistoryTimers = new Map<string,ReturnType<typeof setTimeout>>()
 const terminalLines = (sessionId:string):TerminalLine[] => {
   const session=liveSessions.state.sessions.find(item=>item.id===sessionId)
   if(!session)throw Error('Session not found')
   return transcriptWindows.get(sessionId)?.lines(agentLabels[session.agent])??[]
+}
+const chatHistory = (sessionId:string):ChatHistory => ({sessionId,messages:terminalLines(sessionId),hasEarlier:transcriptWindows.get(sessionId)?.hasEarlier()??false})
+const scheduleChatHistory = (sessionId:string):void => {
+  if(chatHistoryTimers.has(sessionId))return
+  const timer=setTimeout(()=>{chatHistoryTimers.delete(sessionId);broadcast('localino:chat-history-changed',chatHistory(sessionId))},200)
+  timer.unref();chatHistoryTimers.set(sessionId,timer)
 }
 const defaultSources: Record<LocalAgentId, string> = {
   claude: join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects'), pi: join(process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent'), 'sessions'),
@@ -408,6 +415,30 @@ if (!app.requestSingleInstanceLock()) {
     })
     handle('localino:history',(_owner,id)=>histories[localId(id)].state)
     handle('localino:live-sessions',()=>liveSessions.state)
+    handle('localino:chat-history',(_owner,value)=>{
+      if(typeof value!=='string'||!/^[\w-]{1,128}$/.test(value))throw Error('Invalid session')
+      return chatHistory(value)
+    })
+    handle('localino:load-earlier-chat',async(_owner,value)=>{
+      if(typeof value!=='string'||!/^[\w-]{1,128}$/.test(value))throw Error('Invalid session')
+      const projection=transcriptWindows.get(value)
+      if(!projection)throw Error('Session history is unavailable')
+      if(!projection.revealLoadedEarlier()){
+        const session=liveSessions.state.sessions.find(candidate=>candidate.id===value)
+        if(!session)throw Error('Session not found')
+        const previous=JSON.stringify(projection.lines(agentLabels[session.agent]))
+        for(let pageCount=0;pageCount<64;pageCount++){
+          const before=projection.before()
+          if(before===undefined)break
+          const page=await transcripts.page(value,before)
+          if(!page.events.length)break
+          projection.prepend(page.events)
+          if(projection.revealLoadedEarlier()||JSON.stringify(projection.lines(agentLabels[session.agent]))!==previous)break
+        }
+      }
+      terminals.update(value,terminalLines(value));broadcast('localino:chat-history-changed',chatHistory(value))
+      return chatHistory(value)
+    })
     handle('localino:open-terminal',async(owner,value)=>{
       if(!isTerminalViewport(value))throw Error('Invalid terminal viewport')
       if(!transcriptWindows.has(value.sessionId)){
@@ -465,9 +496,9 @@ if (!app.requestSingleInstanceLock()) {
     })
     agents.on('change',state=>{broadcast('localino:agents-changed',state);updateUsageActivity();updateTray()})
     transcripts.on('events',(events:TranscriptEvent[])=>{
-      const changed=new Set<string>()
-      for(const event of events){let window=transcriptWindows.get(event.sessionId);if(!window){window=new TranscriptWindow();transcriptWindows.set(event.sessionId,window)}window.append([event]);changed.add(event.sessionId)}
-      for(const id of changed)if(liveSessions.state.sessions.some(session=>session.id===id))terminals.update(id,terminalLines(id))
+      const grouped=new Map<string,TranscriptEvent[]>()
+      for(const event of events){const group=grouped.get(event.sessionId)??[];group.push(event);grouped.set(event.sessionId,group)}
+      for(const [id,group] of grouped){let window=transcriptWindows.get(id);if(!window){window=new TranscriptWindow();transcriptWindows.set(id,window)}window.append(group);if(liveSessions.state.sessions.some(session=>session.id===id)){terminals.update(id,terminalLines(id));scheduleChatHistory(id)}}
     })
     liveSessions.on('change',state=>{
       broadcast('localino:live-sessions-changed',state)

@@ -41,6 +41,14 @@ test('chat projection shows only user and model text with distinct roles',()=>{
     {label:'Codex',text:'Hello from the model',role:'assistant'},
   ])
 })
+test('chat projection keeps complete loaded messages and expands earlier pages in order',()=>{
+  const window=new TranscriptWindow(),base={version:1 as const,sessionId:'one',provider:'codex' as const,providerSessionId:'owned',turnId:'turn',operation:'snapshot' as const,outcome:'completed' as const,inputHash:'hash',timestamp:1,disposition:'applied' as const}
+  const long=`START-${'x'.repeat(9000)}-END`
+  window.append(Array.from({length:14},(_,index)=>({...base,eventId:`event-${index+10}`,itemId:`message-${index+10}`,kind:index===0?'prompt' as const:'assistant' as const,text:index===0?long:`Message ${index+10}`,sequence:index+10})))
+  assert.equal(window.lines('Codex').length,12);assert.equal(window.hasEarlier(),true);assert.equal(window.before(),10);assert.equal(window.revealLoadedEarlier(),true);assert.equal(window.lines('Codex')[0].text,long)
+  window.prepend(Array.from({length:9},(_,index)=>({...base,eventId:`event-${index+1}`,itemId:`message-${index+1}`,kind:'assistant' as const,text:`Message ${index+1}`,sequence:index+1})))
+  assert.equal(window.revealLoadedEarlier(),true);assert.equal(window.lines('Codex').length,23);assert.equal(window.lines('Codex')[0].text,'Message 1');assert.equal(window.lines('Codex').at(-1)?.text,'Message 23');assert.equal(window.hasEarlier(),false)
+})
 test('append/restart preserves exact Unicode, idempotence, final snapshot and session isolation',()=>{
   const {root,store}=fixture()
   const inputs=[event('a'),event('b',{offset:1,text:'🌍'}),event('final',{operation:'snapshot',text:'λ🌍',offset:undefined,outcome:'completed'})]

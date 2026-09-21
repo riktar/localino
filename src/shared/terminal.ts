@@ -2,6 +2,7 @@
 export interface TerminalViewport { sessionId: string; viewId: string; columns: number; rows: number }
 export interface TerminalFrame { sessionId: string; viewId: string; sequence: number; data: string; error?: string; reset?: boolean; columns?: number; rows?: number }
 export interface TerminalLine { label: string; text: string; role: 'user' | 'assistant' }
+export interface ChatHistory { sessionId: string; messages: TerminalLine[]; hasEarlier: boolean }
 export function isTerminalViewport(value: unknown): value is TerminalViewport {
   if (!value || typeof value !== 'object') return false
   const v = value as Record<string, unknown>

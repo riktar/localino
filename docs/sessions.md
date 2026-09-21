@@ -77,6 +77,18 @@ text emitted by the selected model. **You** and the model name use different
 labels and colors. Delivery rows, status events, tool activity, command output,
 reasoning, protocol notices and turn outcomes are not part of this view. There is
 no separate transcript archive, reader or delete control in the renderer.
+The view opens on the latest 12 messages. **Load earlier messages** expands it in
+12-message steps and scans across streamed delta pages so one long response does
+not masquerade as many chat entries. User prompts are kept intact. Very long model
+messages use a bounded 4,000-character projection shared across the visible model
+messages; a leading ellipsis marks omitted earlier text while the durable record
+remains unchanged.
+
+The terminal follows new output while it is at the bottom. Scrolling upward pauses
+follow mode without moving the viewport; **New messages** appears when more output
+arrives and returns to the live end. The hidden semantic ordered list exposes the
+same labelled `You` and model messages to assistive technology without requiring
+ANSI interpretation. Selection and copy remain native xterm operations.
 
 Storage uses versioned, checksummed JSONL records in approximately 4 MiB segments,
 an atomically replaced manifest and a disposable snapshot of the recent events.
@@ -104,7 +116,7 @@ tool activity or protocol status in chat history. Existing technical records fro
 older builds are ignored by the conversation projection. History is not sent to
 telemetry, application logs or Clipboard automatically.
 
-The output cache is bounded (20 recent events / 2 MiB), and event identity uses a
+The output cache is bounded (100 recent events / 2 MiB), and event identity uses a
 fixed 1 MiB Bloom index with exact disk lookup for positives. False positives
 never suppress events. Small per-item state grows with item count, not response
 text length; stored output has no in-memory mirror. Exact duplicate checks may
@@ -119,7 +131,7 @@ This storage coverage is distinct from provider streaming and conversation UX te
 
 Localino normalizes output from its own process, but saves and sends to Ink only
 assistant text. User prompts use the same acknowledged history path. The live
-projection keeps up to 100 recent chat events / 2 MiB and at most 8,000 text
+projection keeps up to 100 recent chat events / 2 MiB and at most 4,000 model-text
 characters. Technical provider events remain internal and never enter the chat.
 Small identity/state indexes grow with the number of messages, tools and source
 event IDs, not the amount of text in a response.

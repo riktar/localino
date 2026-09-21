@@ -43,6 +43,13 @@ const api: LocalinoApi = {
   getLiveSessions:()=>ipcRenderer.invoke('localino:live-sessions'),
   startLiveSession:agent=>ipcRenderer.invoke('localino:start-live-session',agent),
   stopLiveSession:sessionId=>ipcRenderer.invoke('localino:stop-live-session',sessionId),
+  getChatHistory:sessionId=>ipcRenderer.invoke('localino:chat-history',sessionId),
+  loadEarlierChat:sessionId=>ipcRenderer.invoke('localino:load-earlier-chat',sessionId),
+  onChatHistory:listener=>{
+    const callback=(_event:Electron.IpcRendererEvent,history:import('../shared/terminal').ChatHistory)=>listener(history)
+    ipcRenderer.on('localino:chat-history-changed',callback)
+    return ()=>ipcRenderer.removeListener('localino:chat-history-changed',callback)
+  },
   openTerminal:viewport=>ipcRenderer.invoke('localino:open-terminal',viewport),
   closeTerminal:viewId=>ipcRenderer.invoke('localino:close-terminal',viewId),
   onTerminalFrame:listener=>{

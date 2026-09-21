@@ -35,6 +35,10 @@ for (const packaged of process.env.LOCALINO_PACKAGED_TEST ? [true] : [false]) {
       assert.ok(conversation.includes('You'))
       assert.ok(conversation.includes('Codex'))
       assert.equal(/Turn started|completed|Unsupported event|prompt ·|assistant ·/.test(conversation),false)
+      const semantic=card.locator('[aria-label="Conversation messages"]')
+      await page.waitForFunction(()=>document.querySelector('[aria-label="Conversation messages"]')?.textContent?.includes('Model reply'))
+      assert.equal(await semantic.getByRole('listitem',{includeHidden:true}).count(),2)
+      assert.match(await semantic.innerText(),/You.*Hello λ🌍/s);assert.match(await semantic.innerText(),/Codex.*Model reply/s)
       assert.equal(await page.getByRole('heading',{name:'Saved transcripts'}).count(),0)
       assert.equal(await card.getByRole('list',{name:'Message deliveries'}).count(),0)
       const prefs = await app.evaluate(({ BrowserWindow }) => {
