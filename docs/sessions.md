@@ -75,7 +75,7 @@ Saved transcripts belong to the Localino instance UUID, so two sessions in the
 same project remain separate. They are retained under the Electron user-data
 directory in `transcripts/<instance-id>/` until **Delete transcript** is confirmed.
 Stop a live session before deleting its transcript. Deletion affects that
-transcript only; recovered unsent drafts have a separate Discard action.
+transcript and its live projection cache; recovered unsent drafts have a separate Discard action.
 
 The archive shows stored bytes, event count, recovery state and storage errors.
 **Read transcript** opens at most 100 events / 2 MiB; **Earlier events** replaces
@@ -166,6 +166,11 @@ and SSE reconnection without resending. `tests/provider-volume.test.ts` checks
 during 1,000 deltas/s through the owned process, store and Ink. xterm's screen
 reader tree has its own one-second debounce, so it is not used as the visual
 latency clock.
+The burst test records its measurement interval, document focus/visibility
+transitions and native window state. An inactive/hidden dashboard is an explicit
+setup failure; no samples are silently removed. A valid sample that exceeds a
+threshold remains a performance failure. Input/scroll timing is synthetic event
+and animation-frame scheduling; the separate terminal UX tests cover user actions.
 
 The explicitly invoked `node --import tsx scripts/probe-transcript-live.ts`
 performs read-only turns in a fresh temporary project using existing CLI accounts.

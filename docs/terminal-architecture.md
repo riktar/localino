@@ -89,3 +89,11 @@ worker teardown.
 Vite writes/cleans its output and watches worker sources. The cold-start and
 source-update regression is `node --test tests/terminal-dev.test.mjs`; it removes
 only generated worker output and restores its temporary source edit on exit.
+# Stream scheduling
+
+The main bridge and Ink worker coalesce updates to a 34 ms cadence measured from
+the previous flush. An idle stage can flush the next update immediately; this
+avoids adding a fixed delay at each stage after the transcript has been saved.
+Ink retains its 30 FPS limit. The provider burst test records focus/visibility
+and measures the rendered DOM independently from xterm's debounced accessibility
+tree. Deleting a stopped transcript also clears the main projection cache.

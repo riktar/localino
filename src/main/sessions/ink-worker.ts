@@ -10,6 +10,7 @@ type Update = Extract<InkRequest, { viewport: TerminalViewport }>
 const views = new Map<string, { ink: InkViewport; deactivate: () => void; viewport: TerminalViewport; counter: { value: number } }>()
 const pending = new Map<string, Update>()
 let timer: NodeJS.Timeout | undefined
+let lastUpdate = -Infinity
 let disposing = false
 parentPort!.on('message', async (request: InkRequest) => {
   if (disposing) return
@@ -29,10 +30,10 @@ parentPort!.on('message', async (request: InkRequest) => {
   }
   pending.set(request.viewport.viewId, request)
   if (!timer) timer = setTimeout(() => {
-    timer = undefined
+    timer = undefined; lastUpdate = performance.now()
     const updates = [...pending.values()]; pending.clear()
     for (const update of updates) apply(update)
-  }, 34)
+  }, Math.max(0,34-(performance.now()-lastUpdate)))
 })
 
 function apply(request: Update): void {

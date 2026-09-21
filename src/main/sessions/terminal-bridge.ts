@@ -9,6 +9,7 @@ export class TerminalBridge {
   private worker?: Worker
   private readonly views = new Map<string, Subscription>()
   private timer?: NodeJS.Timeout
+  private lastUpdate = -Infinity
   constructor(private readonly workerPath: string) {}
   open(owner: number, viewport: TerminalViewport, lines: TerminalLine[], send: Subscription['send']): void {
     const previous = this.views.get(viewport.viewId)
@@ -21,11 +22,11 @@ export class TerminalBridge {
     for (const view of this.views.values()) if (view.viewport.sessionId === sessionId) view.pending = lines
     if (!this.timer && [...this.views.values()].some(view => view.pending)) {
       this.timer = setTimeout(() => {
-        this.timer = undefined
+        this.timer = undefined; this.lastUpdate = performance.now()
         for (const view of this.views.values()) if (view.pending) {
           this.post({ type: 'update', viewport: view.viewport, lines: view.pending }); view.pending = undefined
         }
-      }, 34)
+      }, Math.max(0,34-(performance.now()-this.lastUpdate)))
     }
   }
   close(owner: number, viewId: string): void {

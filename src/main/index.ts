@@ -421,7 +421,8 @@ if (!app.requestSingleInstanceLock()) {
       if(!info)return {ok:false,error:'Transcript not found.'}
       const choice=await dialog.showMessageBox(owner,{type:'warning',title:'Delete transcript',message:`Delete the transcript for ${info.projectName}?`,detail:`Instance ${value}. This permanently deletes this transcript only.`,buttons:['Cancel','Delete transcript'],defaultId:0,cancelId:0,noLink:true})
       if(choice.response!==1)return {ok:false,error:'Deletion cancelled.'}
-      await transcripts.delete(value,true);return {ok:true}
+      await transcripts.delete(value,true);transcriptWindows.delete(value)
+      terminals.update(value,[{label:'Transcript deleted',text:''}]);return {ok:true}
     })
     handle('localino:open-terminal',(owner,value)=>{
       if(!isTerminalViewport(value))throw Error('Invalid terminal viewport')
