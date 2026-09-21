@@ -57,6 +57,9 @@ test('chat projection pages every message, preserves Unicode and keeps its cache
   const retained=bounded.cacheStats();bounded.append(Array.from({length:1000},(_,index)=>({...base,eventId:`late-${index}`,itemId:`late-${index}`,kind:'assistant' as const,text:'z',sequence:index+1000})))
   assert.deepEqual(bounded.cacheStats(),retained);assert.ok(retained.events<=100&&retained.bytes<=2*1024*1024)
   bounded.replaceLatest([{...base,eventId:'latest',itemId:'latest',kind:'assistant',text:'latest',sequence:9999}]);assert.deepEqual(bounded.lines('Codex').map(line=>line.text),['latest']);assert.equal(bounded.hasLater(),false)
+  const streamed=new TranscriptWindow(),prompt={...base,eventId:'prompt-protected',itemId:'prompt-protected',kind:'prompt' as const,text:'question',sequence:1}
+  streamed.append([prompt,...Array.from({length:200},(_,index)=>({...base,eventId:`delta-${index}`,itemId:'streamed-answer',kind:'assistant' as const,operation:'append' as const,text:'x',offset:index,sequence:index+2}))])
+  assert.equal(streamed.cacheStats().events,100);assert.equal(streamed.before(),103);assert.equal(streamed.hasEarlier(),true)
 })
 test('append/restart preserves exact Unicode, idempotence, final snapshot and session isolation',()=>{
   const {root,store}=fixture()

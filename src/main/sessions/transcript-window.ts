@@ -50,22 +50,23 @@ export class TranscriptWindow {
     return pages
   }
   private merge(events:TranscriptEvent[],direction:'older'|'newer'):void {
-    if(events.length)this.cursor=Math.min(this.cursor??Number.MAX_SAFE_INTEGER,...events.map(event=>event.sequence))
+    if(events.length&&(direction==='older'||this.cursor===null))this.cursor=Math.min(this.cursor??Number.MAX_SAFE_INTEGER,...events.map(event=>event.sequence))
     const known=new Set(this.events.map(event=>event.sequence))
     const accepted=events.filter(event=>(event.kind==='prompt'||event.kind==='assistant')&&!known.has(event.sequence))
     if(!accepted.length)return
     this.events=direction==='older'?[...accepted,...this.events]:[...this.events,...accepted]
     this.events.sort((a,b)=>a.sequence-b.sequence)
     this.bytes=this.events.reduce((total,event)=>total+Buffer.byteLength(JSON.stringify(event)),0)
+    let removedThrough=0
     while(this.events.length>MAX_EVENTS||this.bytes>MAX_BYTES){
       const counts=new Map<string,number>()
       for(const event of this.events){const key=transcriptItemKey(event);counts.set(key,(counts.get(key)??0)+1)}
       const indexes=direction==='older'?[...this.events.keys()].reverse():[...this.events.keys()]
       const index=indexes.find(candidate=>(counts.get(transcriptItemKey(this.events[candidate]))??0)>1)??indexes[0]
       const [event]=this.events.splice(index,1)
-      if(event)this.bytes-=Buffer.byteLength(JSON.stringify(event))
+      if(event){this.bytes-=Buffer.byteLength(JSON.stringify(event));if(direction==='newer')removedThrough=Math.max(removedThrough,event.sequence)}
     }
-    if(this.events[0])this.cursor=this.events[0].sequence
+    if(removedThrough)this.cursor=Math.max(this.cursor??1,removedThrough+1)
     this.rebuild()
   }
   private rebuild():void {
