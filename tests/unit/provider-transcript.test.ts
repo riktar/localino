@@ -34,10 +34,12 @@ test('Codex preserves delta/final, phase, summary, command/file/tool output and 
   send('item/completed',{item:{id:'c',type:'commandExecution',command:'read file',aggregatedOutput:'AB',status:'completed',env:{TOKEN:'PRIVATE'}}})
   send('item/completed',{item:{id:'f',type:'fileChange',changes:[{path:'a.txt',diff:'+line'}],status:'completed'}})
   send('item/completed',{item:{id:'t',type:'mcpToolCall',tool:'read',arguments:{path:'a.txt',authorization:'PRIVATE'},result:{content:[{type:'text',text:'Tool result'},{type:'image',data:'PRIVATE'}]}}})
+  send('item/completed',{item:{id:'dynamic',type:'dynamicToolCall',tool:'read',arguments:{path:'a.txt'},contentItems:[{type:'inputText',text:'Dynamic λ'},{type:'inputImage',imageUrl:'PRIVATE'},{type:'inputText',text:'🌍 output'}],status:'completed',success:true}})
   send('item/commandExecution/requestApproval',{itemId:'c2',command:'read',reason:'Ask'})
   send('item/tool/requestUserInput',{itemId:'q',questions:[{question:'Choose'}]})
   send('turn/completed',{turn:{id:'turn-one',status:'completed'}})
   assert.equal(f.text('a'),'λ🌍🌍');assert.equal(f.text('c:output'),'AB');assert.equal(f.text('t:output'),'Tool result')
+  assert.equal(f.text('dynamic:output'),'Dynamic λ🌍 output')
   assert.ok(f.events.some(event=>event.phase==='final'));assert.ok(f.events.some(event=>event.kind==='file'))
   assert.ok(f.events.some(event=>event.kind==='approval'));assert.ok(f.events.some(event=>event.kind==='input'))
   assert.equal(JSON.stringify(f.events).includes('PRIVATE'),false)
@@ -127,6 +129,9 @@ test('SSE parser handles split Unicode, multiline data, malformed and oversized 
   await assert.rejects(()=>readProviderEvents(new Response('data: nope\n\n',{headers:{'content-type':'text/event-stream'}}),()=>{}))
   await assert.rejects(()=>readProviderEvents(new Response(`data: ${'a'.repeat(2*1024*1024+1)}`,{headers:{'content-type':'text/event-stream'}}),()=>{}),/Oversized/)
   await assert.rejects(()=>boundedJson(new Response(JSON.stringify({text:'a'.repeat(200)})),100),/Oversized/)
+  for(const invalid of [Buffer.concat([Buffer.from('{"text":"'),Buffer.of(0xff),Buffer.from('"}')]),Buffer.concat([Buffer.from('{"text":"'),Buffer.of(0xf0,0x9f)])])await assert.rejects(()=>boundedJson(new Response(invalid)),/encoded data/)
+  const valid=new ReadableStream({start(controller){for(const byte of Buffer.from('{"text":"λ🌍"}'))controller.enqueue(Uint8Array.of(byte));controller.close()}})
+  assert.deepEqual(await boundedJson(new Response(valid)),{text:'λ🌍'})
 })
 
 test('transcript pump batches ordered output, bounds pending bytes, and exposes storage failure',async()=>{

@@ -118,7 +118,7 @@ export class CodexTranscript extends ProviderTranscript {
           this.emit(itemId,'tool','snapshot',{text:observableArguments(item.arguments),outcome,label:`Tool ${string(item.tool)??'unknown'}`})
           if(complete)this.emit(`${itemId}:output`,'output','snapshot',{text:contentText(object(item.result)?.content)||string(object(item.error)?.message)||'',outcome,label:'Tool output'})
           return
-        case 'dynamicToolCall':this.emit(itemId,'tool','snapshot',{text:observableArguments(item.arguments),outcome,label:`Tool ${string(item.tool)??'unknown'}`});if(complete)this.emit(`${itemId}:output`,'output','snapshot',{text:contentText(item.contentItems),outcome,label:'Tool output'});return
+        case 'dynamicToolCall':this.emit(itemId,'tool','snapshot',{text:observableArguments(item.arguments),outcome,label:`Tool ${string(item.tool)??'unknown'}`});if(complete)this.emit(`${itemId}:output`,'output','snapshot',{text:array(item.contentItems).map(entry=>{const content=object(entry);return content?.type==='inputText'?this.requireText(content.text):''}).join(''),outcome,label:'Tool output'});return
         case 'functionCallOutput':this.emit(itemId,'output','snapshot',{text:typeof item.output==='string'?item.output:contentText(item.output),outcome,label:`Tool output ${string(item.name)??''}`});return
         case 'plan':this.emit(itemId,'status','snapshot',{text:string(item.text)??'',outcome,label:'Plan'});return
         case 'webSearch':this.emit(itemId,'tool','snapshot',{text:string(item.query)??'',outcome,label:'Web search'});return

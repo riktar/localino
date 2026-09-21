@@ -13,7 +13,8 @@ export class OpenCodeTranscript extends ProviderTranscript {
   settled=false
   outcome:TurnOutcome|null=null
   override beginDelivery(deliveryId:string):void {super.beginDelivery(deliveryId);this.parent=deliveryId;this.parents.add(deliveryId);this.busy=false;this.settled=false;this.snapshotsOnly=false;this.outcome=null}
-  disconnected():void {this.snapshotsOnly=true;this.markGap('OpenCode event stream disconnected. Recovered snapshots may omit intermediate activity.')}
+  disconnected():void {this.snapshotsOnly=true;this.context={...this.context,turnId:this.parent};this.markGap('OpenCode event stream disconnected. Recovered snapshots may omit intermediate activity.')}
+  recoveredIdle():void {if(this.snapshotsOnly){this.context={...this.context,turnId:this.parent};this.settle('completed')}}
   reconcile(messages:unknown[],context:OutputContext):void {
     for(const entry of messages){const value=object(entry),info=object(value?.info);if(!info)throw Error('Invalid OpenCode recovery message.')
       this.ingest({type:'message.updated',properties:{sessionID:info.sessionID,info}},context)

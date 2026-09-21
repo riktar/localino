@@ -287,7 +287,8 @@ export class SessionSupervisor extends EventEmitter {
     const value=object(JSON.parse(line));if(!value)throw Error('Invalid provider record.')
     session.lastContactAt=Date.now();if(session.view.status!=='starting'&&session.deadline){clearTimeout(session.deadline);session.deadline=undefined}
     const terminal=value.method==='turn/completed'||value.type==='result'||value.type==='agent_settled'
-    if(terminal)this.outputRecord(session,value)
+    const acceptedTerminal=value.type!=='agent_settled'||Boolean(session.activePiRun&&session.piCanSettle)
+    if(terminal&&acceptedTerminal)this.outputRecord(session,value)
     if(session.stopping)return
     if(session.view.agent==='codex')this.codexRecord(session,value)
     else if(session.view.agent==='pi')this.piRecord(session,value)
@@ -443,12 +444,20 @@ export class SessionSupervisor extends EventEmitter {
     const signal=session.stream!.signal,output=session.output as OpenCodeTranscript
     let reconnect=false
     while(!signal.aborted&&!session.stopping){
+      let response:Response|undefined
       try{
-        const response=await fetch(`${session.endpoint}/event`,{headers:{authorization:session.authorization!},signal})
+        response=await fetch(`${session.endpoint}/event`,{headers:{authorization:session.authorization!},signal})
         if(reconnect){
           const messages=await this.request(session,`/session/${encodeURIComponent(session.view.providerSessionId!)}/message?limit=100`)
           if(!Array.isArray(messages))throw Error('Invalid recovery page.')
           output.reconcile(messages,{providerSessionId:session.view.providerSessionId})
+          const statuses=object(await this.request(session,'/session/status'))
+          if(!statuses)throw Error('Invalid recovery status.')
+          const status=object(statuses[session.view.providerSessionId!])?.type
+          if(status===undefined||status==='idle'){
+            output.recoveredIdle()
+            if(!signal.aborted&&!session.stopping)this.idle(session,output.outcome)
+          }
         }
         await readProviderEvents(response,event=>{
           if(signal.aborted||session.stopping)return
@@ -460,12 +469,15 @@ export class SessionSupervisor extends EventEmitter {
         if(signal.aborted||session.stopping)return
         output.disconnected();this.update(session,{status:'unknown',error:'OpenCode output disconnected. Recovering from the same owned server.'});reconnect=true
         await new Promise<void>(resolveWait=>{const done=():void=>{clearTimeout(timer);signal.removeEventListener('abort',done);resolveWait()},timer=setTimeout(done,500);signal.addEventListener('abort',done,{once:true})})
-      }
+      }finally{await response?.body?.cancel().catch(()=>{})}
     }
   }
   private async dispatch(session:ManagedSession,delivery:SessionDelivery):Promise<void>{
     const generation=session.generation
     try{
+      // Keep the prior turn's final output ahead of the next prompt on disk.
+      await session.pump.flush()
+      if(session.stopping||this.disposed||generation!==session.generation)return
       if(this.transcripts) {
         try { await this.transcripts.append([{eventId:`prompt:${delivery.id}`,sessionId:session.view.id,provider:session.view.agent,providerSessionId:session.view.providerSessionId,turnId:delivery.id,itemId:delivery.id,kind:'prompt',operation:'snapshot',text:delivery.text,outcome:'completed'}]) }
         catch { if(session.stopping||this.disposed||generation!==session.generation)return;delivery.status='failed';delivery.error='Message was not sent because the transcript could not be saved.';this.persist(session);this.update(session,{status:'error',error:delivery.error});return }

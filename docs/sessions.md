@@ -142,6 +142,15 @@ policy update or input response is sent. Requests currently show an unsupported
 action label until the interaction flow is available.
 
 JSONL records, SSE records and HTTP responses are bounded to 2 MiB before parsing;
+invalid UTF-8 is rejected instead of silently replaced. Reconnection checks the
+same server's HTTP status after recovering snapshots: an idle observed there can
+restore Send even if the idle SSE event was lost. The interrupted turn retains
+its visible gap and unknown completeness. Pi transcript finalization uses the
+same validated settlement as session lifecycle, including retries and stale
+events. The previous turn's pending output is saved before a queued new prompt.
+Codex dynamic-tool `inputText` output is retained; image/audio fields are excluded.
+
+For every transport,
 the normalized storage event limit remains 1 MiB. Oversized/malformed stdio stops
 only that session and records an incomplete outcome. An SSE disconnect or invalid
 record degrades only its session and attempts recovery from the same server.

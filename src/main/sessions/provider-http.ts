@@ -5,7 +5,7 @@ export async function boundedJson(response:Response,limit=2*1024*1024):Promise<u
   let bytes=0
   try{for(;;){const {value,done}=await reader.read();if(done)break;bytes+=value.byteLength;if(bytes>limit)throw Error('Oversized provider response.');chunks.push(value)}}
   finally{await reader.cancel().catch(()=>{});reader.releaseLock()}
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks)))
 }
 
 export async function readProviderEvents(response:Response,receive:(event:Record<string,unknown>)=>void):Promise<void>{

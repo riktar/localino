@@ -235,7 +235,7 @@ test('OpenCode owns an authenticated loopback server and creates its session',as
   }finally{await supervisor.dispose();globalThis.fetch=originalFetch}
 })
 
-test('OpenCode SSE reconnect uses only the owned endpoint and snapshots; no prompt resend or duplicate delta',async()=>{
+for(const completedOffline of [false,true])test(`OpenCode SSE reconnect uses the same server; completion during disconnect: ${completedOffline}`,async()=>{
   const events:import('../../src/shared/transcript').TranscriptInput[]=[]
   const {supervisor}=fixture({create:async info=>({...info,version:1,createdAt:0,updatedAt:0,bytes:0,events:0,interrupted:false,error:null,reasoning:'unavailable'}),append:async batch=>{events.push(...batch);return []}})
   const originalFetch=globalThis.fetch,urls:string[]=[],auth:string[]=[]
@@ -246,7 +246,8 @@ test('OpenCode SSE reconnect uses only the owned endpoint and snapshots; no prom
     if(url.endsWith('/global/health'))return Response.json({healthy:true})
     if(url.endsWith('/session'))return Response.json({id:'owned-open'})
     if(url.endsWith('/event')){connections++;return new Response(new ReadableStream({start(c){controller=c;init?.signal?.addEventListener('abort',()=>{try{c.close()}catch{/* Already closed. */}},{once:true})}}),{headers:{'content-type':'text/event-stream'}})}
-    if(url.includes('/message?'))return Response.json([{info:{...info,parentID:parent},parts:[part]}])
+    if(url.includes('/message?'))return Response.json([{info:{...info,parentID:parent},parts:[completedOffline?{...part,text:'ABC',time:{end:10}}:part]}])
+    if(url.endsWith('/session/status'))return Response.json({'owned-open':{type:completedOffline?'idle':'busy'}})
     if(url.endsWith('/prompt_async')){prompts++;parent=JSON.parse(String(init?.body)).messageID;return new Response(null,{status:204})}
     return Response.json({})
   }
@@ -258,14 +259,43 @@ test('OpenCode SSE reconnect uses only the owned endpoint and snapshots; no prom
     emit('message.part.updated',{part:{...part,text:''}});emit('message.part.delta',{messageID:'assistant',partID:'text',field:'text',delta:'A'});await wait(40)
     controller.close();await wait(650)
     assert.equal(connections,2)
-    emit('message.part.delta',{messageID:'assistant',partID:'text',field:'text',delta:'B'})
-    emit('message.part.updated',{part:{...part,text:'ABC',time:{end:10}}});emit('session.status',{status:{type:'idle'}});await wait(60)
+    if(!completedOffline){emit('message.part.delta',{messageID:'assistant',partID:'text',field:'text',delta:'B'});emit('message.part.updated',{part:{...part,text:'ABC',time:{end:10}}});emit('session.status',{status:{type:'idle'}})}
+    await wait(60)
     let text='';for(const event of events.filter(event=>event.itemId==='text')){if(event.operation==='append')text+=event.text;else if(event.text!==undefined)text=event.text}
     assert.equal(text,'ABC');assert.equal(prompts,1);assert.equal(new Set(urls.map(url=>new URL(url).origin)).size,1)
     assert.equal(new Set(auth).size,1);assert.match(auth[0],/^Basic /);assert.equal(JSON.stringify(events).includes(auth[0]),false)
     assert.equal(supervisor.state.sessions[0].status,'idle');assert.equal(supervisor.state.sessions[0].lastTurnOutcome,null)
     assert.ok(events.some(event=>event.label==='Output gap'));assert.equal(events.findLast(event=>event.itemId==='text')?.outcome,'unknown')
+    assert.equal((await supervisor.send(result.sessionId!,'Another explicit read')).ok,true);await wait(20);assert.equal(prompts,2)
   }finally{await supervisor.dispose();globalThis.fetch=originalFetch}
+})
+
+test('Pi transcript ignores premature settlement and saves the prior final before the next queued prompt',async()=>{
+  const events:import('../../src/shared/transcript').TranscriptInput[]=[]
+  const {supervisor,children}=fixture({create:async info=>({...info,version:1,createdAt:0,updatedAt:0,bytes:0,events:0,interrupted:false,error:null,reasoning:'unavailable'}),append:async batch=>{events.push(...batch);return []}})
+  try{
+    const result=await supervisor.start('pi',mkdtempSync(join(tmpdir(),'localino-pi-settle-')));await wait()
+    const child=children[0]
+    line(child,{id:1,type:'response',success:true,data:{sessionId:'owned-pi'}})
+    await supervisor.send(result.sessionId!,'one');await wait();await supervisor.send(result.sessionId!,'two')
+    for(let run=0;run<2;run++){
+      const timestamp=100+run*10,text=run===0?'one':'two'
+      line(child,{id:run+2,type:'response',success:true})
+      line(child,{type:'agent_settled'}) // Previous run's replay before new identity exists.
+      line(child,{type:'message_start',message:{role:'user',content:text,timestamp}});line(child,{type:'turn_start'})
+      line(child,{type:'message_start',message:{role:'assistant',timestamp:timestamp+1}})
+      line(child,{type:'message_update',assistantMessageEvent:{type:'text_start',contentIndex:0}})
+      line(child,{type:'message_update',assistantMessageEvent:{type:'text_delta',contentIndex:0,delta:'A'}})
+      line(child,{type:'agent_settled'});await wait(40)
+      assert.equal(events.some(event=>event.itemId===`${timestamp+1}:0`&&event.outcome==='completed'),false)
+      line(child,{type:'message_update',assistantMessageEvent:{type:'text_delta',contentIndex:0,delta:'B'}})
+      line(child,{type:'message_end',message:{role:'assistant',timestamp:timestamp+1,content:[{type:'text',text:'AB'}],stopReason:'stop'}})
+      line(child,{type:'turn_end',message:{stopReason:'stop'}});line(child,{type:'agent_settled'});await wait(50)
+      assert.equal(events.findLast(event=>event.itemId===`${timestamp+1}:0`&&event.text!==undefined)?.text,'AB')
+    }
+    assert.equal(supervisor.state.sessions[0].status,'idle')
+    assert.ok(events.findIndex(event=>event.itemId==='101:0'&&event.outcome==='completed')<events.findIndex(event=>event.kind==='prompt'&&event.text==='two'))
+  }finally{await supervisor.dispose()}
 })
 
 test('messages stay on the selected instance and queued messages dispatch FIFO',async()=>{
