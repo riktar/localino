@@ -4,6 +4,7 @@ import { _electron as electron } from 'playwright'
 import { mkdir, mkdtemp, chmod } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { mainPage, packagedExecutable } from './helpers.mjs'
+import headless from '@xterm/headless'
 
 for (const packaged of process.env.LOCALINO_PACKAGED_TEST ? [true] : [false]) {
   test(`Ink terminal ${packaged ? 'packaged' : 'development'}: Unicode, sandbox, IPC, resize, cleanup`, { timeout: 60000 }, async () => {
@@ -41,9 +42,24 @@ for (const packaged of process.env.LOCALINO_PACKAGED_TEST ? [true] : [false]) {
         return Promise.all(bad.map(value => window.localino.openTerminal(value).then(() => false, () => true)))
       })
       assert.deepEqual(results, [true, true])
+      const sessionId = await card.getAttribute('data-session-id')
+      const denied = await app.evaluate(async ({ BrowserWindow, app }, sessionId) => {
+        const { join } = process.getBuiltinModule('node:path')
+        const foreign = new BrowserWindow({ show: false, webPreferences: { preload: join(app.getAppPath(), 'out/preload/index.js'), sandbox: true, nodeIntegration: false, contextIsolation: true } })
+        try {
+          const url = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('view=usage')).webContents.getURL()
+          await foreign.loadURL(url)
+          return await foreign.webContents.executeJavaScript(`window.localino.openTerminal(${JSON.stringify({ sessionId, viewId: 'foreign', columns: 80, rows: 12 })}).then(()=>false,()=>true)`)
+        } finally { foreign.destroy() }
+      }, sessionId)
+      assert.equal(denied, true)
+      await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('view=usage')).setMinimumSize(360, 460))
       for (const width of [420, 360, 900]) {
         await app.evaluate(({ BrowserWindow }, width) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('view=usage')).setSize(width, 640), width)
         await page.waitForTimeout(80)
+        const terminalText = await card.locator('.xterm-accessibility-tree').innerText()
+        assert.equal((terminalText.match(/Hello λ🌍/g) ?? []).length, 1)
+        assert.equal((terminalText.match(/second line/g) ?? []).length, 1)
       }
       await page.screenshot({ path: `test-results/terminal-${packaged ? 'packaged' : 'dev'}.png` })
       assert.deepEqual(errors, [])
@@ -53,20 +69,31 @@ for (const packaged of process.env.LOCALINO_PACKAGED_TEST ? [true] : [false]) {
         const { Worker } = process.getBuiltinModule('node:worker_threads')
         const { join } = process.getBuiltinModule('node:path')
         const worker = new Worker(join(app.getAppPath(), 'out/main/ink-worker.mjs'), { stdout: true, stderr: true })
-        let output = '', frames = 0
+        let output = ''
+        const frames = []
         worker.stdout.on('data', data => { output += data }); worker.stderr.on('data', data => { output += data })
         return new Promise((resolveProbe, reject) => {
           const timeout = setTimeout(() => { void worker.terminate(); reject(Error('Packaged Ink timeout')) }, 15000)
           worker.on('error', error => { clearTimeout(timeout); reject(error) })
           worker.on('message', frame => {
-            frames++
+            frames.push(frame)
             if (frame.data.includes('END')) worker.postMessage({ type: 'dispose' })
           })
           worker.once('exit', code => { clearTimeout(timeout); resolveProbe({ code, output, frames }) })
           for (let i = 1; i <= 5000; i++) worker.postMessage({ type: 'update', viewport: { viewId: 'probe', sessionId: 'probe', columns: 80, rows: 100 }, lines: [{ label: 'Unicode', text: 'λ'.repeat(i) + (i === 5000 ? '🌍 END' : '') }] })
         })
       })
-      assert.equal(probe.code, 0); assert.equal(probe.output, ''); assert.ok(probe.frames > 0)
+      assert.equal(probe.code, 0); assert.equal(probe.output, ''); assert.ok(probe.frames.length > 0)
+      const oracle = new headless.Terminal({ cols: 80, rows: 100, scrollback: 1000, convertEol: true, allowProposedApi: true })
+      try {
+        for (const frame of probe.frames) {
+          if (frame.reset) { oracle.reset(); oracle.resize(frame.columns, frame.rows) }
+          await new Promise(resolveWrite => oracle.write(frame.data, resolveWrite))
+        }
+        const content = Array.from({ length: oracle.buffer.active.length }, (_, index) => oracle.buffer.active.getLine(index)?.translateToString(true) ?? '').join('\n')
+        assert.equal((content.match(/λ/g) ?? []).length, 5000)
+        assert.equal((content.match(/🌍 END/g) ?? []).length, 1)
+      } finally { oracle.dispose() }
     } finally { await app.close() }
   })
 }

@@ -27,6 +27,9 @@ identity and bounded terminal dimensions. The main process checks the sending
 window and main frame, owns each subscription and supplies session content.
 Closing/reloading a window releases its views. The final subscription releases
 the worker; application shutdown waits for cleanup with a bounded fallback.
+Geometry changes create a fresh Ink projection with an explicit reset and new
+dimensions. xterm applies it after earlier writes finish, avoiding duplicate
+reflow from independently resizing xterm and applying Ink's old-geometry erase.
 
 Before text reaches Ink, control characters become visible symbols or escaped
 code points. **Ink Text does not itself escape arbitrary ANSI.** Newlines and
@@ -81,3 +84,8 @@ probe asserts content and cleanup rather than a minimum frame rate. It uses the
 actual bundled worker and an independent xterm buffer oracle instead of
 `ink-testing-library`, which would not exercise bundled Yoga, ANSI parsing or
 worker teardown.
+
+`npm run dev` runs Vite in watch mode. A main build plugin bundles Ink after
+Vite writes/cleans its output and watches worker sources. The cold-start and
+source-update regression is `node --test tests/terminal-dev.test.mjs`; it removes
+only generated worker output and restores its temporary source edit on exit.

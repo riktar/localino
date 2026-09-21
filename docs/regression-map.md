@@ -23,4 +23,5 @@ Run desktop suites serially: they share system focus and global shortcut registr
 - `tests/unit/terminal.test.ts`: visible escaping of provider control sequences and bounded viewport validation.
 - `tests/ink.test.mjs`: bundled Ink, 5,000 Unicode updates, independent streams, repeated mounts and worker cleanup.
 - `tests/terminal-ui.test.mjs`: embedded xterm, Unicode, sandbox, invalid IPC, resizing and packaged ASAR worker.
+- `tests/terminal-dev.test.mjs`: cold `npm run dev` and automatic worker regeneration after a source change (`npm run test:terminal:dev`, run serially because it rebuilds generated output).
 - These are feasibility checks. Full transcript retention, provider streaming and the large-dataset acceptance are separate sprint checks.

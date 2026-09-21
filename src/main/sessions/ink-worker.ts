@@ -7,7 +7,7 @@ export type InkRequest = { type: 'open' | 'update'; viewport: TerminalViewport; 
   | { type: 'dispose' }
 
 type Update = Extract<InkRequest, { viewport: TerminalViewport }>
-const views = new Map<string, { ink: InkViewport; deactivate: () => void; viewport: TerminalViewport }>()
+const views = new Map<string, { ink: InkViewport; deactivate: () => void; viewport: TerminalViewport; counter: { value: number } }>()
 const pending = new Map<string, Update>()
 let timer: NodeJS.Timeout | undefined
 let disposing = false
@@ -38,20 +38,25 @@ parentPort!.on('message', async (request: InkRequest) => {
 function apply(request: Update): void {
   const { viewport, lines } = request
   let view = views.get(viewport.viewId)
+  const counter = view?.counter ?? { value: 0 }
+  if (view && (view.viewport.columns !== viewport.columns || view.viewport.rows !== viewport.rows)) {
+    view.deactivate(); void view.ink.dispose(); views.delete(viewport.viewId); view = undefined
+  }
   if (!view) {
-    let sequence = 0, active = true
+    let active = true, reset = true
     let buffer = '', flush: NodeJS.Immediate | undefined
     const ink = new InkViewport(viewport.columns, viewport.rows, lines, data => {
       if (!active) return
       buffer += data
       if (!flush) flush = setImmediate(() => {
         flush = undefined
-        if (active) parentPort!.postMessage({ sessionId: viewport.sessionId, viewId: viewport.viewId, sequence: ++sequence, data: buffer })
+        if (active) parentPort!.postMessage({ sessionId: viewport.sessionId, viewId: viewport.viewId, sequence: ++counter.value, data: buffer, reset, columns: viewport.columns, rows: viewport.rows })
+        reset = false
         buffer = ''
       })
     })
-    view = { ink, deactivate: () => { active = false; if (flush) clearImmediate(flush); buffer = '' }, viewport }; views.set(viewport.viewId, view)
+    view = { ink, deactivate: () => { active = false; if (flush) clearImmediate(flush); buffer = '' }, viewport, counter }; views.set(viewport.viewId, view)
   } else {
-    view.ink.resize(viewport.columns, viewport.rows); view.ink.update(lines); view.viewport = viewport
+    view.ink.update(lines); view.viewport = viewport
   }
 }

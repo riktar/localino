@@ -18,6 +18,7 @@ test('bundled Ink renders 5,000 Unicode deltas across isolated virtual terminals
     if (frame.viewId === 'v0') completedFrames++
     assert.equal(frame.sequence, (sequences.get(frame.viewId) ?? 0) + 1)
     sequences.set(frame.viewId, frame.sequence)
+    if (frame.reset) { terminals.get(frame.viewId)?.reset(); terminals.get(frame.viewId)?.resize(frame.columns, frame.rows) }
     terminals.get(frame.viewId)?.write(frame.data)
   })
   const started = performance.now(), memory = process.memoryUsage().rss, cpu = process.cpuUsage()
@@ -40,12 +41,27 @@ test('bundled Ink renders 5,000 Unicode deltas across isolated virtual terminals
     assert.equal(progressive, true, 'Visible frames must precede completion')
     assert.ok(text(terminals.get('v1')).includes('isolated-1'))
     assert.ok(text(terminals.get('v2')).includes('isolated-2'))
+    const original = 'abcdefghijklmnopqrstuvwx'.repeat(5) + ' END'
+    for (const columns of [80, 20, 80, 10, 80]) {
+      const updated = `${original} ${columns}`
+      const before = sequences.get('v2')
+      worker.postMessage({ type: 'open', viewport: { viewId: 'v2', sessionId: 's2', columns, rows: 12 }, lines: [{ label: 'HEADER', text: updated }] })
+      const until = Date.now() + 2000
+      while (sequences.get('v2') === before && Date.now() < until) await pause(20)
+      await new Promise(resolveWrite => terminals.get('v2').write('', resolveWrite))
+      const content = text(terminals.get('v2')).split('\n').filter(Boolean)
+      assert.equal(content[0], 'HEADER')
+      assert.equal(content.slice(1).join(''), updated, `Exact updated output after resize to ${columns}`)
+    }
     for (let i = 0; i < 12; i++) {
       worker.postMessage({ type: 'close', viewId: 'v1' })
       await pause(20)
       sequences.delete('v1'); terminals.get('v1').reset()
       worker.postMessage({ type: 'open', viewport: { viewId: 'v1', sessionId: 's1', columns: 30 + i, rows: 100 }, lines: [{ label: 'Remount', text: `round-${i} 🌍` }] })
       await pause(50)
+      const until = Date.now() + 2000
+      while (!text(terminals.get('v1')).includes(`round-${i} 🌍`) && Date.now() < until) await pause(20)
+      assert.ok(text(terminals.get('v1')).includes(`round-${i} 🌍`))
     }
     assert.equal(output, '')
     console.log(JSON.stringify({ ink: '7.1.1', deltas: 5000, instances: 3, elapsedMs: performance.now() - started, rssGrowthBytes: process.memoryUsage().rss - memory, cpu: process.cpuUsage(cpu), streamingFrames: completedFrames, frames: Object.fromEntries(sequences) }))

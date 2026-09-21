@@ -10,6 +10,7 @@ export function SessionTerminal({ sessionId }: { sessionId: string }): React.JSX
     const host = container.current!
     const viewId = crypto.randomUUID()
     let disposed = false, sequence = 0
+    let writes = Promise.resolve()
     const terminal = new Terminal({
       cols: 60, rows: 12, disableStdin: true, convertEol: true,
       fontFamily: 'Cascadia Mono, Menlo, Consolas, monospace', fontSize: 12,
@@ -29,11 +30,15 @@ export function SessionTerminal({ sessionId }: { sessionId: string }): React.JSX
       if (frame.error) { setError(frame.error); return }
       if (frame.sequence !== sequence + 1) { setError('Output interrupted. Reopen this session.'); return }
       sequence = frame.sequence
-      terminal.write(frame.data)
+      // xterm parses writes asynchronously; finish old bytes before a repaint.
+      writes = writes.then(() => new Promise<void>(resolveWrite => {
+        if (disposed) { resolveWrite(); return }
+        if (frame.reset) { terminal.reset(); terminal.resize(frame.columns!, frame.rows!) }
+        terminal.write(frame.data, resolveWrite)
+      }))
     })
     const resize = () => {
       const columns = Math.max(10, Math.min(240, Math.floor((host.clientWidth - 20) / 7.3)))
-      terminal.resize(columns, 12)
       void window.localino.openTerminal({ sessionId, viewId, columns, rows: 12 }).catch(() => { if (!disposed) setError('Terminal unavailable. Reopen this session.') })
     }
     const observer = new ResizeObserver(resize)

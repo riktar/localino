@@ -1,9 +1,11 @@
 import { build } from 'esbuild'
 import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 // Ink/Yoga use ESM top-level await. Keep a dedicated, self-contained Node worker
 // inside ASAR; neither Electron main nor its sandboxed renderer imports Ink.
-await build({
+export async function buildInk() { return build({
   entryPoints: ['src/main/sessions/ink-worker.ts'], outfile: 'out/main/ink-worker.mjs',
   bundle: true, platform: 'node', target: 'node22', format: 'esm',
   banner: { js: "import { createRequire as __localinoCreateRequire } from 'node:module'; const require = __localinoCreateRequire(import.meta.url);" },
@@ -20,4 +22,6 @@ await build({
     }))
   } }],
   logLevel: 'warning',
-})
+}) }
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await buildInk()
