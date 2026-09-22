@@ -123,3 +123,9 @@ tool, status and protocol events in the conversation. Use **Load earlier message
 to move back through long sessions; when manual scrolling pauses follow mode,
 **Latest messages** or **New messages** returns to the live end. See
 [storage and privacy](docs/sessions.md#local-conversation-history).
+
+When an owned CLI asks for approval or input, Localino shows a separate action
+card with the session, action, risk and target. **Approve once** never creates a
+persistent policy; **Deny**, supported choices and text responses are correlated
+to that single request. Unsupported or secret prompts remain visible as action
+required and can only be cleared by the provider or by stopping the session.

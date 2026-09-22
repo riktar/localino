@@ -116,6 +116,29 @@ tool activity or protocol status in chat history. Existing technical records fro
 older builds are ignored by the conversation projection. History is not sent to
 telemetry, application logs or Clipboard automatically.
 
+## Approval and input cards
+
+Approval and input requests are displayed outside conversation history. Each card
+names the Localino session and shows the action, reason/risk and target. Provider
+request IDs stay in the main process; the renderer receives a fresh local ID and
+can answer it only for the owning session. **Approve once** sends only the
+provider's one-request decision. Localino never selects a session-wide grant,
+rewrites provider policy or reuses an approval.
+
+Codex command/file approvals and supported user-input questions, Claude
+`can_use_tool`, Pi confirm/select/input/editor, and OpenCode permission/questions
+use their documented correlated replies. Codex permission-profile grants, Claude
+opaque dialogs, secret prompts and malformed shapes show **Action required —
+unsupported in Localino** and send no reply. Stop remains available.
+
+The main process moves a request to submitting before writing. A second click,
+foreign session ID, stale provider resolution, timeout or turn completion cannot
+write another response. HTTP/transport ambiguity is shown as failed and is never
+retried. Pending interactions are not persisted: after restart the recovered
+draft/message area contains no actionable approval and nothing is approved
+automatically. Submitted answer text and raw provider envelopes are not logged or
+added to conversation storage.
+
 The output cache is bounded (100 recent events / 2 MiB), and event identity uses a
 fixed 1 MiB Bloom index with exact disk lookup for positives. False positives
 never suppress events. Small per-item state grows with item count, not response
@@ -145,9 +168,9 @@ event IDs, not the amount of text in a response.
 
 Arbitrary tool argument objects, authentication envelopes, environment, image
 data and raw stderr/server logs are excluded. Provider text itself may contain
-sensitive information. No automatic approval, policy update or input response is
-sent. Approval and input controls will use their dedicated interaction flow rather
-than appearing as transcript rows.
+sensitive information. No automatic approval or policy update is sent. Approval
+and supported input responses use the dedicated, one-request interaction flow
+above rather than appearing as transcript rows.
 
 JSONL records, SSE records and HTTP responses are bounded to 2 MiB before parsing;
 invalid UTF-8 is rejected instead of silently replaced. Reconnection checks the

@@ -27,7 +27,7 @@ import { workerReader } from './agents/worker-reader'
 import { agentLabels, agentCapabilities, isAgentId, isLocalAgentId, isAgentPeriod, type AgentId, type AgentResult, type LocalAgentId } from '../shared/agents'
 import { SessionSupervisor } from './sessions/supervisor'
 import { SessionRecoveryStore } from './sessions/recovery'
-import { isSessionDelivery, isSessionDraft, isSessionText } from '../shared/sessions'
+import { isSessionDelivery, isSessionDraft, isSessionInteractionResponse, isSessionText } from '../shared/sessions'
 import { isTerminalViewport, type ChatHistory, type TerminalLine } from '../shared/terminal'
 import { TerminalBridge } from './sessions/terminal-bridge'
 import { TranscriptClient } from './sessions/transcript-client'
@@ -459,6 +459,10 @@ if (!app.requestSingleInstanceLock()) {
     handle('localino:stop-live-session',(_owner,value)=>{if(typeof value!=='string'||value.length>128)throw Error('Invalid session');return liveSessions.stop(value)})
     handle('localino:send-live-session',(_owner,value)=>{if(!isSessionText(value))throw Error('Invalid message');return liveSessions.send(value.sessionId,value.text)})
     handle('localino:cancel-live-delivery',(_owner,value)=>{if(!isSessionDelivery(value))throw Error('Invalid delivery');return liveSessions.cancel(value.sessionId,value.deliveryId)})
+    handle('localino:respond-session-interaction',async(owner,value)=>{
+      if(owner!==panel||!isSessionInteractionResponse(value))throw Error('Access denied')
+      return liveSessions.respond(value)
+    })
     handle('localino:set-live-session-draft',(_owner,value)=>{if(!isSessionDraft(value))throw Error('Invalid draft');return liveSessions.setDraft(value.sessionId,value.text)})
     handle('localino:discard-recovered-session',(_owner,value)=>{if(typeof value!=='string'||value.length>128)throw Error('Invalid recovered session');return liveSessions.discardRecovered(value)})
     handle('localino:refresh-history',(_owner,value)=>{const id=localId(value);if(!agentCapabilities[id].history)throw Error('Reader unavailable');return histories[id].refresh()})

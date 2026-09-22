@@ -7,11 +7,13 @@ import { SessionRecoveryStore } from '../../src/main/sessions/recovery'
 import { SessionSupervisor } from '../../src/main/sessions/supervisor'
 import type { LiveSession } from '../../src/shared/sessions'
 
-function session(projectPath:string):LiveSession{return {id:'local-one',agent:'codex',protocol:'codex-app-server',projectPath,projectName:'project',providerSessionId:'provider-one',status:'running',createdAt:1,turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,updatedAt:1,error:null,draft:'riga uno\nemoji 🧪',deliveries:[{id:'delivery-one',text:'messaggio\n🌍',createdAt:2,status:'queued',error:null}]}}
+function session(projectPath:string):LiveSession{return {id:'local-one',agent:'codex',protocol:'codex-app-server',projectPath,projectName:'project',providerSessionId:'provider-one',status:'running',createdAt:1,turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,updatedAt:1,error:null,draft:'riga uno\nemoji 🧪',deliveries:[{id:'delivery-one',text:'messaggio\n🌍',createdAt:2,status:'queued',error:null}],interactions:[]}}
 
 test('drafts and unresolved deliveries survive restart as suspended without changing text',()=>{
   const directory=mkdtempSync(join(tmpdir(),'localino-recovery-')),file=join(directory,'sessions.json'),store=new SessionRecoveryStore(file),original=session(directory)
+  original.interactions=[{id:'local-interaction',kind:'approval',status:'pending',title:'Must not persist',detail:'PRIVATE_INTERACTION',target:'secret-target',createdAt:3,questions:[],cancelable:false,resolution:null,error:null}]
   assert.equal(store.save(original),true)
+  assert.equal(readFileSync(file,'utf8').includes('PRIVATE_INTERACTION'),false)
   const restored=new SessionRecoveryStore(file).state[0]
   assert.equal(restored.draft,original.draft)
   assert.equal(restored.deliveries[0].text,original.deliveries[0].text)

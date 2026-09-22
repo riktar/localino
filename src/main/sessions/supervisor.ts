@@ -5,10 +5,11 @@ import { basename, resolve } from 'node:path'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from 'node:child_process'
 import { agentIds, type AgentId } from '../../shared/agents'
-import { initialLiveSessions, sessionProtocols, type LiveSession, type LiveSessionsState, type SessionCapability, type SessionDelivery, type SessionResult } from '../../shared/sessions'
+import { initialLiveSessions, sessionProtocols, type LiveSession, type LiveSessionsState, type SessionCapability, type SessionDelivery, type SessionInteraction, type SessionInteractionQuestion, type SessionInteractionResponse, type SessionResult } from '../../shared/sessions'
+import { terminalText } from '../../shared/terminal'
 import { SessionRecoveryStore } from './recovery'
 import type { TranscriptClient } from './transcript-client'
-import { CodexTranscript, ProviderTranscript, object } from './provider-transcript'
+import { array, CodexTranscript, ProviderTranscript, object, string } from './provider-transcript'
 import { ClaudeTranscript } from './claude-transcript'
 import { PiTranscript } from './pi-transcript'
 import { OpenCodeTranscript } from './opencode-transcript'
@@ -29,6 +30,7 @@ interface ManagedSession {
   buffer: JsonlBuffer
   requestSequence: number
   pending: Map<number,string>
+  interactions: Map<string,ProviderInteraction>
   endpoint?: string
   authorization?: string
   poll?: NodeJS.Timeout
@@ -50,6 +52,29 @@ interface ManagedSession {
   activeCodexTurn?: string
   completedCodexTurns: Set<string>
   stopping: boolean
+}
+
+type InteractionProviderKind = 'codex-approval'|'codex-input'|'claude-approval'|'pi-confirm'|'pi-value'|'opencode-permission'|'opencode-permission-v2'|'opencode-question'
+interface ProviderInteraction {
+  view: SessionInteraction
+  providerKind: InteractionProviderKind|'unsupported'
+  providerRequestId: string|number
+  providerSessionId: string|null
+  providerKey: string
+  timer?: NodeJS.Timeout
+}
+
+interface InteractionDraft {
+  providerKind: ProviderInteraction['providerKind']
+  providerRequestId: string|number
+  providerKey: string
+  kind: SessionInteraction['kind']
+  title: string
+  detail?: string
+  target?: string
+  questions?: SessionInteractionQuestion[]
+  cancelable?: boolean
+  timeout?: number
 }
 
 const executableNames:Record<AgentId,string>={codex:'codex',claude:'claude',pi:'pi',opencode:'opencode'}
@@ -100,6 +125,23 @@ function sanitizedVersion(output:string):string|null {
   return line&&line.length<=160&&!/[\\/]/.test(line)?line:null
 }
 
+function displayText(value:unknown,fallback='Unavailable',limit=4000):string {
+  const text=typeof value==='string'&&value.trim()?terminalText(value.trim()):fallback
+  return text.length<=limit?text:`${text.slice(0,limit-1)}…`
+}
+
+function questionId(value:unknown,fallback:string):string {
+  return typeof value==='string'&&/^[\w-]{1,128}$/.test(value)?value:fallback
+}
+
+function questionOptions(value:unknown):SessionInteractionQuestion['options'] {
+  return array(value).slice(0,32).flatMap(entry=>{
+    if(typeof entry==='string')return [{label:displayText(entry,'Option',200),description:''}]
+    const option=object(entry),label=string(option?.label)
+    return label?[{label:displayText(label,'Option',200),description:displayText(option?.description,'',500)}]:[]
+  })
+}
+
 export async function resolveAgentBinary(agent:AgentId):Promise<{path:string;version:string|null}|null> {
   const override=process.env[`LOCALINO_${agent.toUpperCase()}_PATH`]
   let candidate=override&&existsSync(override)?resolve(override):null
@@ -128,7 +170,7 @@ async function freePort():Promise<number>{
 
 const copyState=(capabilities:Record<AgentId,SessionCapability>,sessions:Map<string,ManagedSession>,recovery:SessionRecoveryStore):LiveSessionsState=>({
   capabilities:Object.fromEntries(agentIds.map(id=>[id,{...capabilities[id]}])) as Record<AgentId,SessionCapability>,
-  sessions:[...sessions.values()].map(item=>({...item.view,deliveries:item.view.deliveries.map(delivery=>({...delivery}))})).sort((a,b)=>a.createdAt-b.createdAt),
+  sessions:[...sessions.values()].map(item=>({...item.view,deliveries:item.view.deliveries.map(delivery=>({...delivery})),interactions:item.view.interactions.map(interaction=>({...interaction,questions:interaction.questions.map(question=>({...question,options:question.options.map(option=>({...option}))}))}))})).sort((a,b)=>a.createdAt-b.createdAt),
   recovered:recovery.state.filter(item=>!sessions.has(item.id)),
   persistenceError:recovery.error,
 })
@@ -159,7 +201,7 @@ export class SessionSupervisor extends EventEmitter {
     const binary=this.binaries.get(agent)
     if(!binary)return {ok:false,error:`${executableNames[agent]} binary is unavailable.`}
     const id=randomUUID(),now=Date.now(),providerSessionId=agent==='claude'?randomUUID():null
-    const view:LiveSession={id,agent,protocol:sessionProtocols[agent],projectPath:directory,projectName:basename(directory)||directory,providerSessionId,status:'starting',createdAt:now,turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,updatedAt:now,error:null,deliveries:[],draft:''}
+    const view:LiveSession={id,agent,protocol:sessionProtocols[agent],projectPath:directory,projectName:basename(directory)||directory,providerSessionId,status:'starting',createdAt:now,turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,updatedAt:now,error:null,deliveries:[],interactions:[],draft:''}
     try{
       await this.transcripts?.create({sessionId:id,provider:agent,projectPath:directory,projectName:view.projectName})
       if(this.disposed)return {ok:false,error:'Session supervisor is shutting down.'}
@@ -171,7 +213,7 @@ export class SessionSupervisor extends EventEmitter {
       const pump=new TranscriptPump(this.transcripts,message=>this.outputFailure(managed,message))
       const Adapter={codex:CodexTranscript,claude:ClaudeTranscript,pi:PiTranscript,opencode:OpenCodeTranscript}[agent]
       const output=new Adapter(id,agent,events=>pump.push(events))
-      const managed:ManagedSession={view,child,output,pump,lastPiRunTimestamp:-1,buffer:new JsonlBuffer(),requestSequence:0,pending:new Map(),deliveryDeadlines:new Map(),lastContactAt:now,generation:0,completedPiRuns:new Set(),piCanSettle:false,completedClaudeMessages:new Set(),completedClaudeResults:new Set(),completedCodexTurns:new Set(),stopping:false,...(port&&password?{endpoint:`http://127.0.0.1:${port}`,authorization:`Basic ${Buffer.from(`localino:${password}`).toString('base64')}`}:{})}
+      const managed:ManagedSession={view,child,output,pump,lastPiRunTimestamp:-1,buffer:new JsonlBuffer(),requestSequence:0,pending:new Map(),interactions:new Map(),deliveryDeadlines:new Map(),lastContactAt:now,generation:0,completedPiRuns:new Set(),piCanSettle:false,completedClaudeMessages:new Set(),completedClaudeResults:new Set(),completedCodexTurns:new Set(),stopping:false,...(port&&password?{endpoint:`http://127.0.0.1:${port}`,authorization:`Basic ${Buffer.from(`localino:${password}`).toString('base64')}`}:{})}
       this.sessions.set(id,managed);this.attach(managed);this.changed()
       return {ok:true,sessionId:id}
     }catch{return {ok:false,error:'Could not start the agent process.'}}
@@ -180,7 +222,7 @@ export class SessionSupervisor extends EventEmitter {
     const session=this.sessions.get(id);if(!session)return {ok:false,error:'Session not found.'}
     if(session.view.status==='stopped')return {ok:true,sessionId:id}
     const wasRunning=session.view.status==='running'||session.view.status==='waiting'
-    session.stopping=true;session.generation++;this.clearTimers(session);this.update(session,{status:'stopping',error:null})
+    session.stopping=true;session.generation++;this.expireInteractions(session,'Session stopped.');this.clearTimers(session);this.update(session,{status:'stopping',error:null})
     session.stream?.abort();session.output.terminate('Session stopped by user.','interrupted')
     if(session.poll)clearInterval(session.poll)
     try{
@@ -220,6 +262,51 @@ export class SessionSupervisor extends EventEmitter {
     const delivery=session.view.deliveries.find(item=>item.id===deliveryId)
     if(!delivery||delivery.status!=='queued')return {ok:false,error:'Only queued messages can be cancelled.'}
     delivery.status='cancelled';session.view.updatedAt=Date.now();const saved=this.persist(session);this.changed();return saved?{ok:true,sessionId:deliveryId}:{ok:false,error:this.recovery.error??'Could not save the cancellation.'}
+  }
+  async respond(value:SessionInteractionResponse):Promise<SessionResult>{
+    const session=this.sessions.get(value.sessionId)
+    if(!session)return {ok:false,error:'Session not found.'}
+    const pending=session.interactions.get(value.interactionId),view=pending?.view
+    if(!pending||!view||view.status!=='pending')return {ok:false,error:'Request expired.'}
+    if(session.stopping||session.view.status==='stopped'||pending.providerSessionId!==session.view.providerSessionId)return this.staleInteraction(session,pending,'Request expired.')
+    if(view.kind==='unsupported'||pending.providerKind==='unsupported')return {ok:false,error:'This request is unsupported in Localino.'}
+    if(view.kind==='approval'&&!['approve','deny'].includes(value.action))return {ok:false,error:'Invalid decision.'}
+    if(view.kind==='input'&&!['submit','cancel'].includes(value.action))return {ok:false,error:'Invalid response.'}
+    if(value.action==='cancel'&&!view.cancelable)return {ok:false,error:'This request cannot be cancelled safely.'}
+    let ordered:string[][]=[]
+    if(value.action==='submit'){
+      const answers=value.answers??{}
+      if(Object.keys(answers).some(id=>!view.questions.some(question=>question.id===id)))return {ok:false,error:'Invalid answer.'}
+      ordered=view.questions.map(question=>answers[question.id]??[])
+      for(let index=0;index<view.questions.length;index++){
+        const question=view.questions[index],answer=ordered[index]
+        if(!answer.length||(!question.multiple&&answer.length!==1))return {ok:false,error:'Answer every question.'}
+        if(!question.allowOther&&question.options.length&&answer.some(item=>!question.options.some(option=>option.label===item)))return {ok:false,error:'Choose a listed option.'}
+      }
+    }
+    view.status='submitting';view.error=null;this.touch(session)
+    try{
+      const approve=value.action==='approve',deny=value.action==='deny',cancel=value.action==='cancel'
+      if(pending.providerKind==='codex-approval')this.write(session,{id:pending.providerRequestId,result:{decision:approve?'accept':'decline'}})
+      else if(pending.providerKind==='codex-input')this.write(session,{id:pending.providerRequestId,result:{answers:Object.fromEntries(view.questions.map((question,index)=>[question.id,{answers:ordered[index]}]))}})
+      else if(pending.providerKind==='claude-approval')this.write(session,{type:'control_response',response:{subtype:'success',request_id:pending.providerRequestId,response:approve?{behavior:'allow'}:{behavior:'deny',message:'Denied in Localino.'}}})
+      else if(pending.providerKind==='pi-confirm')this.write(session,{type:'extension_ui_response',id:pending.providerRequestId,...(cancel?{cancelled:true}:{confirmed:approve})})
+      else if(pending.providerKind==='pi-value')this.write(session,{type:'extension_ui_response',id:pending.providerRequestId,...(cancel?{cancelled:true}:{value:ordered[0][0]})})
+      else if(pending.providerKind==='opencode-permission'||pending.providerKind==='opencode-permission-v2'){
+        const path=pending.providerKind==='opencode-permission'?`/session/${encodeURIComponent(session.view.providerSessionId!)}/permissions/${encodeURIComponent(String(pending.providerRequestId))}`:`/permission/${encodeURIComponent(String(pending.providerRequestId))}/reply`
+        const body=pending.providerKind==='opencode-permission'?{response:approve?'once':'reject'}:{reply:approve?'once':'reject'}
+        await this.request(session,path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})
+      }else if(pending.providerKind==='opencode-question'){
+        const path=`/question/${encodeURIComponent(String(pending.providerRequestId))}/${cancel?'reject':'reply'}`
+        await this.request(session,path,{method:'POST',...(cancel?{}:{headers:{'content-type':'application/json'},body:JSON.stringify({answers:ordered})})})
+      }
+      if(view.status!=='submitting')return {ok:false,error:'Request expired.'}
+      this.finishInteraction(session,pending,cancel?'cancelled':approve?'approved':deny?'denied':'submitted')
+      return {ok:true,sessionId:view.id}
+    }catch{
+      if(view.status==='submitting'){view.status='failed';view.error='Response outcome is unknown. It was not retried.';this.touch(session)}
+      return {ok:false,error:view.error??'Request expired.'}
+    }
   }
   suspend():void{
     for(const session of this.sessions.values()){
@@ -293,6 +380,7 @@ export class SessionSupervisor extends EventEmitter {
     if(session.view.agent==='codex')this.codexRecord(session,value)
     else if(session.view.agent==='pi')this.piRecord(session,value)
     else if(session.view.agent==='claude')this.claudeRecord(session,value)
+    if(terminal&&acceptedTerminal)this.expireInteractions(session,'The turn ended before a response was sent.')
     if(!terminal&&!session.stopping)this.outputRecord(session,value)
   }
   private outputRecord(session:ManagedSession,value:Record<string,unknown>):void {
@@ -331,8 +419,11 @@ export class SessionSupervisor extends EventEmitter {
       if(params?.threadId!==session.view.providerSessionId||typeof id!=='string'||session.completedCodexTurns.has(id)||session.activeCodexTurn&&session.activeCodexTurn!==id)return
       session.activeCodexTurn=id;this.confirmSendingFromLifecycle(session);this.update(session,{status:'running',turnStartedAt:this.codexStartedAt(params),turnElapsedMs:null,lastTurnOutcome:null,error:null})
     }
-    if(['item/commandExecution/requestApproval','item/fileChange/requestApproval','item/tool/requestUserInput','item/permissions/requestApproval'].includes(String(value.method)))this.update(session,{status:'waiting'})
-    if(value.method==='serverRequest/resolved'&&session.view.status==='waiting')this.update(session,{status:'running'})
+    if(['item/commandExecution/requestApproval','item/fileChange/requestApproval','item/tool/requestUserInput','item/permissions/requestApproval'].includes(String(value.method)))this.codexInteraction(session,value)
+    if(value.method==='serverRequest/resolved'){
+      const requestId=object(value.params)?.requestId
+      if(typeof requestId==='string'||typeof requestId==='number')this.providerResolved(session,`codex:${requestId}`)
+    }
     if(value.method==='turn/completed'){
       const turn=params?.turn as {id?:unknown;status?:unknown}|undefined,id=turn?.id,status=turn?.status
       if(params?.threadId!==session.view.providerSessionId||typeof id!=='string'||session.activeCodexTurn!==id||session.completedCodexTurns.has(id))return
@@ -381,14 +472,14 @@ export class SessionSupervisor extends EventEmitter {
       session.piCanSettle=true;session.piTurnOutcome=message?.stopReason==='error'?'failed':message?.stopReason==='aborted'?'interrupted':'completed'
     }
     if(value.type==='agent_settled'&&session.activePiRun&&session.piCanSettle){session.completedPiRuns.add(session.activePiRun);if(session.completedPiRuns.size>32)session.completedPiRuns.delete(session.completedPiRuns.values().next().value!);session.activePiRun=undefined;session.piCanSettle=false;this.idle(session,session.piTurnOutcome??'completed')}
-    if(value.type==='extension_ui_request'&&['select','confirm','input','editor'].includes(String(value.method)))this.update(session,{status:'waiting'})
+    if(value.type==='extension_ui_request'&&['select','confirm','input','editor'].includes(String(value.method)))this.piInteraction(session,value)
   }
   private claudeRecord(session:ManagedSession,value:Record<string,unknown>):void{
     if(value.type==='system'&&value.subtype==='init'){
       if(value.session_id!==session.view.providerSessionId)return this.fail(session,'Claude returned a different session identity.')
       if(session.view.status==='starting'||session.view.status==='unknown')this.update(session,{status:'idle',error:null})
     }
-    if(value.type!=='system'&&value.session_id!==session.view.providerSessionId)return
+    if(!['system','control_request','control_cancel_request'].includes(String(value.type))&&value.session_id!==session.view.providerSessionId)return
     if(value.type==='user'&&value.session_id===session.view.providerSessionId){
       const delivery=session.view.deliveries.find(item=>item.status==='sending'),message=value.message as {content?:unknown}|undefined
       const content=Array.isArray(message?.content)?message.content:[],text=content.filter((item):item is {type:'text';text:string}=>Boolean(item)&&typeof item==='object'&&(item as {type?:unknown}).type==='text'&&typeof (item as {text?:unknown}).text==='string').map(item=>item.text).join('')
@@ -403,7 +494,10 @@ export class SessionSupervisor extends EventEmitter {
       session.completedClaudeResults.add(id);session.completedClaudeMessages.add(session.activeClaudeMessage);if(session.completedClaudeResults.size>32)session.completedClaudeResults.delete(session.completedClaudeResults.values().next().value!);if(session.completedClaudeMessages.size>32)session.completedClaudeMessages.delete(session.completedClaudeMessages.values().next().value!);session.activeClaudeMessage=undefined
       this.idle(session,value.subtype==='success'&&value.is_error!==true?'completed':value.subtype==='interrupted'?'interrupted':'failed')
     }
-    if(value.type==='control_request')this.update(session,{status:'waiting'})
+    if(value.type==='control_request')this.claudeInteraction(session,value)
+    if(value.type==='control_cancel_request'){
+      const requestId=value.request_id;if(typeof requestId==='string')this.providerResolved(session,`claude:${requestId}`)
+    }
   }
   private async startOpenCode(session:ManagedSession):Promise<void>{
     const generation=session.generation
@@ -461,7 +555,7 @@ export class SessionSupervisor extends EventEmitter {
         }
         await readProviderEvents(response,event=>{
           if(signal.aborted||session.stopping)return
-          session.lastContactAt=Date.now();this.outputRecord(session,event)
+          session.lastContactAt=Date.now();this.openCodeInteraction(session,event);this.outputRecord(session,event)
           if(output.settled)this.idle(session,output.outcome)
         })
         if(!signal.aborted)throw Error('Event stream ended.')
@@ -470,6 +564,103 @@ export class SessionSupervisor extends EventEmitter {
         output.disconnected();this.update(session,{status:'unknown',error:'OpenCode output disconnected. Recovering from the same owned server.'});reconnect=true
         await new Promise<void>(resolveWait=>{const done=():void=>{clearTimeout(timer);signal.removeEventListener('abort',done);resolveWait()},timer=setTimeout(done,500);signal.addEventListener('abort',done,{once:true})})
       }finally{await response?.body?.cancel().catch(()=>{})}
+    }
+  }
+  private addInteraction(session:ManagedSession,draft:InteractionDraft):void {
+    if([...session.interactions.values()].some(item=>item.providerKey===draft.providerKey))return
+    const id=randomUUID(),view:SessionInteraction={id,kind:draft.kind,status:draft.providerKind==='unsupported'?'unsupported':'pending',title:displayText(draft.title,'Action required',200),detail:displayText(draft.detail,'Review this request before continuing.'),target:displayText(draft.target,session.view.projectPath),createdAt:Date.now(),questions:draft.questions??[],cancelable:draft.cancelable===true,resolution:null,error:draft.providerKind==='unsupported'?'Action required — unsupported in Localino':null}
+    const pending:ProviderInteraction={view,providerKind:draft.providerKind,providerRequestId:draft.providerRequestId,providerSessionId:session.view.providerSessionId,providerKey:draft.providerKey}
+    session.interactions.set(id,pending);session.view.interactions.push(view)
+    while(session.view.interactions.length>20){
+      const removable=session.view.interactions.findIndex(item=>!['pending','submitting','unsupported'].includes(item.status));if(removable<0)break
+      const [removed]=session.view.interactions.splice(removable,1);const stored=session.interactions.get(removed.id);if(stored?.timer)clearTimeout(stored.timer);session.interactions.delete(removed.id)
+    }
+    if(draft.timeout&&Number.isSafeInteger(draft.timeout)&&draft.timeout>0){
+      pending.timer=setTimeout(()=>this.providerResolved(session,draft.providerKey,'Request timed out.'),Math.min(draft.timeout,60*60*1000));pending.timer.unref()
+    }
+    this.update(session,{status:'waiting',error:null})
+  }
+  private finishInteraction(session:ManagedSession,pending:ProviderInteraction,resolution:Exclude<SessionInteraction['resolution'],null>):void {
+    if(pending.timer){clearTimeout(pending.timer);pending.timer=undefined}
+    pending.view.status='resolved';pending.view.resolution=resolution;pending.view.error=null
+    if(session.view.status==='waiting'&&!this.hasBlockingInteraction(session))this.update(session,{status:'running',error:null})
+    else this.touch(session)
+  }
+  private staleInteraction(session:ManagedSession,pending:ProviderInteraction,message:string):SessionResult {
+    if(pending.timer){clearTimeout(pending.timer);pending.timer=undefined}
+    pending.view.status='stale';pending.view.error=message
+    if(session.view.status==='waiting'&&!this.hasBlockingInteraction(session))this.update(session,{status:'running',error:null})
+    else this.touch(session)
+    return {ok:false,error:message}
+  }
+  private providerResolved(session:ManagedSession,providerKey:string,message='Request was resolved elsewhere.'):void {
+    const pending=[...session.interactions.values()].find(item=>item.providerKey===providerKey)
+    if(pending&&['pending','submitting','unsupported'].includes(pending.view.status))this.staleInteraction(session,pending,message)
+  }
+  private expireInteractions(session:ManagedSession,message:string):void {
+    let changed=false
+    for(const pending of session.interactions.values())if(['pending','submitting','unsupported'].includes(pending.view.status)){
+      if(pending.timer){clearTimeout(pending.timer);pending.timer=undefined}
+      pending.view.status='stale';pending.view.error=message;changed=true
+    }
+    if(changed)this.touch(session)
+  }
+  private hasBlockingInteraction(session:ManagedSession):boolean {
+    return session.view.interactions.some(item=>['pending','submitting','unsupported'].includes(item.status))
+  }
+  private codexInteraction(session:ManagedSession,value:Record<string,unknown>):void {
+    const method=string(value.method),params=object(value.params),requestId=value.id
+    if(!method||!params||(typeof requestId!=='string'&&typeof requestId!=='number')||params.threadId!==session.view.providerSessionId)return
+    if(typeof params.turnId==='string'&&session.activeCodexTurn&&params.turnId!==session.activeCodexTurn)return
+    const key=`codex:${requestId}`
+    if(method==='item/permissions/requestApproval'){
+      this.addInteraction(session,{providerKind:'unsupported',providerRequestId:requestId,providerKey:key,kind:'unsupported',title:'Permission grant',detail:'This Codex permission grant has no safe one-time deny contract.',target:session.view.projectPath});return
+    }
+    if(method==='item/tool/requestUserInput'){
+      const raw=array(params.questions).slice(0,32),secret=raw.some(entry=>object(entry)?.isSecret===true)
+      const questions=raw.flatMap((entry,index)=>{const question=object(entry);if(!question)return [];const options=questionOptions(question.options);return [{id:questionId(question.id,`question-${index+1}`),label:displayText(question.header,`Question ${index+1}`,100),prompt:displayText(question.question,'Input required'),control:options.length?'choice':'text',options,multiple:false,allowOther:question.isOther===true}] satisfies SessionInteractionQuestion[]})
+      if(secret||!questions.length){this.addInteraction(session,{providerKind:'unsupported',providerRequestId:requestId,providerKey:key,kind:'unsupported',title:secret?'Secret input':'Unsupported input request',detail:secret?'Secret prompts are not collected by Localino.':'The request has no supported questions.',target:session.view.projectPath});return}
+      this.addInteraction(session,{providerKind:'codex-input',providerRequestId:requestId,providerKey:key,kind:'input',title:'Input requested',detail:'Codex is waiting for your response.',target:displayText(params.itemId,session.view.projectPath),questions});return
+    }
+    const command=string(params.command),cwd=string(params.cwd),grantRoot=string(params.grantRoot),host=string(object(params.networkApprovalContext)?.host)
+    this.addInteraction(session,{providerKind:'codex-approval',providerRequestId:requestId,providerKey:key,kind:'approval',title:method==='item/fileChange/requestApproval'?'File change approval':'Command approval',detail:displayText(params.reason,method==='item/fileChange/requestApproval'?'The model wants to change files.':'The model wants to run a command.'),target:[command,grantRoot,cwd,host].filter(Boolean).map(item=>displayText(item,'')).join('\n')||session.view.projectPath})
+  }
+  private claudeInteraction(session:ManagedSession,value:Record<string,unknown>):void {
+    const requestId=value.request_id,request=object(value.request),subtype=string(request?.subtype)
+    if(typeof requestId!=='string'||!request||!subtype)return
+    const key=`claude:${requestId}`
+    if(subtype!=='can_use_tool'){
+      this.addInteraction(session,{providerKind:'unsupported',providerRequestId:requestId,providerKey:key,kind:'unsupported',title:'Claude dialog',detail:'Action required — unsupported in Localino',target:displayText(subtype,'Unknown dialog')});return
+    }
+    const input=object(request.input),safeTarget=['command','path','file_path','filePath','url'].flatMap(name=>typeof input?.[name]==='string'?[displayText(input[name],'')]:[])
+    this.addInteraction(session,{providerKind:'claude-approval',providerRequestId:requestId,providerKey:key,kind:'approval',title:`Use ${displayText(request.tool_name,'tool',100)}`,detail:displayText(request.decision_reason,'Claude is asking to use a tool.'),target:[displayText(request.blocked_path,'',1000),...safeTarget].filter(Boolean).join('\n')||session.view.projectPath})
+  }
+  private piInteraction(session:ManagedSession,value:Record<string,unknown>):void {
+    const requestId=value.id,method=string(value.method)
+    if(typeof requestId!=='string'||!method)return
+    const key=`pi:${requestId}`,timeout=typeof value.timeout==='number'?value.timeout:undefined,title=displayText(value.title,method==='confirm'?'Approval requested':'Input requested',200)
+    if(method==='confirm'){
+      this.addInteraction(session,{providerKind:'pi-confirm',providerRequestId:requestId,providerKey:key,kind:'approval',title,detail:displayText(value.message,'Pi is asking for confirmation.'),target:session.view.projectPath,cancelable:true,timeout});return
+    }
+    const options=method==='select'?questionOptions(value.options):[],question:SessionInteractionQuestion={id:'value',label:title,prompt:method==='editor'?'Enter multiline text.':method==='input'?displayText(value.placeholder,'Enter a value.'):displayText(value.title,'Choose an option.'),control:method==='editor'?'multiline':options.length?'choice':'text',options,multiple:false,allowOther:false}
+    this.addInteraction(session,{providerKind:'pi-value',providerRequestId:requestId,providerKey:key,kind:'input',title,detail:'Pi is waiting for your response.',target:session.view.projectPath,questions:[question],cancelable:true,timeout})
+  }
+  private openCodeInteraction(session:ManagedSession,value:Record<string,unknown>):void {
+    const type=string(value.type),properties=object(value.properties)
+    if(!type||!properties||properties.sessionID!==session.view.providerSessionId)return
+    if(['permission.replied','permission.v2.replied'].includes(type)){const id=string(properties.requestID);if(id)this.providerResolved(session,`open:permission:${id}`);return}
+    if(['question.replied','question.rejected','question.v2.replied','question.v2.rejected'].includes(type)){const id=string(properties.requestID);if(id)this.providerResolved(session,`open:question:${id}`);return}
+    if(type==='session.idle'){this.expireInteractions(session,'The turn ended before a response was sent.');return}
+    if(type==='session.status'&&object(properties.status)?.type==='idle'){this.expireInteractions(session,'The turn ended before a response was sent.');return}
+    const requestId=string(properties.id);if(!requestId)return
+    if(type==='permission.asked'||type==='permission.v2.asked'){
+      const action=string(properties.permission)??string(properties.action)??'permission',resources=array(properties.patterns).length?array(properties.patterns):array(properties.resources)
+      this.addInteraction(session,{providerKind:type==='permission.v2.asked'?'opencode-permission-v2':'opencode-permission',providerRequestId:requestId,providerKey:`open:permission:${requestId}`,kind:'approval',title:`Allow ${displayText(action,'permission',100)}`,detail:'OpenCode is requesting one-time permission.',target:resources.filter((item):item is string=>typeof item==='string').slice(0,32).map(item=>displayText(item,'')).join('\n')||session.view.projectPath});return
+    }
+    if(type==='question.asked'||type==='question.v2.asked'){
+      const questions=array(properties.questions).slice(0,32).flatMap((entry,index)=>{const item=object(entry);if(!item)return [];const options=questionOptions(item.options);return [{id:`question-${index+1}`,label:displayText(item.header,`Question ${index+1}`,100),prompt:displayText(item.question,'Input required'),control:options.length?'choice':'text',options,multiple:item.multiple===true,allowOther:item.custom===true}] satisfies SessionInteractionQuestion[]})
+      if(!questions.length){this.addInteraction(session,{providerKind:'unsupported',providerRequestId:requestId,providerKey:`open:question:${requestId}`,kind:'unsupported',title:'OpenCode question',detail:'The request has no supported questions.',target:session.view.projectPath});return}
+      this.addInteraction(session,{providerKind:'opencode-question',providerRequestId:requestId,providerKey:`open:question:${requestId}`,kind:'input',title:'Input requested',detail:'OpenCode is waiting for your response.',target:session.view.projectPath,questions,cancelable:true})
     }
   }
   private async dispatch(session:ManagedSession,delivery:SessionDelivery):Promise<void>{
@@ -483,6 +674,8 @@ export class SessionSupervisor extends EventEmitter {
         catch { if(session.stopping||this.disposed||generation!==session.generation)return;delivery.status='failed';delivery.error='Message was not sent because the transcript could not be saved.';this.persist(session);this.update(session,{status:'error',error:delivery.error});return }
       }
       if(session.stopping||this.disposed||generation!==session.generation||delivery.status!=='sending')return
+      for(const [id,interaction] of session.interactions)if(!['pending','submitting','unsupported'].includes(interaction.view.status)){if(interaction.timer)clearTimeout(interaction.timer);session.interactions.delete(id)}
+      session.view.interactions=session.view.interactions.filter(interaction=>['pending','submitting','unsupported'].includes(interaction.status))
       session.output.beginDelivery(delivery.id)
       if(session.view.agent==='codex'){
         const id=++session.requestSequence;session.pending.set(id,`delivery:${delivery.id}`);this.write(session,{id,method:'turn/start',params:{threadId:session.view.providerSessionId,input:[{type:'text',text:delivery.text}]}});this.awaitReceipt(session,delivery);this.update(session,{status:'running',turnStartedAt:null,turnElapsedMs:null,lastTurnOutcome:null,error:null})
@@ -539,6 +732,7 @@ export class SessionSupervisor extends EventEmitter {
     if(session.deadline){clearTimeout(session.deadline);session.deadline=undefined}
     for(const timer of session.deliveryDeadlines.values())clearTimeout(timer)
     session.deliveryDeadlines.clear()
+    for(const interaction of session.interactions.values())if(interaction.timer){clearTimeout(interaction.timer);interaction.timer=undefined}
   }
   private request(session:ManagedSession,path:string,init:RequestInit&{expectNoContent?:boolean}={}):Promise<unknown>{
     if(!session.endpoint||!session.authorization)return Promise.reject(Error())
@@ -572,7 +766,13 @@ export class SessionSupervisor extends EventEmitter {
   private fail(session:ManagedSession,error:string):void{this.update(session,{status:'error',turnStartedAt:null,error})}
   private touch(session:ManagedSession):void{session.view.updatedAt=Date.now();this.changed()}
   private update(session:ManagedSession,change:Partial<Pick<LiveSession,'providerSessionId'|'status'|'turnStartedAt'|'turnElapsedMs'|'lastTurnOutcome'|'error'>>):void{
-    const active=session.view.status==='running'||session.view.status==='waiting',next=change.status??session.view.status
+    const active=session.view.status==='running'||session.view.status==='waiting'
+    if(change.status==='running'&&this.hasBlockingInteraction(session))change={...change,status:'waiting'}
+    const next=change.status??session.view.status
+    if(next!=='running'&&next!=='waiting')for(const pending of session.interactions.values())if(['pending','submitting','unsupported'].includes(pending.view.status)){
+      if(pending.timer){clearTimeout(pending.timer);pending.timer=undefined}
+      pending.view.status='stale';pending.view.error='Request expired.'
+    }
     if(active&&next!=='running'&&next!=='waiting'&&session.view.turnStartedAt!==null&&change.turnElapsedMs===undefined)session.view.turnElapsedMs=Math.max(0,Date.now()-session.view.turnStartedAt)
     if(session.view.status==='starting'&&next!=='starting'&&session.deadline){clearTimeout(session.deadline);session.deadline=undefined}
     Object.assign(session.view,change,{updatedAt:Date.now()})

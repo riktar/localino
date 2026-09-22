@@ -368,3 +368,60 @@ test('Claude accepts a receipt only when session identity and exact text match',
   line(children[0],{type:'user',session_id:identity,message:{content:[{type:'text',text}]}});await wait();assert.equal(supervisor.state.sessions[0].deliveries[0].status,'sent')
   await supervisor.dispose()
 })
+
+test('Codex approval and input responses are exact, one-shot and keep provider IDs out of renderer state',async()=>{
+  const {supervisor,children}=fixture();const started=await supervisor.start('codex',mkdtempSync(join(tmpdir(),'localino-interaction-codex-')));await wait();const child=children[0],writes:string[]=[];child.stdin.on('data',chunk=>writes.push(String(chunk)))
+  try{
+    line(child,{id:1,result:{}});line(child,{id:2,result:{thread:{id:'owned-interactions'}}});await wait()
+    line(child,{id:71,method:'item/commandExecution/requestApproval',params:{threadId:'owned-interactions',turnId:'turn-1',itemId:'command-1',command:'safe fixture',cwd:'C:\\fixture',reason:'Needs workspace access.',startedAtMs:1}});await wait()
+    const approval=supervisor.state.sessions[0].interactions[0];assert.equal(approval.kind,'approval');assert.notEqual(approval.id,'71');assert.match(approval.target,/safe fixture/)
+    const foreign=await supervisor.start('codex',mkdtempSync(join(tmpdir(),'localino-interaction-foreign-')));await wait();assert.deepEqual(await supervisor.respond({sessionId:foreign.sessionId!,interactionId:approval.id,action:'approve'}),{ok:false,error:'Request expired.'})
+    const [first,duplicate]=await Promise.all([supervisor.respond({sessionId:started.sessionId!,interactionId:approval.id,action:'approve'}),supervisor.respond({sessionId:started.sessionId!,interactionId:approval.id,action:'approve'})])
+    assert.equal(first.ok,true);assert.deepEqual(duplicate,{ok:false,error:'Request expired.'})
+    line(child,{id:'question-provider-id',method:'item/tool/requestUserInput',params:{threadId:'owned-interactions',turnId:'turn-1',itemId:'tool-1',isBlocking:true,questions:[{id:'choice',header:'Choice',question:'Choose',options:[{label:'Alpha',description:'First'}]}]}});await wait()
+    const input=supervisor.state.sessions[0].interactions.find(item=>item.kind==='input')!;assert.deepEqual(await supervisor.respond({sessionId:started.sessionId!,interactionId:input.id,action:'submit',answers:{choice:['forged']}}),{ok:false,error:'Choose a listed option.'});assert.equal(writes.join('').includes('forged'),false);assert.equal((await supervisor.respond({sessionId:started.sessionId!,interactionId:input.id,action:'submit',answers:{choice:['Alpha']}})).ok,true)
+    line(child,{id:72,method:'item/tool/requestUserInput',params:{threadId:'owned-interactions',turnId:'turn-1',itemId:'secret',isBlocking:true,questions:[{id:'password',header:'Secret',question:'Password',isSecret:true}]}});await wait();assert.equal(supervisor.state.sessions[0].interactions.find(item=>item.title==='Secret input')?.status,'unsupported')
+    line(child,{id:73,method:'item/permissions/requestApproval',params:{threadId:'owned-interactions',turnId:'turn-1',itemId:'permissions'}});await wait();assert.equal(supervisor.state.sessions[0].interactions.find(item=>item.title==='Permission grant')?.status,'unsupported')
+    const responses=writes.flatMap(value=>value.trim().split('\n')).filter(Boolean).map(value=>JSON.parse(value) as {id?:unknown;result?:unknown}).filter(value=>value.id===71||value.id==='question-provider-id')
+    assert.deepEqual(responses,[{id:71,result:{decision:'accept'}},{id:'question-provider-id',result:{answers:{choice:{answers:['Alpha']}}}}]);assert.equal(JSON.stringify(supervisor.state).includes('question-provider-id'),false)
+  }finally{await supervisor.dispose()}
+})
+
+test('Claude and Pi interactions use documented replies and stale requests never write',async()=>{
+  const {supervisor,children}=fixture();const project=mkdtempSync(join(tmpdir(),'localino-interaction-machines-'));const claude=await supervisor.start('claude',project),pi=await supervisor.start('pi',project);await wait(300)
+  try{
+    const claudeChild=children[0],piChild=children[1],claudeWrites:string[]=[],piWrites:string[]=[];claudeChild.stdin.on('data',chunk=>claudeWrites.push(String(chunk)));piChild.stdin.on('data',chunk=>piWrites.push(String(chunk)))
+    line(piChild,{id:1,type:'response',success:true,data:{sessionId:'owned-pi-interactions'}});await wait()
+    line(claudeChild,{type:'control_request',request_id:'claude-request',request:{subtype:'can_use_tool',tool_name:'Read',input:{file_path:'fixture.txt',auth:'PRIVATE'},decision_reason:'Read the fixture.'}});await wait()
+    const claudeInteraction=supervisor.state.sessions.find(item=>item.id===claude.sessionId)!.interactions[0];assert.equal(claudeInteraction.target.includes('PRIVATE'),false);line(claudeChild,{type:'assistant',session_id:supervisor.state.sessions.find(item=>item.id===claude.sessionId)!.providerSessionId,message:{id:'while-waiting',content:[]}});await wait();assert.equal(supervisor.state.sessions.find(item=>item.id===claude.sessionId)!.status,'waiting');await supervisor.respond({sessionId:claude.sessionId!,interactionId:claudeInteraction.id,action:'deny'})
+    line(piChild,{type:'extension_ui_request',id:'pi-select',method:'select',title:'Choose mode',options:['Safe','Fast']});await wait()
+    const piInteraction=supervisor.state.sessions.find(item=>item.id===pi.sessionId)!.interactions[0];line(piChild,{type:'agent_start'});await wait();assert.equal(supervisor.state.sessions.find(item=>item.id===pi.sessionId)!.status,'waiting');await supervisor.respond({sessionId:pi.sessionId!,interactionId:piInteraction.id,action:'submit',answers:{value:['Safe']}})
+    line(piChild,{type:'extension_ui_request',id:'pi-stale',method:'input',title:'Expired input'});await wait();const stale=supervisor.state.sessions.find(item=>item.id===pi.sessionId)!.interactions.find(item=>item.title==='Expired input')!
+    ;(supervisor as unknown as {providerResolved:(session:unknown,key:string)=>void}).providerResolved((supervisor as unknown as {sessions:Map<string,unknown>}).sessions.get(pi.sessionId!)!, 'pi:pi-stale')
+    assert.deepEqual(await supervisor.respond({sessionId:pi.sessionId!,interactionId:stale.id,action:'submit',answers:{value:['must-not-write']}}),{ok:false,error:'Request expired.'})
+    assert.ok(claudeWrites.some(value=>value.includes('"request_id":"claude-request"')&&value.includes('"behavior":"deny"')));assert.equal(claudeWrites.join('').includes('PRIVATE'),false)
+    assert.ok(piWrites.some(value=>value.includes('"id":"pi-select"')&&value.includes('"value":"Safe"')));assert.equal(piWrites.join('').includes('must-not-write'),false)
+  }finally{await supervisor.dispose()}
+})
+
+test('OpenCode permission and question endpoints are correlated and cross-session identities fail closed',async()=>{
+  const {supervisor}=fixture(),originalFetch=globalThis.fetch,calls:{url:string;body:string}[]=[]
+  globalThis.fetch=async(input,init)=>{
+    const url=String(input);calls.push({url,body:String(init?.body??'')})
+    if(url.endsWith('/global/health'))return Response.json({healthy:true})
+    if(url.endsWith('/session'))return Response.json({id:'owned-open-interactions'})
+    if(url.endsWith('/event'))return new Response(new ReadableStream())
+    return Response.json(true)
+  }
+  try{
+    const started=await supervisor.start('opencode',mkdtempSync(join(tmpdir(),'localino-interaction-open-')));await wait(30)
+    const managed=(supervisor as unknown as {sessions:Map<string,unknown>}).sessions.get(started.sessionId!)!,record=(value:unknown)=>(supervisor as unknown as {openCodeInteraction:(session:unknown,value:unknown)=>void}).openCodeInteraction(managed,value)
+    record({type:'permission.asked',properties:{id:'permission-1',sessionID:'owned-open-interactions',permission:'write',patterns:['fixture/**']}})
+    let interaction=supervisor.state.sessions[0].interactions[0];assert.equal((await supervisor.respond({sessionId:started.sessionId!,interactionId:interaction.id,action:'approve'})).ok,true)
+    record({type:'question.asked',properties:{id:'question-1',sessionID:'owned-open-interactions',questions:[{header:'Mode',question:'Choose mode',options:[{label:'Safe',description:'Read only'}]}]}})
+    interaction=supervisor.state.sessions[0].interactions.find(item=>item.kind==='input')!;assert.equal((await supervisor.respond({sessionId:started.sessionId!,interactionId:interaction.id,action:'submit',answers:{'question-1':['Safe']}})).ok,true)
+    assert.ok(calls.some(call=>call.url.endsWith('/session/owned-open-interactions/permissions/permission-1')&&call.body==='{"response":"once"}'))
+    assert.ok(calls.some(call=>call.url.endsWith('/question/question-1/reply')&&call.body==='{"answers":[["Safe"]]}'))
+    record({type:'permission.asked',properties:{id:'foreign',sessionID:'another-session',permission:'write',patterns:['secret']}});assert.equal(supervisor.state.sessions[0].interactions.some(item=>item.target.includes('secret')),false)
+  }finally{await supervisor.dispose();globalThis.fetch=originalFetch}
+})

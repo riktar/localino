@@ -60,6 +60,7 @@ const api: LocalinoApi = {
   },
   sendLiveSession:(sessionId,text)=>ipcRenderer.invoke('localino:send-live-session',{sessionId,text}),
   cancelLiveDelivery:(sessionId,deliveryId)=>ipcRenderer.invoke('localino:cancel-live-delivery',{sessionId,deliveryId}),
+  respondToSessionInteraction:response=>ipcRenderer.invoke('localino:respond-session-interaction',response),
   setLiveSessionDraft:(sessionId,text)=>ipcRenderer.invoke('localino:set-live-session-draft',{sessionId,text}),
   discardRecoveredSession:sessionId=>ipcRenderer.invoke('localino:discard-recovered-session',sessionId),
   onLiveSessions:listener=>{

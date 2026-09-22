@@ -60,6 +60,7 @@ export interface LocalinoApi {
   stopLiveSession: (sessionId: string) => Promise<import('./sessions').SessionResult>
   sendLiveSession: (sessionId: string, text: string) => Promise<import('./sessions').SessionResult>
   cancelLiveDelivery: (sessionId: string, deliveryId: string) => Promise<import('./sessions').SessionResult>
+  respondToSessionInteraction: (response: import('./sessions').SessionInteractionResponse) => Promise<import('./sessions').SessionResult>
   setLiveSessionDraft: (sessionId: string, text: string) => Promise<import('./sessions').SessionResult>
   discardRecoveredSession: (sessionId: string) => Promise<import('./sessions').SessionResult>
   onLiveSessions: (listener: (state: import('./sessions').LiveSessionsState) => void) => () => void

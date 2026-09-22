@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Square, Play } from 'lucide-react'
 import type { AgentId } from '../../../shared/agents'
 import { initialLiveSessions, type LiveSessionsState } from '../../../shared/sessions'
 import { Button } from './ui/button'
 import { SessionTerminal } from './session-terminal'
+import { SessionInteractions } from './session-interactions'
 
-export function useLiveSessions():LiveSessionsState{
+export function useLiveSessions():{state:LiveSessionsState;refresh:()=>Promise<void>}{
   const [state,setState]=useState(initialLiveSessions)
   useEffect(()=>{let current=false,disposed=false;const off=window.localino.onLiveSessions(next=>{current=true;setState(next)});void window.localino.getLiveSessions().then(next=>{if(!current&&!disposed)setState(next)});return()=>{disposed=true;off()}},[])
-  return state
+  const refresh=useCallback(async()=>setState(await window.localino.getLiveSessions()),[])
+  return {state,refresh}
 }
 
 function elapsed(start:number|null,now:number):string{
@@ -18,7 +20,7 @@ function elapsed(start:number|null,now:number):string{
 }
 
 export function LiveSessions({agent}:{agent:AgentId}):React.JSX.Element{
-  const state=useLiveSessions(),capability=state.capabilities[agent],[now,setNow]=useState(Date.now()),[error,setError]=useState<string>(),[selected,setSelected]=useState<string>(),[drafts,setDrafts]=useState<Record<string,string>>({}),[submitting,setSubmitting]=useState<Set<string>>(()=>new Set()),sendLocks=useRef(new Set<string>())
+  const {state,refresh}=useLiveSessions(),capability=state.capabilities[agent],[now,setNow]=useState(Date.now()),[error,setError]=useState<string>(),[selected,setSelected]=useState<string>(),[drafts,setDrafts]=useState<Record<string,string>>({}),[submitting,setSubmitting]=useState<Set<string>>(()=>new Set()),sendLocks=useRef(new Set<string>())
   const sessions=state.sessions.filter(session=>session.agent===agent&&session.status!=='stopped'),recovered=state.recovered.filter(session=>session.agent===agent)
   useEffect(()=>{const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer)},[])
   useEffect(()=>{setDrafts(previous=>{let changed=false;const next={...previous};for(const session of state.sessions)if(next[session.id]===undefined){next[session.id]=session.draft;changed=true}return changed?next:previous})},[state.sessions])
@@ -41,6 +43,7 @@ export function LiveSessions({agent}:{agent:AgentId}):React.JSX.Element{
         </div>
         {open&&<div className="mt-3 space-y-2 border-t pt-3" onClick={event=>event.stopPropagation()} onKeyDown={event=>event.stopPropagation()}>
           <SessionTerminal sessionId={session.id}/>
+          <SessionInteractions session={session} onError={setError} onResolved={refresh}/>
           <p className="text-xs text-muted-foreground">Message to {session.projectName} - instance {session.id.slice(0,8)}</p>
           <textarea aria-label={`Message for ${session.projectName} instance ${session.id.slice(0,8)}`} className="min-h-24 w-full resize-y rounded-md border bg-background p-2 text-sm" maxLength={100_000} value={draft} onChange={event=>updateDraft(session.id,event.target.value)}/>
           <div className="flex items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{draft.length.toLocaleString()} / 100,000 characters</span><div className="flex items-center gap-2">{queued&&<Button size="sm" variant="ghost" onClick={()=>void cancel(session.id,queued.id)}>Cancel queued</Button>}<Button size="sm" disabled={!canSend||submitting.has(session.id)} onClick={()=>void send(session.id)}>{busy?'Queue':'Send'}</Button></div></div>

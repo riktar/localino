@@ -5,6 +5,32 @@ export type SessionStatus = typeof sessionStatuses[number]
 export type SessionProtocol = 'codex-app-server'|'claude-stream-json'|'pi-rpc'|'opencode-server'
 export type DeliveryStatus = 'queued'|'sending'|'sent'|'failed'|'unknown'|'suspended'|'cancelled'
 export type TurnOutcome = 'completed'|'interrupted'|'failed'
+export type SessionInteractionStatus = 'pending'|'submitting'|'resolved'|'unsupported'|'stale'|'failed'
+export type SessionInteractionResolution = 'approved'|'denied'|'submitted'|'cancelled'|null
+
+export interface SessionInteractionQuestion {
+  id: string
+  label: string
+  prompt: string
+  control: 'choice'|'text'|'multiline'
+  options: {label:string;description:string}[]
+  multiple: boolean
+  allowOther: boolean
+}
+
+export interface SessionInteraction {
+  id: string
+  kind: 'approval'|'input'|'unsupported'
+  status: SessionInteractionStatus
+  title: string
+  detail: string
+  target: string
+  createdAt: number
+  questions: SessionInteractionQuestion[]
+  cancelable: boolean
+  resolution: SessionInteractionResolution
+  error: string|null
+}
 
 export interface SessionCapability {
   agent: AgentId
@@ -37,6 +63,7 @@ export interface LiveSession {
   updatedAt: number
   error: string|null
   deliveries: SessionDelivery[]
+  interactions: SessionInteraction[]
   draft: string
 }
 
@@ -90,4 +117,29 @@ export function isSessionDraft(value:unknown):value is {sessionId:string;text:st
   if(!value||typeof value!=='object')return false
   const item=value as {sessionId?:unknown;text?:unknown}
   return typeof item.sessionId==='string'&&item.sessionId.length>0&&item.sessionId.length<=128&&typeof item.text==='string'&&item.text.length<=100_000
+}
+
+export interface SessionInteractionResponse {
+  sessionId: string
+  interactionId: string
+  action: 'approve'|'deny'|'submit'|'cancel'
+  answers?: Record<string,string[]>
+}
+
+export function isSessionInteractionResponse(value:unknown):value is SessionInteractionResponse {
+  if(!value||typeof value!=='object')return false
+  const item=value as Record<string,unknown>
+  if(typeof item.sessionId!=='string'||!/^[\w-]{1,128}$/.test(item.sessionId))return false
+  if(typeof item.interactionId!=='string'||!/^[\w-]{1,128}$/.test(item.interactionId))return false
+  if(!['approve','deny','submit','cancel'].includes(String(item.action)))return false
+  if(item.answers===undefined)return true
+  if(!item.answers||typeof item.answers!=='object'||Array.isArray(item.answers))return false
+  const entries=Object.entries(item.answers as Record<string,unknown>)
+  if(entries.length>32)return false
+  let total=0
+  for(const [id,answers] of entries){
+    if(!/^[\w-]{1,128}$/.test(id)||!Array.isArray(answers)||answers.length>32)return false
+    for(const answer of answers){if(typeof answer!=='string'||answer.length>100_000)return false;total+=answer.length;if(total>100_000)return false}
+  }
+  return true
 }

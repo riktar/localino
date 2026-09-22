@@ -6,16 +6,29 @@ const codex=process.argv.includes('app-server'),pi=process.argv.includes('--mode
 const claudeSession=process.argv[process.argv.indexOf('--session-id')+1]
 const input=readline.createInterface({input:process.stdin,crlfDelay:Infinity})
 const send=value=>process.stdout.write(`${JSON.stringify(value)}\n`)
-let claudeTurn=0,codexTurn=0
+let claudeTurn=0,codexTurn=0,pendingApproval,pendingInput
 input.on('line',line=>{
   let value;try{value=JSON.parse(line)}catch{return}
   if(codex){
     if(value.method==='initialize')send({id:value.id,result:{userAgent:'fixture'}})
     else if(value.method==='thread/start')send({id:value.id,result:{thread:{id:'fixture-codex-thread'}}})
-    else if(value.method==='turn/start'){
+    else if(pendingInput&&value.id===pendingInput.id&&value.result?.answers){
+      const pending=pendingInput;pendingInput=undefined
+      const text=Object.values(value.result.answers).flatMap(answer=>answer.answers).join(' / ')
+      send({method:'item/completed',params:{...pending.params,item:{id:`answer-${codexTurn}`,type:'agentMessage',text:`Answers: ${text}`,phase:'final'}}});send({method:'turn/completed',params:{...pending.params,turn:{id:pending.params.turnId,status:'completed'}}})
+    }
+    else if(pendingApproval&&value.id===pendingApproval.id&&value.result?.decision){
+      const pending=pendingApproval;pendingApproval=undefined
+      send({method:'item/completed',params:{...pending.params,item:{id:`answer-${codexTurn}`,type:'agentMessage',text:`Decision: ${value.result.decision}`,phase:'final'}}})
+      send({method:'turn/completed',params:{...pending.params,turn:{id:pending.params.turnId,status:'completed'}}})
+    }else if(value.method==='turn/start'){
       const turnId=`fixture-turn-${++codexTurn}`,params={threadId:'fixture-codex-thread',turnId}
       send({id:value.id,result:{turn:{id:turnId}}});send({method:'turn/started',params:{...params,turn:{id:turnId,startedAt:Date.now()/1000}}})
-      if(value.params.input[0].text==='LOCALINO_STREAM_FIXTURE'){
+      if(value.params.input[0].text==='LOCALINO_APPROVAL_FIXTURE'){
+        pendingApproval={id:9000+codexTurn,params};send({id:pendingApproval.id,method:'item/commandExecution/requestApproval',params:{...params,itemId:`command-${codexTurn}`,command:'fixture-safe-command',cwd:process.cwd(),reason:'Fixture requires one-time approval.',startedAtMs:Date.now()}})
+      }else if(value.params.input[0].text==='LOCALINO_INPUT_FIXTURE'){
+        pendingInput={id:`input-${codexTurn}`,params};send({id:pendingInput.id,method:'item/tool/requestUserInput',params:{...params,itemId:`tool-${codexTurn}`,isBlocking:true,questions:[{id:'mode',header:'Mode',question:'Choose a mode',options:[{label:'Safe',description:'Read only'},{label:'Fast',description:'Fewer checks'}]},{id:'note',header:'Note',question:'Add a note',options:null}]}})
+      }else if(value.params.input[0].text==='LOCALINO_STREAM_FIXTURE'){
         let index=0,text='';const started=performance.now();process.stderr.write('PRIVATE_STDERR_AUTH_SENTINEL\n')
         const timer=setInterval(()=>{const target=Math.min(5000,Math.floor(performance.now()-started));while(index<target){
           const itemId=`answer-${Math.floor(index/100)}`,delta=`${'λ'.repeat(520)}🌍\nSEQ${String(index).padStart(6,'0')} AT${Date.now()}\n`
