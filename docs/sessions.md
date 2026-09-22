@@ -206,6 +206,9 @@ and animation-frame scheduling; the separate terminal UX tests cover user action
 The explicitly invoked `node --import tsx scripts/probe-transcript-live.ts`
 performs read-only turns in a fresh temporary project using existing CLI accounts.
 On 2026-09-21, Codex and Pi completed the probe with streamed text and a read-only
-tool. Claude's CLI was available but OAuth refresh failed, so its live success
-check remains pending login. OpenCode was absent: its fixture result is not a
-live integration claim. No macOS streaming verification has been performed.
+tool. Claude's CLI was available but OAuth refresh failed; the user confirmed no
+Claude subscription is available, so this candidate records Claude as
+`not_run_live` and keeps the contract fixture mandatory. The user will perform a
+later manual live check if access becomes available. OpenCode was absent: its
+fixture result is not a live integration claim. No macOS streaming verification
+has been performed.
