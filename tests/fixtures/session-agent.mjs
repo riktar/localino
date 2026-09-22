@@ -6,7 +6,7 @@ const codex=process.argv.includes('app-server'),pi=process.argv.includes('--mode
 const claudeSession=process.argv[process.argv.indexOf('--session-id')+1]
 const input=readline.createInterface({input:process.stdin,crlfDelay:Infinity})
 const send=value=>process.stdout.write(`${JSON.stringify(value)}\n`)
-let claudeTurn=0,codexTurn=0,pendingApproval,pendingInput
+let claudeTurn=0,codexTurn=0,pendingApproval,pendingInput,pendingPiEditor
 input.on('line',line=>{
   let value;try{value=JSON.parse(line)}catch{return}
   if(codex){
@@ -41,7 +41,8 @@ input.on('line',line=>{
     }
   }else if(pi){
     if(value.type==='get_state')send({id:value.id,type:'response',command:'get_state',success:true,data:{sessionId:'fixture-pi-session'}})
-    else if(value.type==='prompt'){const timestamp=Date.now();send({id:value.id,type:'response',command:'prompt',success:true});send({type:'agent_start'});send({type:'turn_start'});send({type:'message_start',message:{role:'user',content:value.message,timestamp}});setTimeout(()=>{send({type:'turn_end',message:{stopReason:'stop'}});send({type:'agent_settled'})},150)}
+    else if(pendingPiEditor&&value.type==='extension_ui_response'&&value.id===pendingPiEditor.id){const timestamp=Date.now();pendingPiEditor=undefined;send({type:'message_end',message:{role:'assistant',timestamp,content:[{type:'text',text:`Editor: ${value.value}`}]}});send({type:'turn_end',message:{stopReason:'stop'}});send({type:'agent_settled'})}
+    else if(value.type==='prompt'){const timestamp=Date.now();send({id:value.id,type:'response',command:'prompt',success:true});send({type:'agent_start'});send({type:'turn_start'});send({type:'message_start',message:{role:'user',content:value.message,timestamp}});if(value.message==='LOCALINO_PI_EDITOR_FIXTURE'){pendingPiEditor={id:'fixture-pi-editor'};send({type:'extension_ui_request',id:pendingPiEditor.id,method:'editor',title:'Edit plan',prefill:'first\nsecond'})}else setTimeout(()=>{send({type:'turn_end',message:{stopReason:'stop'}});send({type:'agent_settled'})},150)}
   }else if(claude&&value.type==='user'){
     const turn=claudeTurn++;send({type:'system',subtype:'init',session_id:claudeSession});send({type:'user',session_id:claudeSession,message:value.message});send({type:'assistant',session_id:claudeSession,message:{id:`fixture-message-${turn}`,role:'assistant',content:[]}});setTimeout(()=>send({type:'result',subtype:'success',is_error:false,session_id:claudeSession,uuid:`fixture-result-${turn}`}),150)
   }

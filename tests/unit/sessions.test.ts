@@ -382,6 +382,8 @@ test('Codex approval and input responses are exact, one-shot and keep provider I
     const input=supervisor.state.sessions[0].interactions.find(item=>item.kind==='input')!;assert.deepEqual(await supervisor.respond({sessionId:started.sessionId!,interactionId:input.id,action:'submit',answers:{choice:['forged']}}),{ok:false,error:'Choose a listed option.'});assert.equal(writes.join('').includes('forged'),false);assert.equal((await supervisor.respond({sessionId:started.sessionId!,interactionId:input.id,action:'submit',answers:{choice:['Alpha']}})).ok,true)
     line(child,{id:72,method:'item/tool/requestUserInput',params:{threadId:'owned-interactions',turnId:'turn-1',itemId:'secret',isBlocking:true,questions:[{id:'password',header:'Secret',question:'Password',isSecret:true}]}});await wait();assert.equal(supervisor.state.sessions[0].interactions.find(item=>item.title==='Secret input')?.status,'unsupported')
     line(child,{id:73,method:'item/permissions/requestApproval',params:{threadId:'owned-interactions',turnId:'turn-1',itemId:'permissions'}});await wait();assert.equal(supervisor.state.sessions[0].interactions.find(item=>item.title==='Permission grant')?.status,'unsupported')
+    line(child,{id:74,method:'item/commandExecution/requestApproval',params:{threadId:'owned-interactions',turnId:'turn-1',itemId:'network-1',networkApprovalContext:{host:'example.test',protocol:'https'}}});await wait()
+    const network=supervisor.state.sessions[0].interactions.find(item=>item.title==='Network access approval')!;assert.equal(network.detail,'The model wants to access the network.');assert.equal(network.target,'Protocol: https\nHost: example.test')
     const responses=writes.flatMap(value=>value.trim().split('\n')).filter(Boolean).map(value=>JSON.parse(value) as {id?:unknown;result?:unknown}).filter(value=>value.id===71||value.id==='question-provider-id')
     assert.deepEqual(responses,[{id:71,result:{decision:'accept'}},{id:'question-provider-id',result:{answers:{choice:{answers:['Alpha']}}}}]);assert.equal(JSON.stringify(supervisor.state).includes('question-provider-id'),false)
   }finally{await supervisor.dispose()}
@@ -401,6 +403,7 @@ test('Claude and Pi interactions use documented replies and stale requests never
     assert.deepEqual(await supervisor.respond({sessionId:pi.sessionId!,interactionId:stale.id,action:'submit',answers:{value:['must-not-write']}}),{ok:false,error:'Request expired.'})
     assert.ok(claudeWrites.some(value=>value.includes('"request_id":"claude-request"')&&value.includes('"behavior":"deny"')));assert.equal(claudeWrites.join('').includes('PRIVATE'),false)
     assert.ok(piWrites.some(value=>value.includes('"id":"pi-select"')&&value.includes('"value":"Safe"')));assert.equal(piWrites.join('').includes('must-not-write'),false)
+    line(piChild,{type:'extension_ui_request',id:'pi-editor',method:'editor',title:'Edit plan',prefill:'first\nsecond'});await wait();const editor=supervisor.state.sessions.find(item=>item.id===pi.sessionId)!.interactions.find(item=>item.title==='Edit plan')!;assert.equal(editor.questions[0].initialValue,'first\nsecond');await supervisor.respond({sessionId:pi.sessionId!,interactionId:editor.id,action:'submit',answers:{value:[editor.questions[0].initialValue!]}});assert.ok(piWrites.some(value=>value.includes('"id":"pi-editor"')&&value.includes('"value":"first\\nsecond"')))
   }finally{await supervisor.dispose()}
 })
 
@@ -420,7 +423,7 @@ test('OpenCode permission and question endpoints are correlated and cross-sessio
     let interaction=supervisor.state.sessions[0].interactions[0];assert.equal((await supervisor.respond({sessionId:started.sessionId!,interactionId:interaction.id,action:'approve'})).ok,true)
     record({type:'question.asked',properties:{id:'question-1',sessionID:'owned-open-interactions',questions:[{header:'Mode',question:'Choose mode',options:[{label:'Safe',description:'Read only'}]}]}})
     interaction=supervisor.state.sessions[0].interactions.find(item=>item.kind==='input')!;assert.equal((await supervisor.respond({sessionId:started.sessionId!,interactionId:interaction.id,action:'submit',answers:{'question-1':['Safe']}})).ok,true)
-    assert.ok(calls.some(call=>call.url.endsWith('/session/owned-open-interactions/permissions/permission-1')&&call.body==='{"response":"once"}'))
+    assert.ok(calls.some(call=>call.url.endsWith('/permission/permission-1/reply')&&call.body==='{"reply":"once"}'))
     assert.ok(calls.some(call=>call.url.endsWith('/question/question-1/reply')&&call.body==='{"answers":[["Safe"]]}'))
     record({type:'permission.asked',properties:{id:'foreign',sessionID:'another-session',permission:'write',patterns:['secret']}});assert.equal(supervisor.state.sessions[0].interactions.some(item=>item.target.includes('secret')),false)
   }finally{await supervisor.dispose();globalThis.fetch=originalFetch}

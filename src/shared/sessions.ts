@@ -16,6 +16,7 @@ export interface SessionInteractionQuestion {
   options: {label:string;description:string}[]
   multiple: boolean
   allowOther: boolean
+  initialValue?: string
 }
 
 export interface SessionInteraction {

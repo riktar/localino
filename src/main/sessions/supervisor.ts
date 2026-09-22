@@ -54,7 +54,7 @@ interface ManagedSession {
   stopping: boolean
 }
 
-type InteractionProviderKind = 'codex-approval'|'codex-input'|'claude-approval'|'pi-confirm'|'pi-value'|'opencode-permission'|'opencode-permission-v2'|'opencode-question'
+type InteractionProviderKind = 'codex-approval'|'codex-input'|'claude-approval'|'pi-confirm'|'pi-value'|'opencode-permission'|'opencode-question'
 interface ProviderInteraction {
   view: SessionInteraction
   providerKind: InteractionProviderKind|'unsupported'
@@ -292,9 +292,9 @@ export class SessionSupervisor extends EventEmitter {
       else if(pending.providerKind==='claude-approval')this.write(session,{type:'control_response',response:{subtype:'success',request_id:pending.providerRequestId,response:approve?{behavior:'allow'}:{behavior:'deny',message:'Denied in Localino.'}}})
       else if(pending.providerKind==='pi-confirm')this.write(session,{type:'extension_ui_response',id:pending.providerRequestId,...(cancel?{cancelled:true}:{confirmed:approve})})
       else if(pending.providerKind==='pi-value')this.write(session,{type:'extension_ui_response',id:pending.providerRequestId,...(cancel?{cancelled:true}:{value:ordered[0][0]})})
-      else if(pending.providerKind==='opencode-permission'||pending.providerKind==='opencode-permission-v2'){
-        const path=pending.providerKind==='opencode-permission'?`/session/${encodeURIComponent(session.view.providerSessionId!)}/permissions/${encodeURIComponent(String(pending.providerRequestId))}`:`/permission/${encodeURIComponent(String(pending.providerRequestId))}/reply`
-        const body=pending.providerKind==='opencode-permission'?{response:approve?'once':'reject'}:{reply:approve?'once':'reject'}
+      else if(pending.providerKind==='opencode-permission'){
+        const path=`/permission/${encodeURIComponent(String(pending.providerRequestId))}/reply`
+        const body={reply:approve?'once':'reject'}
         await this.request(session,path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})
       }else if(pending.providerKind==='opencode-question'){
         const path=`/question/${encodeURIComponent(String(pending.providerRequestId))}/${cancel?'reject':'reply'}`
@@ -622,8 +622,9 @@ export class SessionSupervisor extends EventEmitter {
       if(secret||!questions.length){this.addInteraction(session,{providerKind:'unsupported',providerRequestId:requestId,providerKey:key,kind:'unsupported',title:secret?'Secret input':'Unsupported input request',detail:secret?'Secret prompts are not collected by Localino.':'The request has no supported questions.',target:session.view.projectPath});return}
       this.addInteraction(session,{providerKind:'codex-input',providerRequestId:requestId,providerKey:key,kind:'input',title:'Input requested',detail:'Codex is waiting for your response.',target:displayText(params.itemId,session.view.projectPath),questions});return
     }
-    const command=string(params.command),cwd=string(params.cwd),grantRoot=string(params.grantRoot),host=string(object(params.networkApprovalContext)?.host)
-    this.addInteraction(session,{providerKind:'codex-approval',providerRequestId:requestId,providerKey:key,kind:'approval',title:method==='item/fileChange/requestApproval'?'File change approval':'Command approval',detail:displayText(params.reason,method==='item/fileChange/requestApproval'?'The model wants to change files.':'The model wants to run a command.'),target:[command,grantRoot,cwd,host].filter(Boolean).map(item=>displayText(item,'')).join('\n')||session.view.projectPath})
+    const command=string(params.command),cwd=string(params.cwd),grantRoot=string(params.grantRoot),network=object(params.networkApprovalContext),host=string(network?.host),protocol=string(network?.protocol)
+    const networkApproval=Boolean(host||protocol)
+    this.addInteraction(session,{providerKind:'codex-approval',providerRequestId:requestId,providerKey:key,kind:'approval',title:networkApproval?'Network access approval':method==='item/fileChange/requestApproval'?'File change approval':'Command approval',detail:displayText(params.reason,networkApproval?'The model wants to access the network.':method==='item/fileChange/requestApproval'?'The model wants to change files.':'The model wants to run a command.'),target:networkApproval?[protocol&&`Protocol: ${displayText(protocol,'',100)}`,host&&`Host: ${displayText(host,'',1000)}`].filter(Boolean).join('\n'):[command,grantRoot,cwd].filter(Boolean).map(item=>displayText(item,'')).join('\n')||session.view.projectPath})
   }
   private claudeInteraction(session:ManagedSession,value:Record<string,unknown>):void {
     const requestId=value.request_id,request=object(value.request),subtype=string(request?.subtype)
@@ -642,7 +643,7 @@ export class SessionSupervisor extends EventEmitter {
     if(method==='confirm'){
       this.addInteraction(session,{providerKind:'pi-confirm',providerRequestId:requestId,providerKey:key,kind:'approval',title,detail:displayText(value.message,'Pi is asking for confirmation.'),target:session.view.projectPath,cancelable:true,timeout});return
     }
-    const options=method==='select'?questionOptions(value.options):[],question:SessionInteractionQuestion={id:'value',label:title,prompt:method==='editor'?'Enter multiline text.':method==='input'?displayText(value.placeholder,'Enter a value.'):displayText(value.title,'Choose an option.'),control:method==='editor'?'multiline':options.length?'choice':'text',options,multiple:false,allowOther:false}
+    const options=method==='select'?questionOptions(value.options):[],prefill=method==='editor'&&typeof value.prefill==='string'?terminalText(value.prefill).slice(0,100_000):undefined,question:SessionInteractionQuestion={id:'value',label:title,prompt:method==='editor'?'Enter multiline text.':method==='input'?displayText(value.placeholder,'Enter a value.'):displayText(value.title,'Choose an option.'),control:method==='editor'?'multiline':options.length?'choice':'text',options,multiple:false,allowOther:false,...(prefill!==undefined?{initialValue:prefill}:{})}
     this.addInteraction(session,{providerKind:'pi-value',providerRequestId:requestId,providerKey:key,kind:'input',title,detail:'Pi is waiting for your response.',target:session.view.projectPath,questions:[question],cancelable:true,timeout})
   }
   private openCodeInteraction(session:ManagedSession,value:Record<string,unknown>):void {
@@ -655,7 +656,7 @@ export class SessionSupervisor extends EventEmitter {
     const requestId=string(properties.id);if(!requestId)return
     if(type==='permission.asked'||type==='permission.v2.asked'){
       const action=string(properties.permission)??string(properties.action)??'permission',resources=array(properties.patterns).length?array(properties.patterns):array(properties.resources)
-      this.addInteraction(session,{providerKind:type==='permission.v2.asked'?'opencode-permission-v2':'opencode-permission',providerRequestId:requestId,providerKey:`open:permission:${requestId}`,kind:'approval',title:`Allow ${displayText(action,'permission',100)}`,detail:'OpenCode is requesting one-time permission.',target:resources.filter((item):item is string=>typeof item==='string').slice(0,32).map(item=>displayText(item,'')).join('\n')||session.view.projectPath});return
+      this.addInteraction(session,{providerKind:'opencode-permission',providerRequestId:requestId,providerKey:`open:permission:${requestId}`,kind:'approval',title:`Allow ${displayText(action,'permission',100)}`,detail:'OpenCode is requesting one-time permission.',target:resources.filter((item):item is string=>typeof item==='string').slice(0,32).map(item=>displayText(item,'')).join('\n')||session.view.projectPath});return
     }
     if(type==='question.asked'||type==='question.v2.asked'){
       const questions=array(properties.questions).slice(0,32).flatMap((entry,index)=>{const item=object(entry);if(!item)return [];const options=questionOptions(item.options);return [{id:`question-${index+1}`,label:displayText(item.header,`Question ${index+1}`,100),prompt:displayText(item.question,'Input required'),control:options.length?'choice':'text',options,multiple:item.multiple===true,allowOther:item.custom===true}] satisfies SessionInteractionQuestion[]})

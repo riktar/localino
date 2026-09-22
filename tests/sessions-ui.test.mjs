@@ -94,3 +94,17 @@ test('choice and text input controls submit exact answers outside the conversati
     await action.getByRole('button',{name:'Submit response'}).click();await action.getByRole('status').getByText('Response sent',{exact:true}).waitFor();const sessionId=await card.getAttribute('data-session-id');await page.waitForFunction(id=>window.localino.getChatHistory(id).then(history=>history.messages.some(message=>message.text==='Answers: Safe / exact Unicode 🧪')),sessionId)
   }finally{await app.close()}
 })
+
+test('Pi editor starts with the provider prefill and submits it unchanged',async()=>{
+  await mkdir('test-results/profiles',{recursive:true})
+  const profile=await mkdtemp(resolve('test-results/profiles/session-pi-editor-')),project=await mkdtemp(resolve('test-results/profiles/pi-editor-project-')),fixture=resolve(process.platform==='win32'?'tests/fixtures/session-agent.cmd':'tests/fixtures/session-agent.mjs')
+  if(process.platform!=='win32')await chmod(fixture,0o755)
+  const env={...process.env,LOCALINO_PI_PATH:fixture};delete env.ELECTRON_RUN_AS_NODE;delete env.ELECTRON_RENDERER_URL
+  const app=await electron.launch({args:['.',`--user-data-dir=${profile}`],env})
+  try{
+    const page=await mainPage(app);await page.evaluate(()=>window.localino.selectAgent('pi'));await page.locator('[data-live-sessions="pi"]').getByText(/CLI available|localino-session-fixture/).waitFor();await app.evaluate(({dialog},path)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[path]})},project)
+    await page.getByRole('button',{name:'Start session',exact:true}).click();const card=page.locator('[data-session-id]');await card.locator('[data-session-status="idle"]').waitFor();await card.press('Enter');await card.getByRole('textbox',{name:/Message for/}).fill('LOCALINO_PI_EDITOR_FIXTURE');await card.getByRole('button',{name:'Send',exact:true}).click()
+    const action=card.locator('[data-session-interaction]'),editor=action.getByLabel('Edit plan');await editor.waitFor();assert.equal(await editor.inputValue(),'first\nsecond');await action.getByRole('button',{name:'Submit response'}).click();await action.getByRole('status').getByText('Response sent',{exact:true}).waitFor()
+    const sessionId=await card.getAttribute('data-session-id');await page.waitForFunction(id=>window.localino.getChatHistory(id).then(history=>history.messages.some(message=>message.text==='Editor: first\nsecond')),sessionId)
+  }finally{await app.close()}
+})
